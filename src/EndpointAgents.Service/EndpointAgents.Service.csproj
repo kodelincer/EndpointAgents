@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-EndpointAgents.Service-943c0b51-1538-4d9a-8d7e-212125f6bcc5</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EndpointAgents.Shared\EndpointAgents.Shared.csproj" />
+    <ProjectReference Include="..\EndpointAgents.Core\EndpointAgents.Core.csproj" />
+    <ProjectReference Include="..\EndpointAgents.Platform.Windows\EndpointAgents.Platform.Windows.csproj" />
+  </ItemGroup>
+</Project>
