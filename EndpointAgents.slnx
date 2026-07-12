@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <File Path="readme.txt" />
     <Project Path="src/ControlPlane.Api/ControlPlane.Api.csproj" />
     <Project Path="src/EndpointAgents.Core/EndpointAgents.Core.csproj" />
     <Project Path="src/EndpointAgents.Platform.Windows/EndpointAgents.Platform.Windows.csproj" />
