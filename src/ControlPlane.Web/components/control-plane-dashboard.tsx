@@ -1,14 +1,11 @@
 "use client";
 
-import { HubConnectionBuilder, LogLevel } from "@microsoft/signalr";
 import { Activity as ActivityIcon, Check, ChevronDown, CircleAlert, Clock3, Copy,
   MoreHorizontal, PanelRightClose, Play, RefreshCw, Search, Server, SlidersHorizontal, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CONTROL_PLANE_URL, getSnapshot, runCommand } from "@/lib/control-plane";
-import { mergeActivity } from "@/lib/activity";
-import type { Activity, Agent, CommandDefinition, ConnectionState, RpcRequest } from "@/lib/types";
-
-const EVENT_TYPES: Activity["type"][] = ["agent.connected", "agent.disconnected", "command.started", "command.completed"];
+import { useEffect, useMemo, useState } from "react";
+import { runCommand } from "@/lib/control-plane";
+import { useControlPlane } from "@/lib/control-plane-context";
+import type { Activity, Agent, CommandDefinition, RpcRequest } from "@/lib/types";
 
 function time(value: string) {
   return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
@@ -21,17 +18,9 @@ function relative(value: string) {
   return `${Math.floor(seconds / 3600)}h ago`;
 }
 
-function statusLabel(state: ConnectionState) {
-  return { connecting: "Connecting", live: "Live", reconnecting: "Reconnecting", offline: "Unavailable" }[state];
-}
-
+/** Agent registry, live activity rail, command review, and RPC trace inspection. */
 export function ControlPlaneDashboard() {
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [activity, setActivity] = useState<Activity[]>([]);
-  const [commands, setCommands] = useState<CommandDefinition[]>([]);
-  const [connection, setConnection] = useState<ConnectionState>("connecting");
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string>();
+  const { agents, activity, commands, loading, loadError, refresh } = useControlPlane();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"agent" | "connected">("agent");
   const [agentFilter, setAgentFilter] = useState("");
@@ -45,43 +34,6 @@ export function ControlPlaneDashboard() {
   const [copied, setCopied] = useState<string>();
   const [railOpen, setRailOpen] = useState(true);
   const [menu, setMenu] = useState<{ x: number; y: number; agent: Agent }>();
-  const requestId = useRef<string | undefined>(undefined);
-
-  const refresh = useCallback(async () => {
-    try {
-      const snapshot = await getSnapshot();
-      setAgents(snapshot.agents);
-      setActivity(current => mergeActivity(current, snapshot.activity));
-      setCommands(snapshot.commands);
-      setLoadError(undefined);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Could not reach the control plane.");
-    } finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => {
-    const initialLoad = window.setTimeout(() => void refresh(), 0);
-    const hub = new HubConnectionBuilder().withUrl(`${CONTROL_PLANE_URL}/dashboard-hub`)
-      .withAutomaticReconnect([0, 2000, 5000, 10000]).configureLogging(LogLevel.Warning).build();
-
-    const receive = (event: Activity) => {
-      setActivity(current => mergeActivity(current, [event]));
-      if (event.type === "agent.connected" && event.agent)
-        setAgents(current => [...current.filter(a => a.agentId !== event.agentId), event.agent!]);
-      if (event.type === "agent.disconnected")
-        setAgents(current => current.filter(a => a.agentId !== event.agentId));
-      if (event.type === "command.completed" && event.requestId === requestId.current) {
-        setSelectedTrace(event); setRunning(false);
-      }
-    };
-    EVENT_TYPES.forEach(type => hub.on(type, receive));
-    hub.onreconnecting(() => setConnection("reconnecting"));
-    hub.onreconnected(() => { setConnection("live"); void refresh(); });
-    hub.onclose(() => setConnection("offline"));
-    hub.start().then(() => setConnection("live")).catch(() => setConnection("offline"));
-    return () => { window.clearTimeout(initialLoad); void hub.stop(); };
-  }, [refresh]);
-
   useEffect(() => {
     const close = () => setMenu(undefined);
     window.addEventListener("click", close); window.addEventListener("resize", close);
@@ -110,13 +62,17 @@ export function ControlPlaneDashboard() {
 
   const execute = async () => {
     if (!selectedAgent || !selectedCommand || running) return;
-    const id = crypto.randomUUID(); requestId.current = id;
+    const id = crypto.randomUUID();
     const request: RpcRequest = { jsonRpc: "2.0", id, method: selectedCommand.method, params: selectedCommand.defaultParams };
+    const startedAt = Date.now();
     setRunning(true); setRunError(undefined);
     try {
       const response = await runCommand(selectedAgent.agentId, request);
       if (response.error) setRunError(response.error.message);
-      window.setTimeout(() => { if (requestId.current === id) void refresh().finally(() => setRunning(false)); }, 700);
+      setSelectedTrace({ eventId: id, type: "command.completed", timestampUtc: new Date().toISOString(),
+        agentId: selectedAgent.agentId, status: response.error ? "error" : "success", requestId: id,
+        request, response, durationMs: Date.now() - startedAt });
+      window.setTimeout(() => void refresh().finally(() => setRunning(false)), 700);
     } catch (error) {
       setRunError(error instanceof Error ? error.message : "The command could not be sent."); setRunning(false);
     }
@@ -130,20 +86,7 @@ export function ControlPlaneDashboard() {
   const clearFilters = () => { setAgentFilter(""); setEventFilter(""); setStatusFilter(""); };
   const filtered = agentFilter || eventFilter || statusFilter;
 
-  return <main className="app-shell">
-    <header className="topbar">
-      <div className="brand"><span className="brand-mark"><Server size={17} /></span><div><strong>EndpointAgents</strong><span>Control plane</span></div></div>
-      <div className="topbar-status">
-        <span className={`connection-state ${connection}`}><span className="state-dot" />{statusLabel(connection)}</span>
-        <span className="topbar-divider" /><span>{agents.length} agent{agents.length === 1 ? "" : "s"} online</span>
-        <button className="icon-button" onClick={() => void refresh()} aria-label="Refresh dashboard"><RefreshCw size={16} /></button>
-      </div>
-    </header>
-
-    {connection !== "live" && <div className="connection-banner" role="status"><CircleAlert size={16} />
-      {connection === "reconnecting" ? "Live updates paused. Reconnecting and preserving the current view…" :
-       connection === "connecting" ? "Connecting to live control-plane updates…" : "Live updates unavailable. Check that the control plane is running on port 5052."}</div>}
-
+  return <div className="agent-workspace">
     <div className={`workspace ${railOpen ? "with-rail" : ""}`}>
       <section className="registry" aria-labelledby="registry-title">
         <div className="section-heading"><div><h1 id="registry-title">Agent registry</h1><p>Live Windows endpoints currently registered with this control plane.</p></div>
@@ -197,13 +140,15 @@ export function ControlPlaneDashboard() {
         <div className="drawer-actions"><button className="secondary-button" onClick={() => setSelectedAgent(undefined)}>Cancel</button><button className="primary-button" disabled={running} onClick={() => void execute()}>{running ? <><RefreshCw className="spin" size={15} /> Running…</> : <><Play size={15} /> Run command</>}</button></div>
       </div>}
     </aside></>}
-  </main>;
+  </div>;
 }
 
+/** Renders inspectable JSON with a consistent copy affordance. */
 function JsonBlock({ title, value, copied, onCopy }: { title: string; value: unknown; copied: boolean; onCopy: () => void }) {
   return <section className="json-section"><div><h3>{title}</h3><button onClick={onCopy}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? "Copied" : "Copy"}</button></div><pre>{JSON.stringify(value, null, 2)}</pre></section>;
 }
 
+/** Correlates request, response, duration, and endpoint identity for one trace. */
 function TraceInspector({ trace, copied, onCopy }: { trace: Activity; copied?: string; onCopy: (label: string, value: unknown) => void }) {
   return <div className="drawer-body trace-body"><div className="trace-summary"><span className={`event-symbol ${trace.status}`}>{trace.status === "success" || trace.status === "online" ? <Check size={13} /> : <CircleAlert size={13} />}</span><div><strong>{trace.status}</strong><span>{trace.type} · {new Date(trace.timestampUtc).toLocaleString()}</span></div>{trace.durationMs != null && <code>{trace.durationMs} ms</code>}</div>
     {trace.requestId && <dl className="trace-meta"><div><dt>Request ID</dt><dd>{trace.requestId}</dd></div><div><dt>Agent</dt><dd>{trace.agentId}</dd></div></dl>}

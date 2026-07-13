@@ -4,8 +4,10 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace ControlPlane.Api.Hubs;
 
+/// <summary>SignalR endpoint used exclusively by installed endpoint agents.</summary>
 public sealed class AgentHub(AgentRegistry registry, ILogger<AgentHub> logger) : Hub
 {
+    /// <summary>Associates the current SignalR connection with a durable agent identity.</summary>
     public async Task RegisterAgent(AgentRegistration registration)
     {
         await registry.MarkOnlineAsync(registration, Context.ConnectionId);
@@ -13,6 +15,7 @@ public sealed class AgentHub(AgentRegistry registry, ILogger<AgentHub> logger) :
             registration.AgentId, Context.ConnectionId);
     }
 
+    /// <summary>Removes the disconnected transport without disturbing a newer reconnect.</summary>
     public override async Task OnDisconnectedAsync(Exception? exception)
     {
         await registry.MarkOfflineAsync(Context.ConnectionId);

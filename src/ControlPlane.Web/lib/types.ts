@@ -8,3 +8,19 @@ export type Activity = {
   requestId?: string; request?: RpcRequest; response?: RpcResponse; durationMs?: number; agent?: Agent;
 };
 export type ConnectionState = "connecting" | "live" | "reconnecting" | "offline";
+
+export type ApiSystemStatus = {
+  version: string; machineName: string; startedAtUtc: string; uptimeSeconds: number;
+  maintenanceMode: boolean; connectedAgents: number; retainedActivity: number;
+};
+export type ServiceAction = "start" | "stop" | "restart" | "enterMaintenance" | "exitMaintenance";
+export type ManagedServiceState = "unknown" | "notInstalled" | "stopped" | "startPending" |
+  "stopPending" | "running" | "continuePending" | "pausePending" | "paused";
+export type ApiHealthState = "unknown" | "healthy" | "maintenance" | "degraded" | "unreachable";
+export type ManagedServiceStatus = {
+  serviceName: string; serviceState: ManagedServiceState; apiHealth: ApiHealthState;
+  api?: ApiSystemStatus | null; pendingAction?: ServiceAction | null;
+  availableActions: ServiceAction[]; checkedAtUtc: string; detail?: string | null;
+};
+export type ServiceActionResult = { accepted: boolean; message: string; status: ManagedServiceStatus };
+export type ServiceActionState = { action: ServiceAction; state: "running" | "success" | "error"; message?: string };

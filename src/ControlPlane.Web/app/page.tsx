@@ -1,3 +1,3 @@
-import { ControlPlaneDashboard } from "@/components/control-plane-dashboard";
+import { OperationsOverview } from "@/components/operations-overview";
 
-export default function Home() { return <ControlPlaneDashboard />; }
+export default function Home() { return <OperationsOverview />; }

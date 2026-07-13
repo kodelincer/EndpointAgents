@@ -7,17 +7,24 @@ using System.Collections.Concurrent;
 
 namespace ControlPlane.Api.Agents;
 
+/// <summary>
+/// Tracks the live SignalR connection for each logical endpoint agent and routes
+/// catalogued RPC requests to the currently registered connection.
+/// </summary>
 public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPublisher dashboard)
 {
     private readonly ConcurrentDictionary<string, OnlineAgent> _agentsById = new();
     private readonly ConcurrentDictionary<string, string> _agentIdByConnectionId = new();
 
+    /// <summary>Registers or replaces an agent's current SignalR connection.</summary>
     public async Task MarkOnlineAsync(AgentRegistration registration, string connectionId)
     {
         var onlineAgent = new OnlineAgent(registration.AgentId, registration.Hostname,
             registration.MachineName, registration.UserName, registration.Version,
             connectionId, DateTimeOffset.UtcNow);
 
+        // A reconnect creates a new connection id. Remove the reverse mapping for
+        // the stale transport before publishing the replacement as online.
         if (_agentsById.TryGetValue(registration.AgentId, out var previous))
             _agentIdByConnectionId.TryRemove(previous.ConnectionId, out _);
 
@@ -29,9 +36,12 @@ public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPub
             "online", Agent: onlineAgent.ToDto()));
     }
 
+    /// <summary>Removes an agent only when the disconnected transport is still current.</summary>
     public async Task MarkOfflineAsync(string connectionId)
     {
         if (!_agentIdByConnectionId.TryRemove(connectionId, out var agentId)) return;
+        // Ignore a late disconnect from an older transport after the same agent
+        // has already reconnected with a new connection id.
         if (!_agentsById.TryGetValue(agentId, out var current) || current.ConnectionId != connectionId) return;
         if (!_agentsById.TryRemove(agentId, out var removed)) return;
 
@@ -40,9 +50,11 @@ public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPub
             "offline", Agent: removed.ToDto()));
     }
 
+    /// <summary>Returns a stable public snapshot without server connection ids.</summary>
     public IReadOnlyCollection<OnlineAgentDto> GetOnlineAgents() => _agentsById.Values
         .OrderBy(agent => agent.AgentId).Select(agent => agent.ToDto()).ToArray();
 
+    /// <summary>Sends one RPC request and publishes its complete activity lifecycle.</summary>
     public async Task<RpcResponse> SendCommandAsync(string agentId, RpcRequest request,
         CancellationToken cancellationToken)
     {
@@ -86,11 +98,13 @@ public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPub
     }
 }
 
+/// <summary>Internal agent record including the SignalR connection used for routing.</summary>
 public sealed record OnlineAgent(string AgentId, string Hostname, string MachineName,
     string UserName, string Version, string ConnectionId, DateTimeOffset ConnectedAtUtc)
 {
     public OnlineAgentDto ToDto() => new(AgentId, Hostname, MachineName, UserName, Version, ConnectedAtUtc);
 }
 
+/// <summary>Browser-safe representation of an online endpoint agent.</summary>
 public sealed record OnlineAgentDto(string AgentId, string Hostname, string MachineName,
     string UserName, string Version, DateTimeOffset ConnectedAtUtc);

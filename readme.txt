@@ -64,3 +64,29 @@ Notes:
 	Rule:
 		Tray app should not execute powerful admin commands directly.
 		Later, tray talks to the background service by Named Pipe or localhost IPC.
+
+
+
+
+
+HubConnection
+= client-side SignalR connection
+
+Hub
+= server-side receiver for client calls and connection events
+
+IHubContext
+= server-side sender usable outside the Hub
+
+Connection registry
+= your own storage for agent identity and online state
+
+Endpoint agent calls server
+    → AgentHub
+
+Control plane sends command to endpoint
+    → IHubContext<AgentHub>
+
+Control plane finds which agent is connected
+    → AgentConnectionRegistry
+
