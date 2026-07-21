@@ -54,6 +54,14 @@ public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPub
     public IReadOnlyCollection<OnlineAgentDto> GetOnlineAgents() => _agentsById.Values
         .OrderBy(agent => agent.AgentId).Select(agent => agent.ToDto()).ToArray();
 
+    public bool TryGetByConnectionId(string connectionId, out OnlineAgent? agent)
+    {
+        agent = null;
+        return _agentIdByConnectionId.TryGetValue(connectionId, out var agentId)
+            && _agentsById.TryGetValue(agentId, out agent)
+            && agent.ConnectionId == connectionId;
+    }
+
     /// <summary>Sends one RPC request and publishes its complete activity lifecycle.</summary>
     public async Task<RpcResponse> SendCommandAsync(string agentId, RpcRequest request,
         CancellationToken cancellationToken)

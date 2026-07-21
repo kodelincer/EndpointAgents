@@ -1,11 +1,17 @@
 using EndpointAgents.Core.Commands;
 using EndpointAgents.Platform.Windows.Diagnostics;
+using EndpointAgents.Platform.Windows.UserSessions;
 using EndpointAgents.Shared.Rpc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Microsoft.Win32;
 using System.Net;
+using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Text;
 
 namespace EndpointAgents.Platform.Windows.EndpointInfo;
 
@@ -13,15 +19,22 @@ namespace EndpointAgents.Platform.Windows.EndpointInfo;
 public sealed class EndpointInfoCommandHandler : IEndpointCommandHandler
 {
     private readonly ILogger<EndpointInfoCommandHandler> _logger;
+    private readonly InteractiveUserSessionLocator _sessionLocator;
+    private readonly EndpointInfoOptions _options;
 
-    public EndpointInfoCommandHandler(ILogger<EndpointInfoCommandHandler> logger)
+    public EndpointInfoCommandHandler(
+        ILogger<EndpointInfoCommandHandler> logger,
+        InteractiveUserSessionLocator sessionLocator,
+        IOptions<EndpointInfoOptions> options)
     {
         _logger = logger;
+        _sessionLocator = sessionLocator;
+        _options = options.Value;
     }
 
     public string Method => "endpoint.get_info";
 
-    public Task<RpcResponse> HandleAsync(
+    public async Task<RpcResponse> HandleAsync(
         RpcRequest request,
         CommandExecutionContext context,
         CancellationToken cancellationToken)
@@ -29,12 +42,15 @@ public sealed class EndpointInfoCommandHandler : IEndpointCommandHandler
         cancellationToken.ThrowIfCancellationRequested();
 
         var warnings = new List<DiagnosticWarning>();
+        var activeSession = Safe("user.active_session",
+            () => _sessionLocator.GetActiveSessions().FirstOrDefault(), warnings);
         var result = new
         {
-            User = CollectUserInfo(),
-            Machine = CollectMachineInfo(),
+            User = CollectUserInfo(activeSession),
+            Machine = CollectMachineInfo(warnings),
             Adapters = CollectAdapters(warnings),
             Proxy = CollectProxySettings(warnings),
+            Internet = await CollectInternetStatusAsync(warnings, cancellationToken),
             Time = new
             {
                 LocalNow = DateTimeOffset.Now,
@@ -43,33 +59,153 @@ public sealed class EndpointInfoCommandHandler : IEndpointCommandHandler
             }
         };
 
-        return Task.FromResult(RpcResponse.Success(
+        return RpcResponse.Success(
             request.Id,
-            DiagnosticResponse.Create(context, result, warnings)));
+            DiagnosticResponse.Create(context, result, warnings));
     }
 
-    private static object CollectUserInfo()
+    private static object CollectUserInfo(InteractiveUserSession? activeSession)
     {
         return new
         {
-            UserName = Environment.UserName,
-            DomainName = Environment.UserDomainName,
-            IsInteractiveUser = Environment.UserInteractive
+            ActiveInteractiveUser = activeSession is null ? null : new
+            {
+                activeSession.SessionId,
+                activeSession.UserName,
+                activeSession.DomainName,
+                activeSession.DesktopPath
+            },
+            AgentExecutionIdentity = new
+            {
+                UserName = Environment.UserName,
+                DomainName = Environment.UserDomainName,
+                Environment.UserInteractive
+            }
         };
     }
 
-    private static object CollectMachineInfo()
+    private object CollectMachineInfo(List<DiagnosticWarning> warnings)
     {
         return new
         {
             Hostname = SafeValue(() => Dns.GetHostName(), Environment.MachineName),
             MachineName = Environment.MachineName,
-            OSVersion = Environment.OSVersion.ToString(),
+            OSDescription = RuntimeInformation.OSDescription,
+            OSVersion = Environment.OSVersion.VersionString,
+            Windows = Safe("machine.windows_version", CollectWindowsVersion, warnings),
+            OSArchitecture = RuntimeInformation.OSArchitecture.ToString(),
+            ProcessArchitecture = RuntimeInformation.ProcessArchitecture.ToString(),
+            Framework = RuntimeInformation.FrameworkDescription,
             Environment.Is64BitOperatingSystem,
+            Environment.Is64BitProcess,
             ProcessorCount = Environment.ProcessorCount,
             SystemDirectory = Environment.SystemDirectory,
             Uptime = TimeSpan.FromMilliseconds(Environment.TickCount64).ToString()
         };
+    }
+
+    private static object CollectWindowsVersion()
+    {
+        using var key = Registry.LocalMachine.OpenSubKey(
+            @"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+
+        return new
+        {
+            ProductName = key?.GetValue("ProductName")?.ToString(),
+            DisplayVersion = key?.GetValue("DisplayVersion")?.ToString(),
+            CurrentBuild = key?.GetValue("CurrentBuildNumber")?.ToString(),
+            UpdateBuildRevision = key?.GetValue("UBR"),
+            InstallationType = key?.GetValue("InstallationType")?.ToString()
+        };
+    }
+
+    private async Task<InternetStatus> CollectInternetStatusAsync(
+        List<DiagnosticWarning> warnings,
+        CancellationToken cancellationToken)
+    {
+        var networkAvailable = NetworkInterface.GetIsNetworkAvailable();
+        var checkUri = new Uri(_options.InternetCheckUrl);
+        var addresses = Array.Empty<string>();
+        string? dnsError = null;
+        string? httpError = null;
+
+        try
+        {
+            addresses = (await Dns.GetHostAddressesAsync(checkUri.Host, cancellationToken))
+                .Select(address => address.ToString())
+                .ToArray();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            dnsError = ex.GetType().Name;
+            AddWarning(warnings, "internet.dns",
+                $"Failed to resolve the internet-check host '{checkUri.Host}'.", ex);
+        }
+
+        int? statusCode = null;
+        string? redirectLocation = null;
+        var expectedContentMatched = false;
+
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(_options.InternetCheckTimeoutSeconds));
+            using var handler = new HttpClientHandler { AllowAutoRedirect = false };
+            using var client = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+            using var response = await client.GetAsync(checkUri,
+                HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+
+            statusCode = (int)response.StatusCode;
+            redirectLocation = response.Headers.Location?.ToString();
+
+            await using var content = await response.Content.ReadAsStreamAsync(timeout.Token);
+            var buffer = new byte[512];
+            var read = await content.ReadAsync(buffer, timeout.Token);
+            var text = Encoding.UTF8.GetString(buffer, 0, read);
+            expectedContentMatched = string.IsNullOrWhiteSpace(_options.ExpectedInternetContent)
+                || text.Contains(_options.ExpectedInternetContent, StringComparison.Ordinal);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            httpError = "Timeout";
+            AddWarning(warnings, "internet.http",
+                $"Internet check exceeded {_options.InternetCheckTimeoutSeconds} seconds.", ex);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            httpError = ex.GetType().Name;
+            AddWarning(warnings, "internet.http",
+                $"Failed to request the internet-check URL '{checkUri}'.", ex);
+        }
+
+        var dnsResolved = addresses.Length > 0;
+        var httpReachable = statusCode is >= 200 and < 300;
+        var captivePortalLikely = statusCode is >= 300 and < 400
+            || httpReachable && !expectedContentMatched;
+        var online = networkAvailable && dnsResolved && httpReachable
+            && expectedContentMatched && !captivePortalLikely;
+
+        return new InternetStatus(
+            online,
+            networkAvailable,
+            checkUri.ToString(),
+            dnsResolved,
+            addresses,
+            statusCode,
+            httpReachable,
+            expectedContentMatched,
+            redirectLocation,
+            captivePortalLikely,
+            dnsError,
+            httpError);
     }
 
     private object[] CollectAdapters(List<DiagnosticWarning> warnings)
@@ -238,4 +374,18 @@ public sealed class EndpointInfoCommandHandler : IEndpointCommandHandler
             return fallback;
         }
     }
+
+    private sealed record InternetStatus(
+        bool Online,
+        bool NetworkAvailable,
+        string CheckUrl,
+        bool DnsResolved,
+        string[] ResolvedAddresses,
+        int? HttpStatusCode,
+        bool HttpReachable,
+        bool ExpectedContentMatched,
+        string? RedirectLocation,
+        bool CaptivePortalLikely,
+        string? DnsError,
+        string? HttpError);
 }

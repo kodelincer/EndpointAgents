@@ -7,10 +7,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 $apiService = "EndpointAgents.ControlPlane.Api"
-$webService = "EndpointAgents.ControlPlane.Web"
+$legacyWebService = "EndpointAgents.ControlPlane.Web"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $apiOutput = Join-Path $InstallRoot "Api"
-$webOutput = Join-Path $InstallRoot "Web"
+$fileRepositoryRoot = Join-Path $env:ProgramData "EndpointAgents\ControlPlane\FileRepository"
+$officeRepositoryRoot = Join-Path $fileRepositoryRoot "Office"
+$officeManifestPath = Join-Path $officeRepositoryRoot "office-artifacts.json"
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -32,16 +34,8 @@ function Remove-ServiceIfPresent([string]$Name) {
 
 Assert-Administrator
 
-Push-Location (Join-Path $repoRoot "src\ControlPlane.Web")
-try {
-    npm.cmd ci
-    npm.cmd run build
-}
-finally {
-    Pop-Location
-}
-
-Remove-ServiceIfPresent $webService
+# Remove the retired supervisor during upgrades from the former two-service layout.
+Remove-ServiceIfPresent $legacyWebService
 Remove-ServiceIfPresent $apiService
 
 if (Test-Path -LiteralPath $InstallRoot) {
@@ -55,18 +49,20 @@ if (Test-Path -LiteralPath $InstallRoot) {
 
 dotnet publish (Join-Path $repoRoot "src\ControlPlane.Api\ControlPlane.Api.csproj") `
     -c $Configuration -r win-x64 --self-contained false -o $apiOutput
-dotnet publish (Join-Path $repoRoot "src\ControlPlane.WebHost\ControlPlane.WebHost.csproj") `
-    -c $Configuration -r win-x64 --self-contained false -o $webOutput
+
+New-Item -ItemType Directory -Path $officeRepositoryRoot -Force | Out-Null
+if (-not (Test-Path -LiteralPath $officeManifestPath)) {
+    @{ version = 1; artifacts = @() } | ConvertTo-Json -Depth 5 |
+        Set-Content -LiteralPath $officeManifestPath -Encoding utf8
+}
 
 $apiExe = Join-Path $apiOutput "ControlPlane.Api.exe"
-$webExe = Join-Path $webOutput "ControlPlane.WebHost.exe"
 
 & sc.exe create $apiService binPath= "`"$apiExe`"" start= auto DisplayName= "EndpointAgents Control Plane API" | Out-Null
-& sc.exe create $webService binPath= "`"$webExe`"" start= auto DisplayName= "EndpointAgents Control Plane Web" | Out-Null
 & sc.exe failure $apiService reset= 86400 actions= restart/5000/restart/15000/restart/30000 | Out-Null
-& sc.exe failure $webService reset= 86400 actions= restart/5000/restart/15000/restart/30000 | Out-Null
 
 Start-Service -Name $apiService
-Start-Service -Name $webService
 
-Write-Host "Control plane installed. Open http://127.0.0.1:3000"
+Write-Host "Control plane API installed on http://127.0.0.1:5052."
+Write-Host "Office remediation manifest: $officeManifestPath"
+Write-Host "ControlPlane.Web is separate; start it from src\ControlPlane.Web with npm.cmd run start."

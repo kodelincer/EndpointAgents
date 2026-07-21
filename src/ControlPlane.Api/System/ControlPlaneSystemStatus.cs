@@ -10,5 +10,5 @@ public sealed record ControlPlaneSystemStatus(
     int ConnectedAgents,
     int RetainedActivity);
 
-/// <summary>Request body used by the local supervisor to change maintenance state.</summary>
+/// <summary>Request body used by the local operator console to change maintenance state.</summary>
 public sealed record MaintenanceModeRequest(bool Enabled);

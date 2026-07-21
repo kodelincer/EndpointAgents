@@ -2,81 +2,139 @@
 
 ## Runtime architecture
 
-The control plane is intentionally split into two Windows services:
+The control plane has two independent processes:
 
-- `EndpointAgents.ControlPlane.Api` owns endpoint SignalR connections, the command catalogue, RPC dispatch, and the bounded in-memory activity history.
-- `EndpointAgents.ControlPlane.Web` serves the exported Next.js operations console and controls the API through Windows Service Control Manager (SCM).
+- `EndpointAgents.ControlPlane.Api` is the ASP.NET Core Windows service. It owns endpoint connections, the REST API, both SignalR hubs, command dispatch, health endpoints, file delivery, and in-memory activity history.
+- `ControlPlane.Web` is the Next.js dashboard. It runs as a Node process on loopback port 3000 and calls the API on port 5052. It is never exported or copied into the API's `wwwroot`.
 
-The Web service has no dependency on the API service. It therefore remains available when the API is stopped and can start it again. The first release is unauthenticated and binds the Web service only to `127.0.0.1`; do not expose port 3000 to another machine until authentication and authorization are added.
+Only the API is installed as a Windows service. The Next.js process is started manually in this phase, so it does not restart automatically after logout or reboot.
+
+The dashboard and operator APIs remain unauthenticated and loopback-only. Endpoint agents can remotely reach only the agent hub, health endpoints, and approved artifact route. Do not expose the operator surface to the network until authentication and authorization are added.
 
 ## Ports and routes
 
-| Address | Purpose |
-| --- | --- |
-| `http://127.0.0.1:3000` | Production operations console and local management API |
-| `http://127.0.0.1:5053` | WebHost management API during local development |
-| `http://localhost:5052/agent-hub` | Endpoint-agent SignalR hub |
-| `http://localhost:5052/dashboard-hub` | Browser activity SignalR hub |
-| `http://localhost:5052/health/live` | API process liveness |
-| `http://localhost:5052/health/ready` | Command readiness; returns 503 in maintenance |
+| Address | Access | Purpose |
+| --- | --- | --- |
+| `http://127.0.0.1:3000/` | Server only | Next.js operations dashboard |
+| `http://127.0.0.1:5052/` | Server only | API identity/status JSON |
+| `http://<server>:5052/agent-hub` | Remote | Endpoint-agent SignalR hub |
+| `http://127.0.0.1:5052/dashboard-hub` | Server only | Browser SignalR hub |
+| `http://<server>:5052/health/live` | Remote | API liveness |
+| `http://<server>:5052/health/ready` | Remote | Command readiness; returns 503 during maintenance |
+| `http://<server>:5052/api/files/ibsng-dialer` | Remote | Managed artifact download |
+| `http://<server>:5052/api/files/office/catalog` | Remote | Hash-verified Office remediation catalog |
+| `http://<server>:5052/api/files/office/{artifactId}` | Remote | One catalog-approved Office artifact |
 
-`ControlPlane.Api` listens on port 5052 for endpoint agents. `ControlPlane.WebHost` rejects management requests whose remote address is not loopback.
+Port 5052 never serves dashboard HTML. Unknown frontend routes on the API return HTTP 404, while non-loopback requests to operator routes return HTTP 403.
 
 ## Local development
 
-Run these in separate terminals from the repository root:
+Run the API from the repository root:
 
 ```powershell
-dotnet run --project src\ControlPlane.Api\ControlPlane.Api.csproj --launch-profile http
-dotnet run --project src\ControlPlane.WebHost\ControlPlane.WebHost.csproj --launch-profile http
-Set-Location src\ControlPlane.Web
+dotnet run --project .\src\ControlPlane.Api\ControlPlane.Api.csproj --launch-profile http
+```
+
+Run the frontend in a second terminal:
+
+```powershell
+Set-Location .\src\ControlPlane.Web
 npm.cmd run dev
 ```
 
-Open `http://localhost:3000`. In development, the Next.js app calls WebHost on port 5053 and ControlPlane.Api on port 5052.
+Open `http://localhost:3000`. The frontend defaults to `http://localhost:5052`; set `NEXT_PUBLIC_CONTROL_PLANE_URL` before starting or building only when the API address differs.
 
-## Install as Windows services
+Run the complete endpoint agent from one PowerShell prompt when testing the
+connection path:
 
-From an elevated PowerShell session:
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\run-endpoint-dev.ps1
+```
+
+The command builds and starts both `EndpointAgents.Service` and
+`EndpointAgents.Tray`; press Ctrl+C to stop both. Stop an installed endpoint
+service and exit any existing Tray instance before using the development host.
+
+In Visual Studio, select the shared `Endpoint Agent - Service + Tray` launch
+profile and press F5 to start and debug both projects together. The service owns
+SignalR and background commands, while the Tray remains in the logged-in user's
+interactive Windows session and communicates with the service through named
+pipes.
+
+The Tray recognizes a service started interactively by the development command
+or Visual Studio and labels it `Interactive`; Windows-service Start and Stop
+controls remain disabled in this mode.
+
+To build a Release-flavored local development host instead:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\run-endpoint-dev.ps1 -Configuration Release
+```
+
+## Production build and startup
+
+Install or update the API Windows service from an elevated PowerShell session:
 
 ```powershell
 .\scripts\install-control-plane.ps1
 ```
 
-The script builds the static Web export, publishes both .NET applications under `Program Files\EndpointAgents\ControlPlane`, registers automatic-start services, configures restart-on-failure, and starts both services.
+The installer publishes only `ControlPlane.Api`, registers `EndpointAgents.ControlPlane.Api`, configures restart-on-failure, and removes the retired `EndpointAgents.ControlPlane.Web` service when upgrading an older installation.
 
-To uninstall:
+Build and start the separate Next.js server manually:
+
+```powershell
+Set-Location .\src\ControlPlane.Web
+npm.cmd ci
+npm.cmd run build
+npm.cmd run start
+```
+
+`npm.cmd run start` binds to `127.0.0.1:3000` and must remain running for the dashboard to be available.
+
+To uninstall the API service:
 
 ```powershell
 .\scripts\uninstall-control-plane.ps1
 ```
 
-Add `-RemovePublishedFiles` to remove the published binaries too. The initial local deployment uses the default service identity so WebHost can call SCM. Before enabling remote access, move WebHost to a dedicated service account granted control rights only over `EndpointAgents.ControlPlane.Api`.
+Add `-RemovePublishedFiles` to remove the published API binaries. The uninstaller also cleans up the retired web service if an older installation still contains it.
+
+Install the endpoint Windows Service and per-user Tray startup registration from
+an elevated prompt on an endpoint machine:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\install-endpoint.ps1 `
+  -ControlPlaneHubUrl 'http://CONTROL-PLANE-SERVER:5052/agent-hub'
+```
+
+This is one installation action: the background service starts immediately and
+the Tray starts for each user at their next interactive logon. Remove both
+registrations with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\uninstall-endpoint.ps1
+```
 
 ## Lifecycle behavior
 
-- **Start** starts the API Windows service and waits up to 30 seconds for SCM to report `Running`.
-- **Stop** asks SCM to stop the API and waits for `Stopped`. Connected agents disconnect and in-flight commands end.
-- **Restart** performs a bounded stop followed by start.
-- **Maintenance** keeps the API and SignalR connections alive but rejects new endpoint commands with HTTP 503.
+- **Maintenance** keeps the API and agent connections alive but rejects new endpoint commands with HTTP 503.
 - **Resume** enables command execution again.
+- **API crash recovery** is handled by Windows Service Control Manager.
+- **Web process recovery** is manual in this phase; restart it with `npm.cmd run start`.
 
-Only one lifecycle action runs at a time. A competing request receives HTTP 409. Maintenance state is process-local and resets to normal after an API restart.
-
-## Health interpretation
-
-- `healthy`: Windows service is running; liveness and readiness pass.
-- `maintenance`: process is live, readiness is 503, and command execution is intentionally paused.
-- `degraded`: process responds but readiness fails for a reason other than maintenance.
-- `unreachable`: health endpoints cannot be reached or the service is stopped.
-- `unknown`: SCM state could not be read.
-
-The dashboard polls service health every five seconds and preserves the last successful snapshot when a later poll fails.
+Maintenance state is process-local and resets to normal after an API restart. Activity is also in memory and capped at 500 records.
 
 ## Troubleshooting
 
-- **Web opens but service status is unavailable:** start `ControlPlane.WebHost` on port 5053 during development, or verify the Web Windows service is running in production.
-- **Start/stop reports access denied:** run WebHost under an account with SCM control rights for the API service.
-- **Agents cannot connect:** verify port 5052 is reachable and each endpoint uses the server's actual hostname or IP rather than its own `localhost`.
-- **Build reports locked assemblies:** stop the running API/WebHost process or build with an isolated `BaseOutputPath`.
-- **No old activity after restart:** activity is intentionally in memory and capped at 500 records; no database is used in this phase.
+- **API reports a missing `wwwroot` directory:** rebuild after these separation changes; the API no longer requires `wwwroot` or `ControlPlane.Web\out`.
+- **Dashboard reports SignalR negotiation failure:** verify the API is listening on port 5052 and that `GET http://localhost:5052/health/live` returns 200.
+- **Port 5052 returns JSON instead of the dashboard:** expected; open `http://localhost:3000`.
+- **A remote browser receives HTTP 403:** expected in the unauthenticated phase; open the dashboard on the control-plane server.
+- **Agents cannot connect:** use the control-plane server's hostname or IP in endpoint configuration instead of the endpoint machine's `localhost`.
+- **Readiness returns HTTP 503:** maintenance mode is enabled.
+- **Build reports locked assemblies:** stop the running API process or build with an isolated `BaseOutputPath`.

@@ -3,6 +3,6 @@
     <StartupCommand>npm run dev</StartupCommand>
     <JavaScriptTestFramework>Vitest</JavaScriptTestFramework>
     <ShouldRunBuildScript>false</ShouldRunBuildScript>
-    <BuildOutputFolder>$(MSBuildProjectDirectory)\out</BuildOutputFolder>
+    <BuildOutputFolder>$(MSBuildProjectDirectory)\.next</BuildOutputFolder>
   </PropertyGroup>
 </Project>

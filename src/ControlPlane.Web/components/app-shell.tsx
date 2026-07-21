@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, LayoutDashboard, RefreshCw, Server, Waypoints } from "lucide-react";
+import { CircleAlert, FileArchive, LayoutDashboard, LifeBuoy, RefreshCw, Server, Waypoints } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useControlPlane } from "@/lib/control-plane-context";
@@ -13,7 +13,7 @@ function statusLabel(state: ConnectionState) {
 /** Provides persistent navigation and connection feedback across operations pages. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
-  const { agents, connection, refresh } = useControlPlane();
+  const { agents, supportRequests, connection, refresh } = useControlPlane();
 
   return <main className="app-shell">
     <header className="topbar">
@@ -24,6 +24,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <nav className="primary-nav" aria-label="Control plane">
         <Link className={path === "/" ? "active" : ""} href="/"><LayoutDashboard size={15} />Overview</Link>
         <Link className={path.startsWith("/agents") ? "active" : ""} href="/agents/"><Waypoints size={15} />Agents</Link>
+        <Link className={path.startsWith("/files") ? "active" : ""} href="/files/"><FileArchive size={15} />Files</Link>
+        <Link className={path.startsWith("/support") ? "active" : ""} href="/support/"><LifeBuoy size={15} />Helpdesk{supportRequests.length > 0 && <span className="nav-count">{supportRequests.length}</span>}</Link>
       </nav>
       <div className="topbar-status">
         <span className={`connection-state ${connection}`}><span className="state-dot" />{statusLabel(connection)}</span>

@@ -1,0 +1,15 @@
+[
+  {
+    "Name": "Endpoint Agent - Service + Tray",
+    "Projects": [
+      {
+        "Path": "src\\EndpointAgents.Service\\EndpointAgents.Service.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "src\\EndpointAgents.Tray\\EndpointAgents.Tray.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

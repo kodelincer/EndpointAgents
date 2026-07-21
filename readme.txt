@@ -4,7 +4,8 @@ Core = endpoint business rules and abstractions
 Platform.Windows = real Windows implementation
 Service = background host that wires everything together
 Tray = user interface near Windows clock
-ControlPlane.Api = server side
+ControlPlane.Api = server-side REST and SignalR backend running as a Windows service
+ControlPlane.Web = independent Next.js dashboard running on loopback port 3000
 
 
 Notes:
@@ -34,13 +35,14 @@ Notes:
 
 - Platform.Windows: EndpointAgents.Platform.Windows contains real Windows-specific features:
   Teammates usually add their functionality here.
-	Network diagnostics
+	Endpoint information and internet checks
+	IBSng diagnostics, artifact verification, repair, and launch commands
+	Interactive Windows user-session discovery
 	Printer diagnostics
 	Windows services
 	Registry checks
 	Installed software checks
 	VPN/dialer checks
-	Office checks
 
 - Service: EndpointAgents.Service is the Windows background service.
 	It handles:
@@ -55,15 +57,23 @@ Notes:
 
 - Tray: EndpointAgents.Tray is only the visible tray icon app.
 	It handles:
-		tray icon
-		right-click menu
-		double-click support form
-		show status
-		send user problem text
+		status-aware tray icons for ready, paused, stopped, warning, and error states
+		right-click status and log menu
+		double-click Helpdesk, Status & Controls, and Logs form
+		Persian/RTL support request editing and submission
+		administrator-approved start, stop, pause-functions, and resume controls
+		Windows Event Log viewing and export
+		secured named-pipe command listener
+		launch the approved IBSng dialer in the interactive user session
 
 	Rule:
-		Tray app should not execute powerful admin commands directly.
-		Later, tray talks to the background service by Named Pipe or localhost IPC.
+		Tray app executes only narrow user-session actions requested by the service.
+		The background service owns the control-plane connection and runtime state.
+		It never accepts credentials from the control-plane command channel.
+
+- Helpdesk requests:
+	Tray -> EndpointAgents.Service local IPC -> AgentHub -> ControlPlane.Web /support
+	Requests are live and in-memory on the control plane; Windows endpoint logs remain in Event Log.
 
 
 

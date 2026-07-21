@@ -2,7 +2,8 @@
 param([switch]$RemovePublishedFiles)
 
 $ErrorActionPreference = "Stop"
-$services = @("EndpointAgents.ControlPlane.Web", "EndpointAgents.ControlPlane.Api")
+# Include the retired Web service so this script also cleans up older installs.
+$services = @("EndpointAgents.ControlPlane.Api", "EndpointAgents.ControlPlane.Web")
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = [Security.Principal.WindowsPrincipal]::new($identity)
@@ -31,4 +32,4 @@ if ($RemovePublishedFiles) {
     }
 }
 
-Write-Host "Control plane services removed."
+Write-Host "Control plane service removed."

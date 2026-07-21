@@ -3,14 +3,15 @@
 import { HubConnectionBuilder, LogLevel } from "@microsoft/signalr";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { mergeActivity } from "./activity";
+import { mergeSupportRequests } from "./support";
 import { CONTROL_PLANE_URL, getSnapshot } from "./control-plane";
-import type { Activity, Agent, CommandDefinition, ConnectionState } from "./types";
+import type { Activity, Agent, CommandDefinition, ConnectionState, SupportRequest } from "./types";
 
 const EVENT_TYPES: Activity["type"][] =
   ["agent.connected", "agent.disconnected", "command.started", "command.completed"];
 
 type ControlPlaneContextValue = {
-  agents: Agent[]; activity: Activity[]; commands: CommandDefinition[];
+  agents: Agent[]; activity: Activity[]; commands: CommandDefinition[]; supportRequests: SupportRequest[];
   connection: ConnectionState; loading: boolean; loadError?: string;
   refresh: () => Promise<void>;
 };
@@ -22,6 +23,7 @@ export function ControlPlaneProvider({ children }: { children: React.ReactNode }
   const [agents, setAgents] = useState<Agent[]>([]);
   const [activity, setActivity] = useState<Activity[]>([]);
   const [commands, setCommands] = useState<CommandDefinition[]>([]);
+  const [supportRequests, setSupportRequests] = useState<SupportRequest[]>([]);
   const [connection, setConnection] = useState<ConnectionState>("connecting");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>();
@@ -34,6 +36,7 @@ export function ControlPlaneProvider({ children }: { children: React.ReactNode }
       setAgents(snapshot.agents);
       setActivity(current => mergeActivity(current, snapshot.activity));
       setCommands(snapshot.commands);
+      setSupportRequests(current => mergeSupportRequests(current, snapshot.supportRequests));
       setLoadError(undefined);
     } catch (error) {
       if (mounted.current)
@@ -58,6 +61,8 @@ export function ControlPlaneProvider({ children }: { children: React.ReactNode }
     };
 
     EVENT_TYPES.forEach(type => hub.on(type, receive));
+    hub.on("support.requested", (request: SupportRequest) =>
+      setSupportRequests(current => mergeSupportRequests(current, [request])));
     hub.onreconnecting(() => setConnection("reconnecting"));
     hub.onreconnected(() => { setConnection("live"); void refresh(); });
     hub.onclose(() => setConnection("offline"));
@@ -70,8 +75,8 @@ export function ControlPlaneProvider({ children }: { children: React.ReactNode }
     };
   }, [refresh]);
 
-  const value = useMemo(() => ({ agents, activity, commands, connection, loading, loadError, refresh }),
-    [agents, activity, commands, connection, loading, loadError, refresh]);
+  const value = useMemo(() => ({ agents, activity, commands, supportRequests, connection, loading, loadError, refresh }),
+    [agents, activity, commands, supportRequests, connection, loading, loadError, refresh]);
   return <ControlPlaneContext.Provider value={value}>{children}</ControlPlaneContext.Provider>;
 }
 

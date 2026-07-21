@@ -4,10 +4,9 @@
     <Project Path="src/ControlPlane.Api/ControlPlane.Api.csproj" />
     <Project Path="src/ControlPlane.Api.Tests/ControlPlane.Api.Tests.csproj" />
     <Project Path="src/ControlPlane.Web/ControlPlane.Web.esproj" />
-    <Project Path="src/ControlPlane.WebHost/ControlPlane.WebHost.csproj" />
-    <Project Path="src/ControlPlane.WebHost.Tests/ControlPlane.WebHost.Tests.csproj" />
     <Project Path="src/EndpointAgents.Core/EndpointAgents.Core.csproj" />
     <Project Path="src/EndpointAgents.Platform.Windows/EndpointAgents.Platform.Windows.csproj" />
+    <Project Path="src/EndpointAgents.Platform.Windows.Tests/EndpointAgents.Platform.Windows.Tests.csproj" />
     <Project Path="src/EndpointAgents.Service/EndpointAgents.Service.csproj" />
     <Project Path="src/EndpointAgents.Shared/EndpointAgents.Shared.csproj" />
     <Project Path="src/EndpointAgents.Tray/EndpointAgents.Tray.csproj" />

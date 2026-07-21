@@ -1,9 +1,7 @@
-import type { Activity, Agent, CommandDefinition, ManagedServiceStatus, RpcRequest, RpcResponse,
-  ServiceAction, ServiceActionResult } from "./types";
+import type { Activity, Agent, ApiSystemStatus, CommandDefinition, FileInventory,
+  MaintenanceModeResult, RpcRequest, RpcResponse, SupportRequest } from "./types";
 
 export const CONTROL_PLANE_URL = process.env.NEXT_PUBLIC_CONTROL_PLANE_URL ?? "http://localhost:5052";
-export const MANAGEMENT_URL = process.env.NEXT_PUBLIC_MANAGEMENT_URL ??
-  (process.env.NODE_ENV === "development" ? "http://127.0.0.1:5053" : "");
 
 async function read<T>(path: string): Promise<T> {
   const response = await fetch(`${CONTROL_PLANE_URL}${path}`, { cache: "no-store" });
@@ -13,10 +11,11 @@ async function read<T>(path: string): Promise<T> {
 
 /** Loads the REST snapshot used before and after SignalR connection changes. */
 export async function getSnapshot() {
-  const [agents, activity, commands] = await Promise.all([
-    read<Agent[]>("/api/agents"), read<Activity[]>("/api/activity?limit=500"), read<CommandDefinition[]>("/api/commands")
+  const [agents, activity, commands, supportRequests] = await Promise.all([
+    read<Agent[]>("/api/agents"), read<Activity[]>("/api/activity?limit=500"),
+    read<CommandDefinition[]>("/api/commands"), read<SupportRequest[]>("/api/support-requests?limit=200")
   ]);
-  return { agents, activity, commands };
+  return { agents, activity, commands, supportRequests };
 }
 
 /** Sends one reviewed JSON-RPC command to an online endpoint agent. */
@@ -29,23 +28,21 @@ export async function runCommand(agentId: string, request: RpcRequest): Promise<
   return body;
 }
 
-/** Reads Windows service and API health from the independent local supervisor. */
-export async function getManagedServiceStatus(): Promise<ManagedServiceStatus> {
-  const response = await fetch(`${MANAGEMENT_URL}/api/management/control-plane`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Management service returned ${response.status}.`);
-  return response.json() as Promise<ManagedServiceStatus>;
+/** Reads the administrator-managed artifacts that endpoint agents may download. */
+export function getFileInventory(): Promise<FileInventory> {
+  return read<FileInventory>("/api/files");
 }
 
-/** Requests one serialized lifecycle action from the local supervisor. */
-export async function runServiceAction(action: ServiceAction): Promise<ServiceActionResult> {
-  const route: Record<ServiceAction, string> = {
-    start: "start", stop: "stop", restart: "restart",
-    enterMaintenance: "enter-maintenance", exitMaintenance: "exit-maintenance"
-  };
-  const response = await fetch(`${MANAGEMENT_URL}/api/management/control-plane/${route[action]}`, {
-    method: "POST", headers: { "Content-Type": "application/json" }
+/** Reads process health and operator-visible state directly from the unified API. */
+export function getSystemStatus(): Promise<ApiSystemStatus> {
+  return read<ApiSystemStatus>("/api/system/status");
+}
+
+/** Pauses or resumes new endpoint commands without stopping the API service. */
+export async function setMaintenanceMode(enabled: boolean): Promise<MaintenanceModeResult> {
+  const response = await fetch(`${CONTROL_PLANE_URL}/api/system/maintenance`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled })
   });
-  const result = await response.json() as ServiceActionResult;
-  if (!response.ok && !result.message) throw new Error(`Service action failed with ${response.status}.`);
-  return result;
+  if (!response.ok) throw new Error(`Maintenance update failed with status ${response.status}.`);
+  return response.json() as Promise<MaintenanceModeResult>;
 }

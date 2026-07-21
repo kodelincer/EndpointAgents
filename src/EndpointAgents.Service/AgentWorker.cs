@@ -1,6 +1,7 @@
 using EndpointAgents.Core.Commands;
 using EndpointAgents.Shared.Agents;
 using EndpointAgents.Shared.Rpc;
+using EndpointAgents.Shared.Support;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Options;
 
@@ -23,16 +24,20 @@ public sealed class AgentWorker : BackgroundService
     private readonly ControlPlaneOptions _options;
     private readonly SemaphoreSlim _commandSlots;
     private readonly string _agentId;
+    private readonly AgentRuntimeState _runtime;
     private readonly DateTimeOffset _startedAtUtc = DateTimeOffset.UtcNow;
     private HubConnection? _connection;
 
     public AgentWorker(ILogger<AgentWorker> logger, CommandDispatcher dispatcher,
-        IOptions<ControlPlaneOptions> options, AgentIdentityProvider identityProvider)
+        IOptions<ControlPlaneOptions> options, AgentIdentityProvider identityProvider,
+        AgentRuntimeState runtime)
     {
         _logger = logger;
         _dispatcher = dispatcher;
         _options = options.Value;
         _agentId = identityProvider.GetOrCreate(_options.AgentId);
+        _runtime = runtime;
+        _runtime.Initialize(_agentId, _options.Version);
         _commandSlots = new SemaphoreSlim(_options.MaxConcurrentCommands, _options.MaxConcurrentCommands);
     }
 
@@ -45,6 +50,7 @@ public sealed class AgentWorker : BackgroundService
     {
         _connection = CreateConnection(stoppingToken);
         RegisterRpcHandler(_connection, stoppingToken);
+        _runtime.SetConnection(AgentConnectionStatus.Connecting);
 
         try
         {
@@ -56,10 +62,12 @@ public sealed class AgentWorker : BackgroundService
                     // automatic reconnect owns the intermediate reconnecting states.
                     if (_connection.State == HubConnectionState.Disconnected)
                     {
+                        _runtime.SetConnection(AgentConnectionStatus.Connecting);
                         _logger.LogInformation("Connecting agent {AgentId} to control plane: {HubUrl}",
                             _agentId, _options.HubUrl);
                         await _connection.StartAsync(stoppingToken);
                         await RegisterAgentAsync(stoppingToken);
+                        _runtime.SetConnection(AgentConnectionStatus.Connected);
                         _logger.LogInformation("Endpoint agent connected.");
                     }
 
@@ -73,6 +81,7 @@ public sealed class AgentWorker : BackgroundService
                 }
                 catch (Exception ex)
                 {
+                    _runtime.SetConnection(AgentConnectionStatus.Disconnected, ex);
                     var retryDelay = GetRetryDelay();
                     _logger.LogWarning(ex,
                         "Control plane connection failed. Retrying in {RetryDelay}.", retryDelay);
@@ -97,6 +106,7 @@ public sealed class AgentWorker : BackgroundService
 
         connection.Reconnecting += exception =>
         {
+            _runtime.SetConnection(AgentConnectionStatus.Reconnecting, exception);
             _logger.LogWarning(exception, "Connection to control plane lost. Reconnecting...");
             return Task.CompletedTask;
         };
@@ -112,6 +122,7 @@ public sealed class AgentWorker : BackgroundService
                 _logger.LogInformation("Reconnected to control plane. ConnectionId: {ConnectionId}",
                     connectionId);
                 await RegisterAgentAsync(stoppingToken);
+                _runtime.SetConnection(AgentConnectionStatus.Connected);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -119,12 +130,14 @@ public sealed class AgentWorker : BackgroundService
             }
             catch (Exception ex)
             {
+                _runtime.SetConnection(AgentConnectionStatus.Faulted, ex);
                 _logger.LogWarning(ex, "Failed to register the agent after reconnecting.");
             }
         };
 
         connection.Closed += exception =>
         {
+            _runtime.SetConnection(AgentConnectionStatus.Disconnected, exception);
             if (!stoppingToken.IsCancellationRequested)
                 _logger.LogWarning(exception, "Connection to control plane closed.");
             return Task.CompletedTask;
@@ -143,6 +156,14 @@ public sealed class AgentWorker : BackgroundService
     private async Task<RpcResponse> ExecuteCommandAsync(RpcRequest request,
         CancellationToken stoppingToken)
     {
+        if (_runtime.IsPaused)
+        {
+            _logger.LogWarning("Rejected command {Method} with request id {RequestId}: functions paused.",
+                request.Method, request.Id);
+            return RpcResponse.Failure(request.Id, 503,
+                "Endpoint functions are paused by a local administrator.");
+        }
+
         // Do not queue unlimited work: return an explicit busy response immediately.
         if (!await _commandSlots.WaitAsync(TimeSpan.Zero, stoppingToken))
         {
@@ -155,6 +176,7 @@ public sealed class AgentWorker : BackgroundService
 
         try
         {
+            _runtime.BeginCommand(request.Method);
             _logger.LogInformation("Received command {Method} with request id {RequestId}",
                 request.Method, request.Id);
 
@@ -168,11 +190,20 @@ public sealed class AgentWorker : BackgroundService
             // Distinguish a command timeout from normal service shutdown.
             if (commandTimeout.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
             {
-                return RpcResponse.Failure(request.Id, 408,
+                response = RpcResponse.Failure(request.Id, 408,
                     $"Command exceeded the {_options.CommandTimeoutSeconds}-second timeout.");
             }
 
+            _runtime.CompleteCommand(request.Method, response.Error is null,
+                response.Error is null ? null : $"Command.{response.Error.Code}",
+                response.Error?.Message);
             return response;
+        }
+        catch (Exception ex)
+        {
+            _runtime.CompleteCommand(request.Method, false,
+                "Command." + ex.GetType().Name, ex.Message);
+            throw;
         }
         finally
         {
@@ -188,6 +219,35 @@ public sealed class AgentWorker : BackgroundService
         var registration = new AgentRegistration(_agentId, Environment.MachineName,
             Environment.MachineName, Environment.UserName, _options.Version, _startedAtUtc);
         await _connection.InvokeAsync("RegisterAgent", registration, cancellationToken);
+    }
+
+    public async Task<SupportRequestReceipt> SubmitSupportRequestAsync(
+        SupportRequestDraft draft, string userName, CancellationToken cancellationToken)
+    {
+        var connection = _connection;
+        if (connection is null || connection.State != HubConnectionState.Connected)
+        {
+            return new SupportRequestReceipt(string.Empty, DateTimeOffset.UtcNow, false,
+                "The endpoint is not connected to the control plane. Your message was not sent.");
+        }
+
+        var snapshot = _runtime.GetSnapshot();
+        var submission = new SupportRequestSubmission(draft.ClientRequestId, draft.Subject,
+            draft.MessageText, draft.TextDirection, snapshot.AgentId, snapshot.MachineName,
+            userName, draft.SessionId, DateTimeOffset.UtcNow, snapshot, draft.LogExcerpts,
+            draft.IbsngDiagnostics);
+        try
+        {
+            return await connection.InvokeAsync<SupportRequestReceipt>("SubmitSupportRequest",
+                submission, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _runtime.RecordProblem("Support." + ex.GetType().Name, ex.Message);
+            _logger.LogWarning(ex, "Failed to submit a local helpdesk request.");
+            return new SupportRequestReceipt(string.Empty, DateTimeOffset.UtcNow, false,
+                "The control plane did not accept the support request. Try again after reconnecting.");
+        }
     }
 
     private async Task ShutdownConnectionAsync()
@@ -213,6 +273,7 @@ public sealed class AgentWorker : BackgroundService
         {
             await _connection.DisposeAsync();
             _connection = null;
+            _runtime.SetConnection(AgentConnectionStatus.Disconnected);
             _logger.LogInformation("Control plane connection stopped.");
         }
     }
