@@ -1,5 +1,6 @@
 using EndpointAgents.Core.Commands;
 using EndpointAgents.Shared.Agents;
+using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Support;
 using Microsoft.AspNetCore.SignalR.Client;
@@ -23,19 +24,22 @@ public sealed class AgentWorker : BackgroundService
     private readonly CommandDispatcher _dispatcher;
     private readonly ControlPlaneOptions _options;
     private readonly SemaphoreSlim _commandSlots;
-    private readonly string _agentId;
+    private string _agentId;
+    private readonly AgentCredentialProvider _credentialProvider;
+    private AgentDeviceCredential? _credential;
     private readonly AgentRuntimeState _runtime;
     private readonly DateTimeOffset _startedAtUtc = DateTimeOffset.UtcNow;
     private HubConnection? _connection;
 
     public AgentWorker(ILogger<AgentWorker> logger, CommandDispatcher dispatcher,
         IOptions<ControlPlaneOptions> options, AgentIdentityProvider identityProvider,
-        AgentRuntimeState runtime)
+        AgentCredentialProvider credentialProvider, AgentRuntimeState runtime)
     {
         _logger = logger;
         _dispatcher = dispatcher;
         _options = options.Value;
         _agentId = identityProvider.GetOrCreate(_options.AgentId);
+        _credentialProvider = credentialProvider;
         _runtime = runtime;
         _runtime.Initialize(_agentId, _options.Version);
         _commandSlots = new SemaphoreSlim(_options.MaxConcurrentCommands, _options.MaxConcurrentCommands);
@@ -48,6 +52,12 @@ public sealed class AgentWorker : BackgroundService
     /// <param name="stoppingToken">Raised by the host when the service is stopping.</param>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _credential = await _credentialProvider.GetOrEnrollAsync(_agentId, stoppingToken);
+        if (_credential is not null && _credential.AgentId != _agentId)
+        {
+            _agentId = _credential.AgentId;
+            _runtime.Initialize(_agentId, _options.Version);
+        }
         _connection = CreateConnection(stoppingToken);
         RegisterRpcHandler(_connection, stoppingToken);
         _runtime.SetConnection(AgentConnectionStatus.Connecting);
@@ -100,7 +110,12 @@ public sealed class AgentWorker : BackgroundService
         // Attach callbacks before StartAsync so commands cannot arrive before the
         // worker is ready to process them.
         var connection = new HubConnectionBuilder()
-            .WithUrl(_options.HubUrl)
+            .WithUrl(_options.HubUrl, connectionOptions =>
+            {
+                if (_credential is not null)
+                    connectionOptions.AccessTokenProvider =
+                        () => Task.FromResult<string?>(_credential.DeviceToken);
+            })
             .WithAutomaticReconnect(new JitteredRetryPolicy())
             .Build();
 
@@ -248,6 +263,35 @@ public sealed class AgentWorker : BackgroundService
             return new SupportRequestReceipt(string.Empty, DateTimeOffset.UtcNow, false,
                 "The control plane did not accept the support request. Try again after reconnecting.");
         }
+    }
+
+    public Task<ChatConversation> OpenChatAsync(ChatIdentity identity,
+        CancellationToken cancellationToken) =>
+        GetConnectedConnection().InvokeAsync<ChatConversation>(
+            "OpenChat", identity, cancellationToken);
+
+    public Task<ChatMessageReceipt> SendChatMessageAsync(ChatMessageSubmission submission,
+        CancellationToken cancellationToken) =>
+        GetConnectedConnection().InvokeAsync<ChatMessageReceipt>(
+            "SendChatMessage", submission, cancellationToken);
+
+    public Task<ChatDelta> GetChatDeltaAsync(ChatDeltaRequest request,
+        CancellationToken cancellationToken) =>
+        GetConnectedConnection().InvokeAsync<ChatDelta>(
+            "GetChatDelta", request, cancellationToken);
+
+    public Task<ChatActionDecisionReceipt> RespondToChatActionAsync(
+        ChatActionDecision decision, CancellationToken cancellationToken) =>
+        GetConnectedConnection().InvokeAsync<ChatActionDecisionReceipt>(
+            "RespondToChatAction", decision, cancellationToken);
+
+    private HubConnection GetConnectedConnection()
+    {
+        var connection = _connection;
+        if (connection is null || connection.State != HubConnectionState.Connected)
+            throw new InvalidOperationException(
+                "The endpoint is not connected to the control plane.");
+        return connection;
     }
 
     private async Task ShutdownConnectionAsync()

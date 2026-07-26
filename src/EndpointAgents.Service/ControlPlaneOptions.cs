@@ -12,6 +12,13 @@ public sealed class ControlPlaneOptions
     /// </summary>
     public string? AgentId { get; set; }
 
+    /// <summary>One-time code used only when no protected device token exists.</summary>
+    public string? EnrollmentCode { get; set; }
+
+    /// <summary>Machine-scoped DPAPI file containing the endpoint credential.</summary>
+    public string DeviceCredentialPath { get; set; } =
+        @"C:\ProgramData\EndpointAgents\Credentials\device-credential.bin";
+
     /// <summary>Version advertised when the agent registers.</summary>
     public string Version { get; set; } = "0.1.0";
 

@@ -9,6 +9,10 @@ public static class ServiceIpcProtocol
     public const string PauseMethod = "agent.pause";
     public const string ResumeMethod = "agent.resume";
     public const string SubmitSupportMethod = "support.submit";
+    public const string OpenChatMethod = "chat.open";
+    public const string SendChatMessageMethod = "chat.send";
+    public const string GetChatDeltaMethod = "chat.sync";
+    public const string RespondToChatActionMethod = "chat.action.respond";
     public const string DiagnoseIbsngMethod = "ibsng.diagnose";
     public const string OpenIbsngMethod = "ibsng.open";
     public const int MaxMessageCharacters = 64 * 1024;

@@ -1,6 +1,7 @@
 using EndpointAgents.Core.Commands;
 using EndpointAgents.Platform.Windows.Ibsng;
 using EndpointAgents.Shared.Ibsng;
+using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.LocalIpc;
 using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Support;
@@ -113,8 +114,20 @@ public sealed class ServiceIpcServer(
             case ServiceIpcProtocol.SubmitSupportMethod:
                 return await SubmitSupportAsync(pipe, request, cancellationToken);
 
+            case ServiceIpcProtocol.OpenChatMethod:
+                return await OpenChatAsync(pipe, request, cancellationToken);
+
+            case ServiceIpcProtocol.SendChatMessageMethod:
+                return await SendChatMessageAsync(pipe, request, cancellationToken);
+
+            case ServiceIpcProtocol.GetChatDeltaMethod:
+                return await GetChatDeltaAsync(pipe, request, cancellationToken);
+
+            case ServiceIpcProtocol.RespondToChatActionMethod:
+                return await RespondToChatActionAsync(pipe, request, cancellationToken);
+
             case ServiceIpcProtocol.DiagnoseIbsngMethod:
-                return await DiagnoseIbsngAsync(request, cancellationToken);
+                return await DiagnoseIbsngAsync(pipe, request, cancellationToken);
 
             case ServiceIpcProtocol.OpenIbsngMethod:
                 return await OpenIbsngAsync(request, cancellationToken);
@@ -125,15 +138,69 @@ public sealed class ServiceIpcServer(
         }
     }
 
-    private async Task<ServiceIpcResponse> DiagnoseIbsngAsync(ServiceIpcRequest request,
+    private async Task<ServiceIpcResponse> OpenChatAsync(NamedPipeServerStream pipe,
+        ServiceIpcRequest request, CancellationToken cancellationToken)
+    {
+        var supplied = request.Payload?.Deserialize<ChatIdentity>();
+        var identity = GetCallerIdentity(pipe, supplied?.SessionId ?? 0);
+        var conversation = await worker.OpenChatAsync(identity, cancellationToken);
+        return Success(request.Id, "Opened", conversation);
+    }
+
+    private async Task<ServiceIpcResponse> SendChatMessageAsync(NamedPipeServerStream pipe,
+        ServiceIpcRequest request, CancellationToken cancellationToken)
+    {
+        var submission = request.Payload?.Deserialize<ChatMessageSubmission>()
+            ?? throw new InvalidDataException("The chat message body is missing.");
+        var normalized = submission with
+        {
+            Identity = GetCallerIdentity(pipe, submission.Identity.SessionId)
+        };
+        var receipt = await worker.SendChatMessageAsync(normalized, cancellationToken);
+        return receipt.Accepted
+            ? Success(request.Id, "Queued", receipt)
+            : new ServiceIpcResponse(request.Id, false, "ChatRejected",
+                JsonSerializer.SerializeToElement(receipt), receipt.Message);
+    }
+
+    private async Task<ServiceIpcResponse> GetChatDeltaAsync(NamedPipeServerStream pipe,
+        ServiceIpcRequest request, CancellationToken cancellationToken)
+    {
+        var delta = request.Payload?.Deserialize<ChatDeltaRequest>()
+            ?? throw new InvalidDataException("The chat synchronization body is missing.");
+        var normalized = delta with
+        {
+            Identity = GetCallerIdentity(pipe, delta.Identity.SessionId)
+        };
+        return Success(request.Id, "Synchronized",
+            await worker.GetChatDeltaAsync(normalized, cancellationToken));
+    }
+
+    private async Task<ServiceIpcResponse> RespondToChatActionAsync(
+        NamedPipeServerStream pipe, ServiceIpcRequest request,
         CancellationToken cancellationToken)
+    {
+        var decision = request.Payload?.Deserialize<ChatActionDecision>()
+            ?? throw new InvalidDataException("The action decision body is missing.");
+        var normalized = decision with
+        {
+            Identity = GetCallerIdentity(pipe, decision.Identity.SessionId)
+        };
+        return Success(request.Id, "Decided",
+            await worker.RespondToChatActionAsync(normalized, cancellationToken));
+    }
+
+    private async Task<ServiceIpcResponse> DiagnoseIbsngAsync(NamedPipeServerStream pipe,
+        ServiceIpcRequest request, CancellationToken cancellationToken)
     {
         if (!IbsngDiagnoseCommandHandler.TryParse(request.Payload,
             ibsngOptions.Value.ServerHost, out var diagnosticRequest, out var error))
             return new ServiceIpcResponse(request.Id, false, "InvalidIbsngRequest",
                 Message: error);
 
-        var report = await ibsngDiagnostics.DiagnoseAsync(request.Id, diagnosticRequest!,
+        var caller = GetCallerIdentity(pipe, sessionId: 0);
+        var scopedRequest = diagnosticRequest! with { UserSid = caller.UserSid };
+        var report = await ibsngDiagnostics.DiagnoseAsync(request.Id, scopedRequest,
             cancellationToken);
         return Success(request.Id, "Diagnosed", report);
     }
@@ -232,6 +299,21 @@ public sealed class ServiceIpcServer(
         var name = "Local user";
         pipe.RunAsClient(() => name = WindowsIdentity.GetCurrent().Name);
         return name;
+    }
+
+    private static ChatIdentity GetCallerIdentity(NamedPipeServerStream pipe, int sessionId)
+    {
+        ChatIdentity? caller = null;
+        pipe.RunAsClient(() =>
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            var sid = identity.User?.Value
+                ?? throw new UnauthorizedAccessException(
+                    "The named-pipe caller has no Windows user SID.");
+            caller = new ChatIdentity(sid, identity.Name, sessionId);
+        });
+        return caller ?? throw new UnauthorizedAccessException(
+            "The named-pipe caller identity could not be determined.");
     }
 
     private static bool IsCallerAdministrator(NamedPipeServerStream pipe)

@@ -21,4 +21,12 @@ describe("file repository presentation", () => {
     expect(fileRequirementLabels(officeFile)).toEqual(
       ["Interactive user", "Close Office apps"]);
   });
+
+  it("summarizes exclusive Office bugfix version ranges", () => {
+    expect(fileCompatibilityLabel({
+      ...officeFile,
+      category: "Office bugfix",
+      maxOfficeVersionExclusive: "17.0"
+    })).toBe("Office 16.0 to < 17.0");
+  });
 });

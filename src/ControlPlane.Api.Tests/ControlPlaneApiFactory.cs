@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Data.Sqlite;
 using System.Net;
 
 namespace ControlPlane.Api.Tests;
@@ -12,6 +13,7 @@ public sealed class ControlPlaneApiFactory : WebApplicationFactory<Program>
 {
     public string FileRepositoryRoot { get; } = Path.Combine(Path.GetTempPath(),
         $"EndpointAgents-api-tests-{Guid.NewGuid():N}");
+    public string DatabasePath => Path.Combine(FileRepositoryRoot, "control-plane.db");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -19,7 +21,10 @@ public sealed class ControlPlaneApiFactory : WebApplicationFactory<Program>
         builder.ConfigureAppConfiguration((_, configuration) =>
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["FileRepository:RootPath"] = FileRepositoryRoot
+                ["FileRepository:RootPath"] = FileRepositoryRoot,
+                ["Chat:DatabasePath"] = DatabasePath,
+                ["AgentSecurity:RequireHttps"] = "false",
+                ["Hermes:Enabled"] = "false"
             }));
         builder.ConfigureServices(services =>
             services.AddSingleton<IStartupFilter, TestConnectionStartupFilter>());
@@ -29,7 +34,10 @@ public sealed class ControlPlaneApiFactory : WebApplicationFactory<Program>
     {
         base.Dispose(disposing);
         if (disposing && Directory.Exists(FileRepositoryRoot))
+        {
+            SqliteConnection.ClearAllPools();
             Directory.Delete(FileRepositoryRoot, recursive: true);
+        }
     }
 
     public HttpClient CreateRemoteClient()

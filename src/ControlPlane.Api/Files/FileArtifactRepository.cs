@@ -21,6 +21,14 @@ public sealed record OfficeArtifactCatalogSnapshot(
     IReadOnlyList<OfficeFileArtifact> Artifacts,
     IReadOnlyList<FileRepositoryIssue> Issues);
 
+public sealed record OfficeBugfixFileArtifact(
+    FileArtifact File,
+    OfficeBugfixArtifactDescriptor Descriptor);
+
+public sealed record OfficeBugfixCatalogSnapshot(
+    IReadOnlyList<OfficeBugfixFileArtifact> Artifacts,
+    IReadOnlyList<FileRepositoryIssue> Issues);
+
 /// <summary>
 /// Read-only repository for administrator-provided, hash-verified endpoint files.
 /// Remote upload is intentionally unavailable while operator authentication is absent.
@@ -48,6 +56,7 @@ public sealed partial class FileArtifactRepository
     private readonly string _rootPath;
     private readonly string _officeRootPath;
     private readonly string _officeManifestPath;
+    private readonly string _officeBugfixManifestPath;
 
     public FileArtifactRepository(IOptions<FileRepositoryOptions> options,
         IHostEnvironment environment)
@@ -60,11 +69,14 @@ public sealed partial class FileArtifactRepository
             _options.OfficeDirectoryName));
         _officeManifestPath = Path.GetFullPath(Path.Combine(_officeRootPath,
             _options.OfficeManifestFileName));
+        _officeBugfixManifestPath = Path.GetFullPath(Path.Combine(_rootPath,
+            _options.OfficeBugfixManifestFileName));
     }
 
     public string RootPath => _rootPath;
     public string OfficeRootPath => _officeRootPath;
     public string OfficeManifestPath => _officeManifestPath;
+    public string OfficeBugfixManifestPath => _officeBugfixManifestPath;
     public string IbsngDialerFileName => _options.IbsngDialerFileName;
 
     public async Task<FileArtifact?> GetIbsngDialerAsync(CancellationToken cancellationToken)
@@ -165,6 +177,99 @@ public sealed partial class FileArtifactRepository
             artifactId, StringComparison.OrdinalIgnoreCase));
     }
 
+    public async Task<OfficeBugfixCatalogSnapshot> GetOfficeBugfixCatalogAsync(
+        CancellationToken cancellationToken)
+    {
+        Directory.CreateDirectory(_rootPath);
+        if (!File.Exists(_officeBugfixManifestPath))
+            return new OfficeBugfixCatalogSnapshot([], []);
+
+        OfficeBugfixManifest manifest;
+        try
+        {
+            var manifestInfo = new FileInfo(_officeBugfixManifestPath);
+            if (manifestInfo.Length is <= 0 or > MaxManifestBytes)
+                return InvalidBugfixManifest(
+                    "The Office bugfix manifest is empty or too large.");
+            await using var stream = new FileStream(_officeBugfixManifestPath,
+                FileMode.Open, FileAccess.Read, FileShare.Read, 16 * 1024,
+                FileOptions.Asynchronous);
+            manifest = await JsonSerializer.DeserializeAsync<OfficeBugfixManifest>(stream,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web), cancellationToken)
+                ?? new OfficeBugfixManifest();
+        }
+        catch (Exception ex) when (ex is JsonException or IOException
+            or UnauthorizedAccessException)
+        {
+            return InvalidBugfixManifest(
+                $"The Office bugfix manifest could not be read: {ex.GetType().Name}.");
+        }
+
+        if (manifest.Version != 1)
+            return InvalidBugfixManifest("The Office bugfix manifest version must be 1.");
+
+        var duplicateIds = FindDuplicates(manifest.Artifacts.Select(entry => entry.ArtifactId));
+        var duplicateFiles = FindDuplicates(manifest.Artifacts.Select(entry => entry.FileName));
+        var artifacts = new List<OfficeBugfixFileArtifact>();
+        var issues = duplicateIds.Select(id => new FileRepositoryIssue(
+            $"office_bugfix.{id}", "Duplicate artifact ID was rejected.")).ToList();
+        issues.AddRange(duplicateFiles.Select(file => new FileRepositoryIssue(
+            $"office_bugfix.{SafeIssueId(file)}", "Duplicate artifact filename was rejected.")));
+
+        foreach (var entry in manifest.Artifacts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (duplicateIds.Contains(entry.ArtifactId)
+                || duplicateFiles.Contains(entry.FileName))
+                continue;
+            if (!TryValidateBugfixEntry(entry, out var error))
+            {
+                issues.Add(new FileRepositoryIssue(
+                    $"office_bugfix.{SafeIssueId(entry.ArtifactId)}", error!));
+                continue;
+            }
+
+            var path = Path.GetFullPath(Path.Combine(_rootPath, entry.FileName));
+            if (!IsWithinRoot(path))
+            {
+                issues.Add(new FileRepositoryIssue($"office_bugfix.{entry.ArtifactId}",
+                    "Artifact path escaped the file repository and was rejected."));
+                continue;
+            }
+
+            var expectedHash = NormalizeSha256(entry.Sha256)!;
+            var file = await InspectFileAsync(path, expectedHash, cancellationToken);
+            if (file is null || !await HasPortableExecutableHeaderAsync(
+                    path, cancellationToken))
+            {
+                issues.Add(new FileRepositoryIssue($"office_bugfix.{entry.ArtifactId}",
+                    "Artifact is missing, empty, oversized, not an executable, or does not match its SHA-256."));
+                continue;
+            }
+
+            var descriptor = new OfficeBugfixArtifactDescriptor(entry.ArtifactId,
+                entry.DisplayName.Trim(), entry.Description.Trim(), entry.FileName,
+                expectedHash, Version.Parse(entry.MinOfficeVersion).ToString(),
+                Version.Parse(entry.MaxOfficeVersionExclusive).ToString(),
+                $"/api/files/office/bugfix/{entry.ArtifactId}");
+            artifacts.Add(new OfficeBugfixFileArtifact(file, descriptor));
+        }
+
+        return new OfficeBugfixCatalogSnapshot(
+            artifacts.OrderBy(item => item.Descriptor.ArtifactId,
+                StringComparer.OrdinalIgnoreCase).ToArray(), issues);
+    }
+
+    public async Task<OfficeBugfixFileArtifact?> GetOfficeBugfixArtifactAsync(
+        string artifactId, CancellationToken cancellationToken)
+    {
+        if (!ArtifactIdPattern().IsMatch(artifactId ?? string.Empty))
+            return null;
+        var catalog = await GetOfficeBugfixCatalogAsync(cancellationToken);
+        return catalog.Artifacts.FirstOrDefault(item => item.Descriptor.ArtifactId.Equals(
+            artifactId, StringComparison.OrdinalIgnoreCase));
+    }
+
     private async Task<FileArtifact?> InspectFileAsync(string path, string? expectedSha256,
         CancellationToken cancellationToken)
     {
@@ -220,6 +325,29 @@ public sealed partial class FileArtifactRepository
         return true;
     }
 
+    private static bool TryValidateBugfixEntry(OfficeBugfixManifestEntry entry,
+        out string? error)
+    {
+        if (!ArtifactIdPattern().IsMatch(entry.ArtifactId ?? string.Empty))
+            return Fail("Artifact ID must contain only lowercase letters, numbers, dots, underscores, or hyphens.", out error);
+        if (string.IsNullOrWhiteSpace(entry.DisplayName)
+            || string.IsNullOrWhiteSpace(entry.Description))
+            return Fail("Display name and description are required.", out error);
+        if (string.IsNullOrWhiteSpace(entry.FileName)
+            || Path.GetFileName(entry.FileName) != entry.FileName
+            || !BugfixFileNamePattern().IsMatch(entry.FileName))
+            return Fail("Artifact filename must match officebugfixmanager_<version>.exe.", out error);
+        if (NormalizeSha256(entry.Sha256) is null)
+            return Fail("Artifact SHA-256 must contain exactly 64 hexadecimal characters.", out error);
+        if (!Version.TryParse(entry.MinOfficeVersion, out var minimum)
+            || !Version.TryParse(entry.MaxOfficeVersionExclusive, out var maximum))
+            return Fail("Office version bounds must use numeric dotted versions.", out error);
+        if (minimum >= maximum)
+            return Fail("Minimum Office version must be lower than the exclusive maximum version.", out error);
+        error = null;
+        return true;
+    }
+
     private bool IsWithinOfficeRoot(string path)
     {
         var prefix = _officeRootPath.TrimEnd(Path.DirectorySeparatorChar,
@@ -227,8 +355,18 @@ public sealed partial class FileArtifactRepository
         return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
+    private bool IsWithinRoot(string path)
+    {
+        var prefix = _rootPath.TrimEnd(Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static OfficeArtifactCatalogSnapshot InvalidManifest(string message) =>
         new([], [new FileRepositoryIssue("office.manifest", message)]);
+
+    private static OfficeBugfixCatalogSnapshot InvalidBugfixManifest(string message) =>
+        new([], [new FileRepositoryIssue("office_bugfix.manifest", message)]);
 
     private static bool Fail(string message, out string? error)
     {
@@ -238,6 +376,23 @@ public sealed partial class FileArtifactRepository
 
     private static string SafeIssueId(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "invalid" : value;
+
+    private static HashSet<string> FindDuplicates(IEnumerable<string> values) => values
+        .Where(value => !string.IsNullOrWhiteSpace(value))
+        .GroupBy(value => value, StringComparer.OrdinalIgnoreCase)
+        .Where(group => group.Count() > 1)
+        .Select(group => group.Key)
+        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static async Task<bool> HasPortableExecutableHeaderAsync(string path,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.Read, 2, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var header = new byte[2];
+        return await stream.ReadAsync(header, cancellationToken) == 2
+            && header[0] == (byte)'M' && header[1] == (byte)'Z';
+    }
 
     private static bool ValidVersion(string? value) =>
         string.IsNullOrWhiteSpace(value) || Version.TryParse(value, out _);
@@ -260,6 +415,10 @@ public sealed partial class FileArtifactRepository
 
     [GeneratedRegex("^[a-z0-9][a-z0-9._-]{0,63}$")]
     private static partial Regex ArtifactIdPattern();
+
+    [GeneratedRegex("^officebugfixmanager_[0-9]+(?:\\.[0-9]+){0,3}\\.exe$",
+        RegexOptions.IgnoreCase)]
+    private static partial Regex BugfixFileNamePattern();
 
     [GeneratedRegex("^0x[0-9a-fA-F]{8}$")]
     private static partial Regex ErrorCodePattern();

@@ -173,8 +173,9 @@ public sealed class OfficeActivationTests
 
     private sealed class FakeSessionSource : IOfficeUserSessionSource
     {
-        public InteractiveUserSession GetActiveSession() =>
-            new(1, "test-user", "TEST", @"C:\Users\test-user\Desktop");
+        public InteractiveUserSession GetActiveSession(string? userSid = null) =>
+            new(1, "test-user", "TEST", userSid ?? "S-1-5-21-1-2-3-1001",
+                @"C:\Users\test-user\Desktop");
     }
 
     private sealed class FakeTrayClient(TrayIpcResponse response) : ITrayCommandClient

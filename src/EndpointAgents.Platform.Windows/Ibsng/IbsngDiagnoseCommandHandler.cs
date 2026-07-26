@@ -38,8 +38,25 @@ public sealed class IbsngDiagnoseCommandHandler(
         var host = configuredHost;
         var protocol = IbsngVpnProtocol.Auto;
         var includeLog = true;
+        string? userSid = null;
         if (parameters is { ValueKind: JsonValueKind.Object } element)
         {
+            if (element.TryGetProperty("userSid", out var userSidValue))
+            {
+                if (userSidValue.ValueKind != JsonValueKind.Null)
+                {
+                    userSid = userSidValue.ValueKind == JsonValueKind.String
+                        ? userSidValue.GetString()?.Trim()
+                        : null;
+                    if (userSid is not { Length: <= 184 }
+                        || !userSid.StartsWith("S-1-", StringComparison.Ordinal))
+                    {
+                        request = null;
+                        error = "userSid must be a valid Windows SID.";
+                        return false;
+                    }
+                }
+            }
             if (element.TryGetProperty("serverHost", out var hostValue)
                 && hostValue.ValueKind == JsonValueKind.String)
             {
@@ -75,7 +92,7 @@ public sealed class IbsngDiagnoseCommandHandler(
             error = "serverHost must be one IP address or DNS host name without a URL path.";
             return false;
         }
-        request = new IbsngDiagnosticRequest(host!, protocol, includeLog);
+        request = new IbsngDiagnosticRequest(host!, protocol, includeLog, userSid);
         error = null;
         return true;
     }

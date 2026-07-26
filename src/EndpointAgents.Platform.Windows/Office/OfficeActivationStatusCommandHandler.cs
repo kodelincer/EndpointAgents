@@ -3,6 +3,7 @@ using EndpointAgents.Platform.Windows.Diagnostics;
 using EndpointAgents.Shared.Rpc;
 using Microsoft.Extensions.Logging;
 using System.Runtime.Versioning;
+using System.Text.Json;
 
 namespace EndpointAgents.Platform.Windows.Office;
 
@@ -17,7 +18,9 @@ public sealed class OfficeActivationStatusCommandHandler(
     public async Task<RpcResponse> HandleAsync(RpcRequest request,
         CommandExecutionContext context, CancellationToken cancellationToken)
     {
-        var snapshot = await activation.GetStatusAsync(request.Id, cancellationToken);
+        var userSid = OfficeRemediationCommandHandler.ParseUserSid(request.Params);
+        var snapshot = await activation.GetStatusAsync(
+            request.Id, cancellationToken, userSid);
         foreach (var issue in snapshot.Issues)
             logger.LogWarning("{Source}: {Message} ({Exception})",
                 issue.Source, issue.Message, issue.Exception);

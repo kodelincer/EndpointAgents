@@ -1,6 +1,9 @@
 import type { EndpointFile } from "./types";
 
 export function fileCompatibilityLabel(file: EndpointFile) {
+  if (file.category === "Office bugfix") {
+    return `Office ${file.minOfficeVersion ?? "any"} to < ${file.maxOfficeVersionExclusive ?? "latest"}`;
+  }
   if (file.category !== "Office") return file.category;
   const families = file.supportedProductFamilies?.join(", ") || "Office";
   const states = file.activationStates?.join(", ") || "Any diagnostic state";

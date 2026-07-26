@@ -1,0 +1,4 @@
+interface:
+  display_name: "Office Support"
+  short_description: "Diagnose Office inventory and activation issues."
+  default_prompt: "Diagnose this Office issue and propose only compatible approved remediation."

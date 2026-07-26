@@ -33,6 +33,8 @@ builder.Services.AddOptions<ControlPlaneOptions>()
         "ControlPlane:HubUrl must be an absolute HTTP or HTTPS URL.")
     .Validate(options => !string.IsNullOrWhiteSpace(options.Version),
         "ControlPlane:Version is required.")
+    .Validate(options => Path.IsPathFullyQualified(options.DeviceCredentialPath),
+        "ControlPlane:DeviceCredentialPath must be an absolute path.")
     .Validate(options => options.CommandTimeoutSeconds is >= 1 and <= 3600,
         "ControlPlane:CommandTimeoutSeconds must be between 1 and 3600.")
     .Validate(options => options.MaxConcurrentCommands is >= 1 and <= 32,
@@ -93,6 +95,7 @@ builder.Services.AddOptions<OfficeRemediationOptions>()
 // These shared services are consumed by AgentWorker and the command handlers.
 builder.Services.AddSingleton<CommandDispatcher>();
 builder.Services.AddSingleton<AgentIdentityProvider>();
+builder.Services.AddSingleton<AgentCredentialProvider>();
 builder.Services.AddSingleton<AgentRuntimeState>();
 builder.Services.AddSingleton<InteractiveUserSessionLocator>();
 builder.Services.AddSingleton<IbsngArtifactVerifier>();
@@ -108,7 +111,9 @@ builder.Services.AddSingleton<OfficeInventoryCollector>();
 builder.Services.AddSingleton<IOfficeUserSessionSource, OfficeUserSessionSource>();
 builder.Services.AddSingleton<IOfficeVolumeActivationProbe, OfficeVolumeActivationProbe>();
 builder.Services.AddSingleton<IOfficeActivationCatalogClient, OfficeActivationCatalogClient>();
+builder.Services.AddSingleton<IOfficeBugfixCatalogClient, OfficeBugfixCatalogClient>();
 builder.Services.AddSingleton<OfficeActivationService>();
+builder.Services.AddSingleton<OfficeArtifactDownloader>();
 builder.Services.AddSingleton<ITrayCommandClient, TrayCommandClient>();
 builder.Services.AddSingleton(provider => new Uri(
     provider.GetRequiredService<IOptions<ControlPlaneOptions>>().Value.HubUrl));
@@ -121,6 +126,7 @@ builder.Services.AddSingleton<IEndpointCommandHandler, IbsngLaunchCommandHandler
 builder.Services.AddSingleton<IEndpointCommandHandler, OfficeInventoryCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, OfficeActivationStatusCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, OfficeRemediationCommandHandler>();
+builder.Services.AddSingleton<IEndpointCommandHandler, OfficeBugfixCommandHandler>();
 
 // AgentWorker owns the SignalR connection. Register the concrete singleton so
 // the local IPC bridge can submit helpdesk requests through the same connection.

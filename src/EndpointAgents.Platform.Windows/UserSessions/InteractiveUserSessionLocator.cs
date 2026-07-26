@@ -10,6 +10,7 @@ public sealed record InteractiveUserSession(
     int SessionId,
     string UserName,
     string? DomainName,
+    string UserSid,
     string DesktopPath);
 
 /// <summary>Resolves desktop folders for users with active Windows sessions.</summary>
@@ -42,10 +43,12 @@ public sealed class InteractiveUserSessionLocator
                     continue;
 
                 var domainName = QuerySessionString(session.SessionId, NativeMethods.WtsInfoClass.DomainName);
-                var desktopPath = ResolveDesktopPath(userName, domainName);
-                if (!string.IsNullOrWhiteSpace(desktopPath))
+                var userSid = ResolveUserSid(userName, domainName);
+                var desktopPath = userSid is null ? null : ResolveDesktopPath(
+                    userName, userSid);
+                if (!string.IsNullOrWhiteSpace(desktopPath) && userSid is not null)
                     sessions.Add(new InteractiveUserSession(
-                        session.SessionId, userName, domainName, desktopPath));
+                        session.SessionId, userName, domainName, userSid, desktopPath));
             }
         }
         finally
@@ -77,16 +80,30 @@ public sealed class InteractiveUserSessionLocator
         }
     }
 
-    private static string? ResolveDesktopPath(string userName, string? domainName)
+    private static string? ResolveUserSid(string userName, string? domainName)
     {
         try
         {
             var accountName = string.IsNullOrWhiteSpace(domainName)
                 ? userName
                 : $"{domainName}\\{userName}";
-            var sid = ((SecurityIdentifier)new NTAccount(accountName)
+            return ((SecurityIdentifier)new NTAccount(accountName)
                 .Translate(typeof(SecurityIdentifier))).Value;
+        }
+        catch (IdentityNotMappedException)
+        {
+            return null;
+        }
+        catch (SecurityException)
+        {
+            return null;
+        }
+    }
 
+    private static string? ResolveDesktopPath(string userName, string sid)
+    {
+        try
+        {
             using var profileKey = Registry.LocalMachine.OpenSubKey(
                 $@"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\{sid}");
             var profilePath = profileKey?.GetValue("ProfileImagePath") as string;

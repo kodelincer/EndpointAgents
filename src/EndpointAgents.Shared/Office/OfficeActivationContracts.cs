@@ -43,6 +43,12 @@ public static class OfficeRemediationArtifactKinds
     public const string MicrosoftSignedExecutable = "MicrosoftSignedExecutable";
 }
 
+public static class OfficeArtifactTrustPolicies
+{
+    public const string MicrosoftSigned = "MicrosoftSigned";
+    public const string AdministratorApprovedSha256 = "AdministratorApprovedSha256";
+}
+
 public static class OfficeRemediationPaths
 {
     public const string StagingRoot = @"C:\ProgramData\EndpointAgents\OfficeRemediation";
@@ -85,6 +91,20 @@ public sealed record OfficeRemediationArtifactDescriptor(
 public sealed record OfficeRemediationCatalog(
     IReadOnlyList<OfficeRemediationArtifactDescriptor> Artifacts);
 
+/// <summary>One retailer bugfix executable approved for an Office version range.</summary>
+public sealed record OfficeBugfixArtifactDescriptor(
+    string ArtifactId,
+    string DisplayName,
+    string Description,
+    string FileName,
+    string Sha256,
+    string MinOfficeVersion,
+    string MaxOfficeVersionExclusive,
+    string DownloadPath);
+
+public sealed record OfficeBugfixCatalog(
+    IReadOnlyList<OfficeBugfixArtifactDescriptor> Artifacts);
+
 /// <summary>
 /// The only execution data accepted by the Tray. Paths and hashes originate from
 /// the endpoint service after it resolves an administrator-approved artifact ID.
@@ -94,7 +114,8 @@ public sealed record OfficeRemediationLaunchRequest(
     string DisplayName,
     string Description,
     string FilePath,
-    string ExpectedSha256);
+    string ExpectedSha256,
+    string TrustPolicy = OfficeArtifactTrustPolicies.MicrosoftSigned);
 
 /// <summary>Stable, AI-ready result returned by software.office_activation_status.</summary>
 public sealed record OfficeActivationReport(

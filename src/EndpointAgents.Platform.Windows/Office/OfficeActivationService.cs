@@ -15,7 +15,7 @@ public sealed class OfficeActivationService(
     IOfficeActivationCatalogClient catalogClient)
 {
     public async Task<OfficeActivationStatusSnapshot> GetStatusAsync(string requestId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string? userSid = null)
     {
         var inventorySnapshot = inventoryCollector.Collect(cancellationToken);
         var inventory = inventorySnapshot.Inventory;
@@ -29,7 +29,8 @@ public sealed class OfficeActivationService(
                 StringComparer.OrdinalIgnoreCase);
             if (probeUnknown || families.Contains(OfficeProductFamilies.Microsoft365Apps,
                 StringComparer.OrdinalIgnoreCase))
-                probes.Add(await ProbeVNextAsync(requestId, issues, cancellationToken));
+                probes.Add(await ProbeVNextAsync(
+                    requestId, issues, cancellationToken, userSid));
 
             if (probeUnknown || families.Contains(OfficeProductFamilies.VolumeLicensed,
                 StringComparer.OrdinalIgnoreCase))
@@ -69,9 +70,10 @@ public sealed class OfficeActivationService(
     }
 
     private async Task<OfficeActivationProbeResult> ProbeVNextAsync(string requestId,
-        List<OfficeInventoryIssue> issues, CancellationToken cancellationToken)
+        List<OfficeInventoryIssue> issues, CancellationToken cancellationToken,
+        string? userSid)
     {
-        var session = sessionSource.GetActiveSession();
+        var session = sessionSource.GetActiveSession(userSid);
         if (session is null)
         {
             issues.Add(new OfficeInventoryIssue("office.activation.vnext",

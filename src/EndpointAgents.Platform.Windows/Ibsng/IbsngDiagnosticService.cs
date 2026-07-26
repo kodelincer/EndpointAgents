@@ -43,7 +43,10 @@ public sealed class IbsngDiagnosticService
         IbsngDiagnosticRequest request, CancellationToken cancellationToken)
     {
         var checks = new List<IbsngDiagnosticCheck>();
-        var session = _sessionLocator.GetActiveSessions().FirstOrDefault();
+        var session = string.IsNullOrWhiteSpace(request.UserSid)
+            ? _sessionLocator.GetActiveSessions().FirstOrDefault()
+            : _sessionLocator.GetActiveSessions().FirstOrDefault(item =>
+                item.UserSid.Equals(request.UserSid, StringComparison.OrdinalIgnoreCase));
         var dialerPath = session is null
             ? null
             : Path.Combine(session.DesktopPath, _options.DialerFileName);

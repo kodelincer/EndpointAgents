@@ -1,0 +1,74 @@
+# This Hermes home is dedicated to the EndpointAgents API profile.
+# It deliberately exposes only the dynamic MCP toolset below.
+platform_toolsets:
+  api_server:
+    - mcp-controlplane
+
+model:
+  provider: ${ENDPOINTAGENTS_MODEL_PROVIDER}
+  default: ${ENDPOINTAGENTS_MODEL_ID}
+
+# Defense in depth if a later Hermes release changes a platform default.
+agent:
+  disabled_toolsets:
+    - browser
+    - clarify
+    - code_execution
+    - computer_use
+    - cronjob
+    - delegation
+    - file
+    - image_gen
+    - kanban
+    - memory
+    - project
+    - safe
+    - search
+    - session_search
+    - skills
+    - terminal
+    - todo
+    - tts
+    - video
+    - video_gen
+    - vision
+    - web
+    - x_search
+
+mcp_servers:
+  controlplane:
+    url: http://127.0.0.1:5052/internal/mcp
+    headers:
+      Authorization: "Bearer ${CONTROLPLANE_MCP_KEY}"
+    enabled: true
+    timeout: 120
+    connect_timeout: 30
+    supports_parallel_tool_calls: false
+    tools:
+      include:
+        - endpoint_get_info
+        - ibsng_diagnose
+        - office_inventory
+        - office_activation_status
+        - propose_endpoint_action
+      resources: false
+      prompts: false
+    sampling:
+      enabled: false
+
+gateway:
+  api_server:
+    enabled: true
+    host: 127.0.0.1
+    port: 8642
+    model_name: hermes-agent
+
+memory:
+  memory_enabled: false
+  user_profile_enabled: false
+
+curator:
+  enabled: false
+
+plugins:
+  enabled: []

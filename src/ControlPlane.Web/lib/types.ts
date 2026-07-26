@@ -13,13 +13,17 @@ export type EndpointFile = {
   sha256: string; downloadPath: string;
   category: string; displayName?: string | null; description?: string | null; kind?: string | null;
   supportedProductFamilies?: string[] | null; minOfficeVersion?: string | null; maxOfficeVersion?: string | null;
+  maxOfficeVersionExclusive?: string | null;
   activationStates?: string[] | null; errorCodes?: string[] | null; requiresInteractiveUser?: boolean;
   requiresOfficeAppsClosed?: boolean; requiresRestart?: boolean;
 };
 export type FileInventory = {
   files: EndpointFile[];
   issues: { source: string; message: string }[];
-  repository: { expectedPattern: string; officeManifestPath: string; downloadMethod: string };
+  repository: {
+    expectedPattern: string; officeManifestPath: string;
+    officeBugfixManifestPath: string; downloadMethod: string;
+  };
 };
 
 export type ApiSystemStatus = {

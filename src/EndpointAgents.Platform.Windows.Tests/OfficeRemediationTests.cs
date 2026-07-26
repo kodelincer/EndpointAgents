@@ -62,4 +62,38 @@ public sealed class OfficeRemediationTests
         Assert.False(response.Success);
         Assert.Equal("RemediationFileUnavailable", response.State);
     }
+
+    [Theory]
+    [InlineData("14.0", true)]
+    [InlineData("14.99.1", true)]
+    [InlineData("15.0", false)]
+    [InlineData("13.9", false)]
+    public void BugfixCompatibilityUsesExclusiveMaximum(string officeVersion,
+        bool expected)
+    {
+        var artifact = new OfficeBugfixArtifactDescriptor("office-bugfix-14",
+            "Office 14 bugfix", "Approved retailer tool",
+            "officebugfixmanager_14.0.exe", new string('A', 64),
+            "14.0", "15.0", "/api/files/office/bugfix/office-bugfix-14");
+
+        Assert.Equal(expected, OfficeBugfixCommandHandler.IsCompatible(
+            artifact, Version.Parse(officeVersion)));
+    }
+
+    [Fact]
+    public void TrayKeepsMicrosoftAndAdministratorHashTrustSeparate()
+    {
+        Assert.True(OfficeRemediationLauncher.TryResolveTrustPolicy(
+            OfficeArtifactTrustPolicies.MicrosoftSigned,
+            out var requiresMicrosoftSignature, out _));
+        Assert.True(requiresMicrosoftSignature);
+
+        Assert.True(OfficeRemediationLauncher.TryResolveTrustPolicy(
+            OfficeArtifactTrustPolicies.AdministratorApprovedSha256,
+            out requiresMicrosoftSignature, out _));
+        Assert.False(requiresMicrosoftSignature);
+
+        Assert.False(OfficeRemediationLauncher.TryResolveTrustPolicy(
+            "Unknown", out _, out _));
+    }
 }

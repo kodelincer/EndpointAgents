@@ -62,6 +62,15 @@ public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPub
             && agent.ConnectionId == connectionId;
     }
 
+    public async Task RevokeAsync(string agentId, CancellationToken cancellationToken)
+    {
+        if (!_agentsById.TryRemove(agentId, out var removed)) return;
+        _agentIdByConnectionId.TryRemove(removed.ConnectionId, out _);
+        await dashboard.PublishAsync(new DashboardActivity(Guid.NewGuid().ToString("N"),
+            DashboardEventTypes.AgentDisconnected, DateTimeOffset.UtcNow, agentId,
+            "revoked", Agent: removed.ToDto()), cancellationToken);
+    }
+
     /// <summary>Sends one RPC request and publishes its complete activity lifecycle.</summary>
     public async Task<RpcResponse> SendCommandAsync(string agentId, RpcRequest request,
         CancellationToken cancellationToken)

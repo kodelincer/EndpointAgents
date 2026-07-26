@@ -53,7 +53,8 @@ public sealed class IbsngEnsureDialerCommandHandler : IEndpointCommandHandler
         CommandExecutionContext context,
         CancellationToken cancellationToken)
     {
-        var session = SelectSession(ParseUserName(request.Params));
+        var session = SelectSession(
+            ParseUserSid(request.Params), ParseUserName(request.Params));
         if (session is null)
             return RpcResponse.Failure(request.Id, 404, "NoInteractiveUser");
 
@@ -65,9 +66,24 @@ public sealed class IbsngEnsureDialerCommandHandler : IEndpointCommandHandler
             return RpcResponse.Failure(request.Id, 412,
                 "IBSng delivery is disabled until Diagnostics:Ibsng:TrustedSha256 is configured.");
 
+        var destination = Path.Combine(session.DesktopPath, _options.DialerFileName);
+        var current = await _verifier.InspectAsync(
+            destination, trustedHash, cancellationToken);
+        if (current.IsTrusted)
+            return Success(request.Id, context, session, "AlreadyPresentApproved",
+                current, Array.Empty<string>(), Array.Empty<int>());
+
+        var confirmation = await ConfirmInstallAsync(
+            request.Id, session.SessionId, destination, trustedHash, cancellationToken);
+        if (!confirmation.Success)
+        {
+            var code = confirmation.State == "TrayUnavailable" ? 503 : 409;
+            return RpcResponse.Failure(request.Id, code, confirmation.State,
+                new { confirmation.Message, session.SessionId, session.UserName });
+        }
+
         using var commandLease = await _coordinator.AcquireAsync(session.DesktopPath,
             cancellationToken);
-        var destination = Path.Combine(session.DesktopPath, _options.DialerFileName);
         var processResponse = await ReconcileProcessesAsync(request.Id, session.SessionId,
             destination, trustedHash, cancellationToken);
         if (!processResponse.Success)
@@ -168,9 +184,12 @@ public sealed class IbsngEnsureDialerCommandHandler : IEndpointCommandHandler
         await output.FlushAsync(cancellationToken);
     }
 
-    private InteractiveUserSession? SelectSession(string? requestedUser)
+    private InteractiveUserSession? SelectSession(string? requestedSid, string? requestedUser)
     {
         var sessions = _sessionLocator.GetActiveSessions();
+        if (!string.IsNullOrWhiteSpace(requestedSid))
+            return sessions.FirstOrDefault(session => session.UserSid.Equals(
+                requestedSid, StringComparison.OrdinalIgnoreCase));
         if (string.IsNullOrWhiteSpace(requestedUser))
             return sessions.FirstOrDefault();
         return sessions.FirstOrDefault(session =>
@@ -204,6 +223,15 @@ public sealed class IbsngEnsureDialerCommandHandler : IEndpointCommandHandler
         return await _trayClient.SendAsync(sessionId, trayRequest, cancellationToken);
     }
 
+    private Task<TrayIpcResponse> ConfirmInstallAsync(string requestId, int sessionId,
+        string dialerPath, string trustedHash, CancellationToken cancellationToken)
+    {
+        var trayRequest = new TrayIpcRequest(requestId,
+            TrayIpcProtocol.ConfirmIbsngInstallMethod, dialerPath, trustedHash,
+            _options.ServerHost, _options.DialerSearchPattern);
+        return _trayClient.SendAsync(sessionId, trayRequest, cancellationToken);
+    }
+
     private static RpcResponse ProcessFailure(string requestId, TrayIpcResponse response,
         InteractiveUserSession session)
     {
@@ -222,5 +250,12 @@ public sealed class IbsngEnsureDialerCommandHandler : IEndpointCommandHandler
         && element.TryGetProperty("userName", out var user)
         && user.ValueKind == JsonValueKind.String
             ? user.GetString()
+            : null;
+
+    private static string? ParseUserSid(JsonElement? parameters) =>
+        parameters is { ValueKind: JsonValueKind.Object } element
+        && element.TryGetProperty("userSid", out var sid)
+        && sid.ValueKind == JsonValueKind.String
+            ? sid.GetString()
             : null;
 }

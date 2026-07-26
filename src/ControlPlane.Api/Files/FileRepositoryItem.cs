@@ -15,6 +15,7 @@ public sealed record FileRepositoryItem(
     IReadOnlyList<string>? SupportedProductFamilies = null,
     string? MinOfficeVersion = null,
     string? MaxOfficeVersion = null,
+    string? MaxOfficeVersionExclusive = null,
     IReadOnlyList<string>? ActivationStates = null,
     IReadOnlyList<string>? ErrorCodes = null,
     bool RequiresInteractiveUser = false,

@@ -1,3 +1,4 @@
+using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Support;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -50,14 +51,19 @@ public sealed class SupportForm : Form
     private readonly RichTextBox _logDetail = new();
     private readonly Label _logState = new();
     private readonly System.Windows.Forms.Timer _searchTimer = new() { Interval = 450 };
+    private readonly System.Windows.Forms.Timer _chatTimer = new() { Interval = 2_000 };
+    private readonly HashSet<string> _renderedMessageIds = [];
+    private readonly HashSet<string> _seenActionIds = [];
     private IReadOnlyList<EndpointEventLogEntry> _logs = [];
     private TrayStatus _currentStatus = new(TrayHealthState.Checking,
         EndpointServiceState.Unknown, null, "در حال بررسی عامل", "وضعیت فعلی در حال دریافت است.");
     private bool _allowClose;
     private bool _loadingLogs;
     private bool _submittingSupport;
-    private bool _welcomeMessageAdded;
     private bool _layingOutConversation;
+    private bool _syncingChat;
+    private string? _conversationId;
+    private long _lastChatSequence;
 
     public SupportForm(Func<Task> refreshStatus)
     {
@@ -84,6 +90,8 @@ public sealed class SupportForm : Form
         _tabs.SelectedIndexChanged += async (_, _) =>
         {
             if (_tabs.SelectedTab == _logsTab) await RefreshLogsAsync();
+            UpdateChatPolling();
+            if (_tabs.SelectedTab == _helpdeskTab) await SyncChatAsync();
         };
         _searchTimer.Tick += async (_, _) =>
         {
@@ -92,9 +100,12 @@ public sealed class SupportForm : Form
         };
         Shown += async (_, _) =>
         {
-            EnsureWelcomeMessage();
             await _refreshStatus();
+            UpdateChatPolling();
+            if (_tabs.SelectedTab == _helpdeskTab) await SyncChatAsync();
         };
+        VisibleChanged += (_, _) => UpdateChatPolling();
+        _chatTimer.Tick += async (_, _) => await SyncChatAsync();
     }
 
     public void ShowTab(SupportFormTab tab)
@@ -109,6 +120,8 @@ public sealed class SupportForm : Form
         if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
         Activate();
         BringToFront();
+        UpdateChatPolling();
+        if (tab == SupportFormTab.Helpdesk) _ = SyncChatAsync();
     }
 
     public void UpdateStatus(TrayStatus status, Icon icon)
@@ -150,6 +163,7 @@ public sealed class SupportForm : Form
         _allowClose = true;
         _lifetime.Cancel();
         _searchTimer.Dispose();
+        _chatTimer.Dispose();
         Close();
     }
 
@@ -568,23 +582,19 @@ public sealed class SupportForm : Form
         {
             var messageText = GetSafeMessageText();
             var isRightToLeft = BidiText.IsRightToLeft(messageText);
-            var draft = new SupportRequestDraft(Guid.NewGuid().ToString("N"),
-                BuildAutomaticSubject(messageText), messageText,
-                isRightToLeft ? "rtl" : "ltr",
-                System.Diagnostics.Process.GetCurrentProcess().SessionId, [],
-                null);
-            var receipt = await _serviceClient.SubmitSupportAsync(draft, _lifetime.Token);
+            await EnsureChatOpenedAsync();
+            var submission = new ChatMessageSubmission(Guid.NewGuid().ToString("N"),
+                _conversationId, messageText, isRightToLeft ? "rtl" : "ltr",
+                LocalChatIdentity());
+            var receipt = await _serviceClient.SendChatMessageAsync(
+                submission, _lifetime.Token);
             if (!receipt.Accepted) throw new InvalidOperationException(receipt.Message);
-            var shortId = receipt.RequestId.Length > 8
-                ? receipt.RequestId[..8]
-                : receipt.RequestId;
+            _conversationId = receipt.ConversationId;
+            _renderedMessageIds.Add(receipt.MessageId);
             AddChatMessage(true, messageText);
-            AddChatMessage(false, string.IsNullOrWhiteSpace(shortId)
-                ? "پیام شما به پشتیبانی رسید و برای بررسی ثبت شد."
-                : $"پیام شما به پشتیبانی رسید و با شناسه {shortId} برای بررسی ثبت شد.");
             _message.Clear();
-            _submitResult.Text = string.Empty;
-            TrayEventLogger.Information($"درخواست پشتیبانی {receipt.RequestId} ارسال شد.");
+            _submitResult.Text = receipt.Message;
+            TrayEventLogger.Information($"درخواست پشتیبانی {receipt.MessageId} ارسال شد.");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -698,7 +708,135 @@ public sealed class SupportForm : Form
         _logState.Text = "گزارش‌ها در این مسیر ذخیره شدند: " + dialog.FileName;
     }
 
+    private ChatIdentity LocalChatIdentity() => new("S-1-0-0", Environment.UserName,
+        System.Diagnostics.Process.GetCurrentProcess().SessionId);
+
+    private void UpdateChatPolling()
+    {
+        var shouldPoll = Visible && _tabs.SelectedTab == _helpdeskTab
+            && !_lifetime.IsCancellationRequested;
+        if (shouldPoll && !_chatTimer.Enabled) _chatTimer.Start();
+        else if (!shouldPoll && _chatTimer.Enabled) _chatTimer.Stop();
+    }
+
+    private async Task EnsureChatOpenedAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_conversationId)) return;
+        var conversation = await _serviceClient.OpenChatAsync(
+            System.Diagnostics.Process.GetCurrentProcess().SessionId, _lifetime.Token);
+        _conversationId = conversation.ConversationId;
+    }
+
+    private async Task SyncChatAsync()
+    {
+        if (_syncingChat || IsDisposed || !Visible || _tabs.SelectedTab != _helpdeskTab)
+            return;
+        if (_currentStatus.Runtime?.ConnectionStatus != AgentConnectionStatus.Connected)
+            return;
+
+        _syncingChat = true;
+        try
+        {
+            await EnsureChatOpenedAsync();
+            var request = new ChatDeltaRequest(_conversationId!, _lastChatSequence,
+                LocalChatIdentity());
+            var delta = await _serviceClient.GetChatDeltaAsync(request, _lifetime.Token);
+            var entries =
+                new List<(long Sequence, ChatMessage? Message, ChatActionProposal? Action)>();
+            foreach (var message in delta.Messages)
+                entries.Add((message.Sequence, message, null));
+            foreach (var action in delta.Actions)
+                entries.Add((action.Sequence, null, action));
+            foreach (var entry in entries.OrderBy(entry => entry.Sequence))
+            {
+                if (entry.Message is { } message)
+                {
+                    if (_renderedMessageIds.Add(message.MessageId))
+                    {
+                        var fromUser = message.Role == ChatMessageRole.User;
+                        AddChatMessage(fromUser, message.Body,
+                            message.Role == ChatMessageRole.System ? "سیستم" : null);
+                    }
+                    UpdateChatMessageState(message);
+                }
+                else if (entry.Action is { } action
+                         && _seenActionIds.Add(action.ActionId))
+                {
+                    await HandleActionProposalAsync(action);
+                }
+                _lastChatSequence = Math.Max(_lastChatSequence, entry.Sequence);
+            }
+            _conversationId = delta.Conversation.ConversationId;
+            _lastChatSequence = Math.Max(_lastChatSequence,
+                delta.Conversation.LastSequence);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _submitResult.ForeColor = Color.FromArgb(178, 48, 48);
+            _submitResult.Text = ex.Message;
+            TrayEventLogger.Warning(
+                $"همگام‌سازی گفتگوی پشتیبانی ناموفق بود: {ex.GetType().Name}: {ex.Message}");
+        }
+        finally
+        {
+            _syncingChat = false;
+        }
+    }
+
+    private async Task HandleActionProposalAsync(ChatActionProposal proposal)
+    {
+        if (proposal.State != ChatActionState.Pending)
+        {
+            AddChatMessage(false,
+                $"{proposal.DisplayName}\r\nوضعیت: {proposal.State}", "اقدام پیشنهادی");
+            return;
+        }
+
+        var rtl = BidiText.IsRightToLeft(proposal.Description);
+        var options = rtl
+            ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign
+            : 0;
+        var approved = MessageBox.Show(this,
+            $"{proposal.DisplayName}\r\n\r\n{proposal.Description}\r\n\r\n" +
+            "آیا اجرای دقیق این اقدام را تأیید می‌کنید؟",
+            "تأیید اقدام پشتیبانی", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+            MessageBoxDefaultButton.Button2, options) == DialogResult.Yes;
+        var decision = new ChatActionDecision(proposal.ConversationId,
+            proposal.ActionId, approved, LocalChatIdentity());
+        var receipt = await _serviceClient.RespondToChatActionAsync(
+            decision, _lifetime.Token);
+        AddChatMessage(false, receipt.Message, "اقدام پیشنهادی");
+    }
+
     private string GetSafeMessageText() => _message.Text.Trim();
+
+    private void UpdateChatMessageState(ChatMessage message)
+    {
+        if (message.Role == ChatMessageRole.User)
+        {
+            _submitResult.ForeColor = message.State == ChatMessageState.Failed
+                ? Color.FromArgb(178, 48, 48)
+                : Muted;
+            _submitResult.Text = message.State switch
+            {
+                ChatMessageState.Queued => "پیام در صف دستیار پشتیبانی است.",
+                ChatMessageState.Working => "دستیار پشتیبانی در حال بررسی پیام است…",
+                ChatMessageState.Failed => "بررسی این پیام ناموفق بود.",
+                _ => _submitResult.Text
+            };
+            return;
+        }
+
+        if (message.Role == ChatMessageRole.Assistant)
+        {
+            _submitResult.ForeColor = message.State == ChatMessageState.Failed
+                ? Color.FromArgb(178, 48, 48)
+                : Muted;
+            _submitResult.Text = message.State == ChatMessageState.Failed
+                ? "دستیار نتوانست این درخواست را کامل کند."
+                : "پاسخ دستیار دریافت شد.";
+        }
+    }
 
     private void AddChatMessage(bool fromUser, string body, string? author = null)
     {
@@ -707,17 +845,6 @@ public sealed class SupportForm : Form
         _conversation.Controls.Add(message);
         LayoutConversationMessages();
         _conversation.ScrollControlIntoView(message);
-    }
-
-    private void EnsureWelcomeMessage()
-    {
-        if (_welcomeMessageAdded) return;
-        _welcomeMessageAdded = true;
-        AddChatMessage(false,
-            "سلام، من دستیار پشتیبانی هوشمند هستم. مشکل را با زبان خودتان بنویسید؛ من اطلاعات لازم را در همین گفتگو می‌پرسم. لطفاً گذرواژه، کد دسترسی یا اطلاعات محرمانه را ننویسید.");
-        AddChatMessage(true,
-            "اتصال IBSng من برقرار نمی‌شود و پیام Timeout دریافت می‌کنم.",
-            "نمونه پیام کاربر");
     }
 
     private void LayoutConversationMessages()

@@ -11,8 +11,10 @@ $legacyWebService = "EndpointAgents.ControlPlane.Web"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $apiOutput = Join-Path $InstallRoot "Api"
 $fileRepositoryRoot = Join-Path $env:ProgramData "EndpointAgents\ControlPlane\FileRepository"
+$dataRoot = Join-Path $env:ProgramData "EndpointAgents\ControlPlane"
 $officeRepositoryRoot = Join-Path $fileRepositoryRoot "Office"
 $officeManifestPath = Join-Path $officeRepositoryRoot "office-artifacts.json"
+$officeBugfixManifestPath = Join-Path $fileRepositoryRoot "office-bugfix-managers.json"
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -50,10 +52,17 @@ if (Test-Path -LiteralPath $InstallRoot) {
 dotnet publish (Join-Path $repoRoot "src\ControlPlane.Api\ControlPlane.Api.csproj") `
     -c $Configuration -r win-x64 --self-contained false -o $apiOutput
 
+New-Item -ItemType Directory -Path $dataRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $officeRepositoryRoot -Force | Out-Null
+& icacls.exe $dataRoot /inheritance:r `
+    /grant:r "SYSTEM:(OI)(CI)F" "BUILTIN\Administrators:(OI)(CI)F" /T | Out-Null
 if (-not (Test-Path -LiteralPath $officeManifestPath)) {
     @{ version = 1; artifacts = @() } | ConvertTo-Json -Depth 5 |
         Set-Content -LiteralPath $officeManifestPath -Encoding utf8
+}
+if (-not (Test-Path -LiteralPath $officeBugfixManifestPath)) {
+    @{ version = 1; artifacts = @() } | ConvertTo-Json -Depth 5 |
+        Set-Content -LiteralPath $officeBugfixManifestPath -Encoding utf8
 }
 
 $apiExe = Join-Path $apiOutput "ControlPlane.Api.exe"
@@ -65,4 +74,7 @@ Start-Service -Name $apiService
 
 Write-Host "Control plane API installed on http://127.0.0.1:5052."
 Write-Host "Office remediation manifest: $officeManifestPath"
+Write-Host "Office bugfix manifest: $officeBugfixManifestPath"
+Write-Host "SQLite chat database: $(Join-Path $dataRoot 'control-plane.db')"
+Write-Host "Install the pinned Hermes runtime next with scripts\install-hermes-service.ps1."
 Write-Host "ControlPlane.Web is separate; start it from src\ControlPlane.Web with npm.cmd run start."

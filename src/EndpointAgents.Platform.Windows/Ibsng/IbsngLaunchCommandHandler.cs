@@ -37,7 +37,8 @@ public sealed class IbsngLaunchCommandHandler : IEndpointCommandHandler
     public async Task<RpcResponse> HandleAsync(RpcRequest request,
         CommandExecutionContext context, CancellationToken cancellationToken)
     {
-        var session = SelectSession(ParseUserName(request.Params));
+        var session = SelectSession(
+            ParseUserSid(request.Params), ParseUserName(request.Params));
         if (session is null)
             return RpcResponse.Failure(request.Id, 404, "NoInteractiveUser");
 
@@ -114,9 +115,12 @@ public sealed class IbsngLaunchCommandHandler : IEndpointCommandHandler
         });
     }
 
-    private InteractiveUserSession? SelectSession(string? requestedUser)
+    private InteractiveUserSession? SelectSession(string? requestedSid, string? requestedUser)
     {
         var sessions = _sessionLocator.GetActiveSessions();
+        if (!string.IsNullOrWhiteSpace(requestedSid))
+            return sessions.FirstOrDefault(session => session.UserSid.Equals(
+                requestedSid, StringComparison.OrdinalIgnoreCase));
         if (string.IsNullOrWhiteSpace(requestedUser))
             return sessions.FirstOrDefault();
         return sessions.FirstOrDefault(session =>
@@ -130,5 +134,12 @@ public sealed class IbsngLaunchCommandHandler : IEndpointCommandHandler
         && element.TryGetProperty("userName", out var user)
         && user.ValueKind == JsonValueKind.String
             ? user.GetString()
+            : null;
+
+    private static string? ParseUserSid(JsonElement? parameters) =>
+        parameters is { ValueKind: JsonValueKind.Object } element
+        && element.TryGetProperty("userSid", out var sid)
+        && sid.ValueKind == JsonValueKind.String
+            ? sid.GetString()
             : null;
 }

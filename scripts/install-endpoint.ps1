@@ -3,6 +3,7 @@ param(
     [string]$InstallRoot = "$env:ProgramFiles\EndpointAgents\Endpoint",
     [Parameter(Mandatory)]
     [uri]$ControlPlaneHubUrl,
+    [string]$EnrollmentCode = "",
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release"
 )
@@ -13,6 +14,7 @@ $runKey = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $serviceOutput = Join-Path $InstallRoot "Service"
 $trayOutput = Join-Path $InstallRoot "Tray"
+$credentialRoot = Join-Path $env:ProgramData "EndpointAgents\Credentials"
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -45,6 +47,10 @@ if ($ControlPlaneHubUrl.Scheme -notin @("http", "https") `
     -or -not $ControlPlaneHubUrl.AbsolutePath.EndsWith("/agent-hub", [StringComparison]::OrdinalIgnoreCase)) {
     throw "ControlPlaneHubUrl must be an absolute HTTP(S) URL ending in /agent-hub."
 }
+if ($ControlPlaneHubUrl.Scheme -ne "https" `
+    -and $ControlPlaneHubUrl.Host -notin @("localhost", "127.0.0.1", "::1")) {
+    throw "Remote endpoint connections must use HTTPS."
+}
 Remove-ServiceIfPresent $serviceName
 
 if (Test-Path -LiteralPath $InstallRoot) {
@@ -64,6 +70,7 @@ dotnet publish (Join-Path $repoRoot "src\EndpointAgents.Tray\EndpointAgents.Tray
 $serviceSettingsPath = Join-Path $serviceOutput "appsettings.json"
 $serviceSettings = Get-Content -LiteralPath $serviceSettingsPath -Raw | ConvertFrom-Json
 $serviceSettings.ControlPlane.HubUrl = $ControlPlaneHubUrl.AbsoluteUri
+$serviceSettings.ControlPlane.EnrollmentCode = $EnrollmentCode
 $serviceSettings | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $serviceSettingsPath `
     -Encoding utf8
 
@@ -80,6 +87,9 @@ New-ItemProperty -Path $runKey -Name "EndpointAgents.Tray" `
     -PropertyType String -Value "`"$trayExe`"" -Force | Out-Null
 New-Item -ItemType Directory -Path "C:\ProgramData\EndpointAgents\Quarantine\Ibsng" `
     -Force | Out-Null
+New-Item -ItemType Directory -Path $credentialRoot -Force | Out-Null
+& icacls.exe $credentialRoot /inheritance:r `
+    /grant:r "SYSTEM:(OI)(CI)F" "BUILTIN\Administrators:(OI)(CI)F" | Out-Null
 
 Start-Service -Name $serviceName
 

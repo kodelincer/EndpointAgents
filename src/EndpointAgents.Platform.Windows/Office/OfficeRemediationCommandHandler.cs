@@ -5,10 +5,7 @@ using EndpointAgents.Shared.LocalIpc;
 using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Rpc;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using System.Diagnostics;
-using System.Net;
-using System.Security.Cryptography;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -25,14 +22,11 @@ public sealed partial class OfficeRemediationCommandHandler(
     OfficeActivationService activation,
     IOfficeUserSessionSource sessionSource,
     ITrayCommandClient trayClient,
-    IOptions<OfficeRemediationOptions> options,
-    Uri hubUri,
+    OfficeArtifactDownloader downloader,
     ILogger<OfficeRemediationCommandHandler> logger) : IEndpointCommandHandler
 {
     private static readonly string[] OfficeProcessNames =
         ["WINWORD", "EXCEL", "POWERPNT", "OUTLOOK", "ONENOTE", "MSACCESS", "MSPUB"];
-    private readonly OfficeRemediationOptions _options = options.Value;
-
     public string Method => "software.office_remediation_run";
 
     public async Task<RpcResponse> HandleAsync(RpcRequest request,
@@ -42,7 +36,9 @@ public sealed partial class OfficeRemediationCommandHandler(
             return RpcResponse.Failure(request.Id, 400,
                 "params.artifactId must be an approved artifact ID.");
 
-        var status = await activation.GetStatusAsync(request.Id, cancellationToken);
+        var userSid = ParseUserSid(request.Params);
+        var status = await activation.GetStatusAsync(
+            request.Id, cancellationToken, userSid);
         var descriptor = status.ApprovedArtifacts.FirstOrDefault(item =>
             item.ArtifactId.Equals(artifactId, StringComparison.OrdinalIgnoreCase));
         if (descriptor is null
@@ -81,31 +77,20 @@ public sealed partial class OfficeRemediationCommandHandler(
                     new { RunningProcesses = running });
         }
 
-        var session = sessionSource.GetActiveSession();
+        var session = sessionSource.GetActiveSession(userSid);
         if (session is null)
             return RpcResponse.Failure(request.Id, 404,
                 "No interactive Windows user is available to approve and run the remediation.");
 
-        var artifactDirectory = Path.GetFullPath(Path.Combine(_options.StagingRoot, artifactId));
-        var stagingRoot = Path.GetFullPath(_options.StagingRoot)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            + Path.DirectorySeparatorChar;
-        if (!artifactDirectory.StartsWith(stagingRoot, StringComparison.OrdinalIgnoreCase))
-            return RpcResponse.Failure(request.Id, 412, "The remediation staging path is invalid.");
-
-        Directory.CreateDirectory(artifactDirectory);
-        var destination = Path.Combine(artifactDirectory, descriptor.FileName);
-        var downloaded = false;
         try
         {
-            if (!await IsApprovedLocalFileAsync(destination, descriptor.Sha256, cancellationToken))
-            {
-                await DownloadAsync(descriptor, destination, cancellationToken);
-                downloaded = true;
-            }
+            var download = await downloader.EnsureAsync(descriptor.ArtifactId,
+                descriptor.FileName, descriptor.Sha256, descriptor.DownloadPath,
+                cancellationToken);
 
             var launch = new OfficeRemediationLaunchRequest(descriptor.ArtifactId,
-                descriptor.DisplayName, descriptor.Description, destination, descriptor.Sha256);
+                descriptor.DisplayName, descriptor.Description, download.FilePath,
+                descriptor.Sha256, OfficeArtifactTrustPolicies.MicrosoftSigned);
             var trayRequest = new TrayIpcRequest(request.Id,
                 TrayIpcProtocol.OfficeRemediationLaunchMethod, string.Empty, string.Empty, null,
                 OfficeRemediation: launch);
@@ -125,7 +110,7 @@ public sealed partial class OfficeRemediationCommandHandler(
                 descriptor.ArtifactId,
                 descriptor.DisplayName,
                 descriptor.RequiresRestart,
-                Downloaded = downloaded,
+                download.Downloaded,
                 trayResponse.ProcessId,
                 trayResponse.SignerSubject,
                 session.SessionId,
@@ -158,70 +143,17 @@ public sealed partial class OfficeRemediationCommandHandler(
         return ArtifactIdPattern().IsMatch(artifactId);
     }
 
-    private async Task DownloadAsync(OfficeRemediationArtifactDescriptor descriptor,
-        string destination, CancellationToken cancellationToken)
+    internal static string? ParseUserSid(JsonElement? parameters)
     {
-        var artifactUri = new Uri(hubUri,
-            $"/api/files/office/{Uri.EscapeDataString(descriptor.ArtifactId)}");
-        using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
-        {
-            Timeout = TimeSpan.FromMinutes(5)
-        };
-        using var response = await client.GetAsync(artifactUri,
-            HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (response.StatusCode != HttpStatusCode.OK)
-            throw new HttpRequestException(
-                $"The control plane returned HTTP {(int)response.StatusCode} for the approved Office artifact.");
-        if (response.Content.Headers.ContentLength is long length
-            && length > _options.MaxDownloadBytes)
-            throw new InvalidDataException("The Office artifact exceeds the configured download limit.");
-
-        var partial = destination + $".{Guid.NewGuid():N}.download";
-        try
-        {
-            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken))
-            await using (var output = new FileStream(partial, FileMode.CreateNew, FileAccess.Write,
-                FileShare.None, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan))
-            {
-                var buffer = new byte[64 * 1024];
-                long total = 0;
-                while (true)
-                {
-                    var read = await input.ReadAsync(buffer, cancellationToken);
-                    if (read == 0) break;
-                    total += read;
-                    if (total > _options.MaxDownloadBytes)
-                        throw new InvalidDataException(
-                            "The Office artifact exceeds the configured download limit.");
-                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-                }
-                await output.FlushAsync(cancellationToken);
-            }
-
-            if (!await IsApprovedLocalFileAsync(partial, descriptor.Sha256, cancellationToken))
-                throw new InvalidDataException(
-                    "The downloaded Office artifact does not match the approved executable hash.");
-            File.Move(partial, destination, overwrite: true);
-        }
-        finally
-        {
-            try { File.Delete(partial); } catch { }
-        }
-    }
-
-    private static async Task<bool> IsApprovedLocalFileAsync(string path, string expectedSha256,
-        CancellationToken cancellationToken)
-    {
-        if (!File.Exists(path)) return false;
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
-            FileShare.Read, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var header = new byte[2];
-        if (await stream.ReadAsync(header, cancellationToken) != 2
-            || header[0] != (byte)'M' || header[1] != (byte)'Z')
-            return false;
-        stream.Position = 0;
-        var actual = Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken));
-        return actual.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase);
+        if (parameters is not { ValueKind: JsonValueKind.Object } element
+            || !element.TryGetProperty("userSid", out var value)
+            || value.ValueKind != JsonValueKind.String)
+            return null;
+        var userSid = value.GetString()?.Trim();
+        return userSid is { Length: <= 184 }
+               && userSid.StartsWith("S-1-", StringComparison.Ordinal)
+            ? userSid
+            : null;
     }
 
     private static string[] GetRunningOfficeProcesses() => OfficeProcessNames

@@ -4,12 +4,16 @@
 
 The control plane has two independent processes:
 
-- `EndpointAgents.ControlPlane.Api` is the ASP.NET Core Windows service. It owns endpoint connections, the REST API, both SignalR hubs, command dispatch, health endpoints, file delivery, and in-memory activity history.
+- `EndpointAgents.ControlPlane.Api` is the ASP.NET Core Windows service. It owns endpoint connections, authenticated chat, SQLite persistence, Hermes orchestration, the REST API, both SignalR hubs, command dispatch, health endpoints, file delivery, and activity history.
 - `ControlPlane.Web` is the Next.js dashboard. It runs as a Node process on loopback port 3000 and calls the API on port 5052. It is never exported or copied into the API's `wwwroot`.
 
 Only the API is installed as a Windows service. The Next.js process is started manually in this phase, so it does not restart automatically after logout or reboot.
 
-The dashboard and operator APIs remain unauthenticated and loopback-only. Endpoint agents can remotely reach only the agent hub, health endpoints, and approved artifact route. Do not expose the operator surface to the network until authentication and authorization are added.
+The dashboard and operator APIs remain loopback-only. Enrolled endpoint agents
+authenticate to the agent hub with device tokens and can remotely reach only
+explicit endpoint routes. Production endpoint traffic requires HTTPS. See
+[hermes-support-agent.md](hermes-support-agent.md) for enrollment, chat
+isolation, Hermes, MCP, and rollout operations.
 
 ## Ports and routes
 
@@ -17,13 +21,15 @@ The dashboard and operator APIs remain unauthenticated and loopback-only. Endpoi
 | --- | --- | --- |
 | `http://127.0.0.1:3000/` | Server only | Next.js operations dashboard |
 | `http://127.0.0.1:5052/` | Server only | API identity/status JSON |
-| `http://<server>:5052/agent-hub` | Remote | Endpoint-agent SignalR hub |
+| `https://<server>/agent-hub` | Remote | Authenticated endpoint-agent SignalR hub |
 | `http://127.0.0.1:5052/dashboard-hub` | Server only | Browser SignalR hub |
-| `http://<server>:5052/health/live` | Remote | API liveness |
-| `http://<server>:5052/health/ready` | Remote | Command readiness; returns 503 during maintenance |
-| `http://<server>:5052/api/files/ibsng-dialer` | Remote | Managed artifact download |
-| `http://<server>:5052/api/files/office/catalog` | Remote | Hash-verified Office remediation catalog |
-| `http://<server>:5052/api/files/office/{artifactId}` | Remote | One catalog-approved Office artifact |
+| `http://127.0.0.1:5052/internal/mcp` | Hermes only | Loopback bearer-protected MCP tools |
+| `http://127.0.0.1:8642/v1/runs` | ControlPlane only | Loopback bearer-protected Hermes run API |
+| `https://<server>/health/live` | Remote | API liveness |
+| `https://<server>/health/ready` | Remote | Command readiness; returns 503 during maintenance |
+| `https://<server>/api/files/ibsng-dialer` | Remote | Managed artifact download |
+| `https://<server>/api/files/office/catalog` | Remote | Hash-verified Office remediation catalog |
+| `https://<server>/api/files/office/{artifactId}` | Remote | One catalog-approved Office artifact |
 
 Port 5052 never serves dashboard HTML. Unknown frontend routes on the API return HTTP 404, while non-loopback requests to operator routes return HTTP 403.
 
@@ -83,6 +89,15 @@ Install or update the API Windows service from an elevated PowerShell session:
 
 The installer publishes only `ControlPlane.Api`, registers `EndpointAgents.ControlPlane.Api`, configures restart-on-failure, and removes the retired `EndpointAgents.ControlPlane.Web` service when upgrading an older installation.
 
+Install and configure the pinned Hermes service next:
+
+```powershell
+.\scripts\install-hermes-service.ps1 <required parameters>
+```
+
+See [hermes-support-agent.md](hermes-support-agent.md) for the complete command,
+TLS setup, and staged device enrollment.
+
 Build and start the separate Next.js server manually:
 
 ```powershell
@@ -108,7 +123,8 @@ an elevated prompt on an endpoint machine:
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\install-endpoint.ps1 `
-  -ControlPlaneHubUrl 'http://CONTROL-PLANE-SERVER:5052/agent-hub'
+  -ControlPlaneHubUrl 'https://CONTROL-PLANE-SERVER/agent-hub' `
+  -EnrollmentCode 'ONE-TIME-ENROLLMENT-CODE'
 ```
 
 This is one installation action: the background service starts immediately and
@@ -127,7 +143,11 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 - **API crash recovery** is handled by Windows Service Control Manager.
 - **Web process recovery** is manual in this phase; restart it with `npm.cmd run start`.
 
-Maintenance state is process-local and resets to normal after an API restart. Activity is also in memory and capped at 500 records.
+Maintenance state is process-local and resets to normal after an API restart.
+Chat conversations, messages, agent runs, action proposals, and tool audit
+events are durable in SQLite under
+`C:\ProgramData\EndpointAgents\ControlPlane`; completed conversation data is
+retained for 30 days by default.
 
 ## Troubleshooting
 

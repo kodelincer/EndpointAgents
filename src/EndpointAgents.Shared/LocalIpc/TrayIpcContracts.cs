@@ -7,6 +7,7 @@ public static class TrayIpcProtocol
 {
     public const string DefaultPipePrefix = "EndpointAgents.Tray";
     public const string LaunchIbsngMethod = "ibsng.launch";
+    public const string ConfirmIbsngInstallMethod = "ibsng.confirm_install";
     public const string ReconcileIbsngMethod = "ibsng.reconcile";
     public const string InspectIbsngMethod = "ibsng.inspect";
     public const string ReadIbsngUiMethod = "ibsng.read_ui_snapshot";

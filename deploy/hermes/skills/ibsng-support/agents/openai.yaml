@@ -1,0 +1,4 @@
+interface:
+  display_name: "IBSng Support"
+  short_description: "Diagnose IBSng without collecting credentials."
+  default_prompt: "Diagnose this IBSng issue using approved read-only tools."

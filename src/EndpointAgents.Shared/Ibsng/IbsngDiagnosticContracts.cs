@@ -36,7 +36,8 @@ public enum IbsngUiReadState
 public sealed record IbsngDiagnosticRequest(
     string ServerHost,
     IbsngVpnProtocol Protocol = IbsngVpnProtocol.Auto,
-    bool IncludeDialerLog = true);
+    bool IncludeDialerLog = true,
+    string? UserSid = null);
 
 /// <summary>One bounded diagnostic result suitable for local and remote display.</summary>
 public sealed record IbsngDiagnosticCheck(

@@ -3,16 +3,25 @@ using System.Text.Json;
 namespace ControlPlane.Api.Commands;
 
 /// <summary>
-/// Prevents secrets from entering the unauthenticated command channel and its
-/// in-memory dashboard activity history.
+/// Prevents secrets from entering command parameters and audit/activity data.
 /// </summary>
 public static class SensitiveCommandParameterGuard
 {
     private static readonly HashSet<string> SensitiveNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "password",
+        "passwd",
+        "pwd",
         "secret",
         "token",
+        "accessToken",
+        "refreshToken",
+        "apiKey",
+        "authorization",
+        "cookie",
+        "privateKey",
+        "licenseKey",
+        "productKey",
         "credential",
         "credentials"
     };

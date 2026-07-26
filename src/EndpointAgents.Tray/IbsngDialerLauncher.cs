@@ -19,6 +19,8 @@ public sealed class IbsngDialerLauncher
     public async Task<TrayIpcResponse> LaunchAsync(TrayIpcRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.Method == TrayIpcProtocol.ConfirmIbsngInstallMethod)
+            return ConfirmInstall(request);
         if (request.Method == TrayIpcProtocol.ReconcileIbsngMethod)
             return await ReconcileResponseAsync(request, cancellationToken);
         if (request.Method == TrayIpcProtocol.InspectIbsngMethod)
@@ -65,6 +67,22 @@ public sealed class IbsngDialerLauncher
             : new TrayIpcResponse(request.Id, true, "Launched", process.Id,
                 "Enter credentials directly in the IBSng dialer.",
                 reconciliation.StoppedProcessIds);
+    }
+
+    private static TrayIpcResponse ConfirmInstall(TrayIpcRequest request)
+    {
+        var consent = MessageBox.Show(
+            $"عامل نقطه پایانی نیاز دارد نسخه تأییدشده IBSng را نصب یا تعمیر کند.\r\n\r\n" +
+            $"مسیر مقصد:\r\n{request.DialerPath}\r\n\r\nآیا ادامه می‌دهید؟",
+            "تأیید نصب یا تعمیر IBSng",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Information,
+            MessageBoxDefaultButton.Button2,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+        return consent == DialogResult.Yes
+            ? new TrayIpcResponse(request.Id, true, "UserApproved")
+            : new TrayIpcResponse(request.Id, false, "UserDeclined",
+                Message: "The endpoint user declined IBSng installation or repair.");
     }
 
     private static async Task<TrayIpcResponse> ReconcileResponseAsync(TrayIpcRequest request,

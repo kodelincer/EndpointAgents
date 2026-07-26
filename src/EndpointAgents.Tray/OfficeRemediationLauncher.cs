@@ -9,7 +9,7 @@ namespace EndpointAgents.Tray;
 
 /// <summary>
 /// Performs the final user-session trust check, obtains local consent, and launches
-/// an approved Microsoft remediation without caller-controlled arguments.
+/// an approved Office executable without caller-controlled arguments.
 /// </summary>
 public sealed class OfficeRemediationLauncher
 {
@@ -20,6 +20,9 @@ public sealed class OfficeRemediationLauncher
         if (request.Method != TrayIpcProtocol.OfficeRemediationLaunchMethod
             || remediation is null)
             return new TrayIpcResponse(request.Id, false, "InvalidOfficeRemediationRequest");
+        if (!TryResolveTrustPolicy(remediation.TrustPolicy,
+                out var requireMicrosoftSignature, out var trustMessage))
+            return new TrayIpcResponse(request.Id, false, "UnsupportedTrustPolicy");
 
         string path;
         try
@@ -43,16 +46,20 @@ public sealed class OfficeRemediationLauncher
                 cancellationToken))
             return new TrayIpcResponse(request.Id, false, "RemediationHashMismatch");
 
-        var signer = AuthenticodeTrust.GetMicrosoftSigner(path);
-        if (signer is null)
-            return new TrayIpcResponse(request.Id, false, "MicrosoftSignatureRequired",
-                Message: "The remediation is not signed by a trusted Microsoft certificate.");
+        string? signer = null;
+        if (requireMicrosoftSignature)
+        {
+            signer = AuthenticodeTrust.GetMicrosoftSigner(path);
+            if (signer is null)
+                return new TrayIpcResponse(request.Id, false, "MicrosoftSignatureRequired",
+                    Message: "The remediation is not signed by a trusted Microsoft certificate.");
+        }
 
         var consent = MessageBox.Show(
-            $"The helpdesk recommends this Microsoft Office remediation:\n\n" +
+            $"The helpdesk recommends this Office tool:\n\n" +
             $"{remediation.DisplayName}\n\n{remediation.Description}\n\n" +
-            "Run it now? No command-line arguments or credentials will be passed.",
-            "EndpointAgents Office remediation",
+            $"{trustMessage}\n\nRun it now? No command-line arguments or credentials will be passed.",
+            "EndpointAgents Office tool",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Information,
             MessageBoxDefaultButton.Button2);
@@ -74,6 +81,25 @@ public sealed class OfficeRemediationLauncher
             : new TrayIpcResponse(request.Id, true, "Launched", process.Id,
                 OfficeRemediationArtifactId: remediation.ArtifactId,
                 SignerSubject: signer);
+    }
+
+    internal static bool TryResolveTrustPolicy(string trustPolicy,
+        out bool requireMicrosoftSignature, out string message)
+    {
+        requireMicrosoftSignature = false;
+        message = string.Empty;
+        if (trustPolicy == OfficeArtifactTrustPolicies.MicrosoftSigned)
+        {
+            requireMicrosoftSignature = true;
+            message = "This executable must have a trusted Microsoft signature.";
+            return true;
+        }
+        if (trustPolicy == OfficeArtifactTrustPolicies.AdministratorApprovedSha256)
+        {
+            message = "This retailer executable is approved by its exact administrator-managed SHA-256 hash; its publisher signature is not verified.";
+            return true;
+        }
+        return false;
     }
 
     internal static async Task<bool> MatchesExecutableHashAsync(string path,

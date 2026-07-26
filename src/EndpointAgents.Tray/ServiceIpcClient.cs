@@ -1,5 +1,6 @@
 using EndpointAgents.Shared.LocalIpc;
 using EndpointAgents.Shared.Ibsng;
+using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Support;
 using System.IO.Pipes;
 using System.Security.Principal;
@@ -34,6 +35,45 @@ public sealed class ServiceIpcClient
                     response.Message ?? "The support request was not accepted.");
         return new SupportRequestReceipt(string.Empty, DateTimeOffset.UtcNow, false,
             response.Message ?? "The support request was not accepted.");
+    }
+
+    public async Task<ChatConversation> OpenChatAsync(
+        int sessionId, CancellationToken cancellationToken)
+    {
+        var identity = new ChatIdentity("S-1-0-0", Environment.UserName, sessionId);
+        var request = new ServiceIpcRequest(Guid.NewGuid().ToString("N"),
+            ServiceIpcProtocol.OpenChatMethod, JsonSerializer.SerializeToElement(identity));
+        return ReadPayload<ChatConversation>(
+            await SendAsync(request, cancellationToken));
+    }
+
+    public async Task<ChatMessageReceipt> SendChatMessageAsync(
+        ChatMessageSubmission submission, CancellationToken cancellationToken)
+    {
+        var request = new ServiceIpcRequest(Guid.NewGuid().ToString("N"),
+            ServiceIpcProtocol.SendChatMessageMethod,
+            JsonSerializer.SerializeToElement(submission));
+        return ReadPayload<ChatMessageReceipt>(
+            await SendAsync(request, cancellationToken));
+    }
+
+    public async Task<ChatDelta> GetChatDeltaAsync(
+        ChatDeltaRequest delta, CancellationToken cancellationToken)
+    {
+        var request = new ServiceIpcRequest(Guid.NewGuid().ToString("N"),
+            ServiceIpcProtocol.GetChatDeltaMethod, JsonSerializer.SerializeToElement(delta));
+        return ReadPayload<ChatDelta>(
+            await SendAsync(request, cancellationToken, TimeSpan.FromSeconds(20)));
+    }
+
+    public async Task<ChatActionDecisionReceipt> RespondToChatActionAsync(
+        ChatActionDecision decision, CancellationToken cancellationToken)
+    {
+        var request = new ServiceIpcRequest(Guid.NewGuid().ToString("N"),
+            ServiceIpcProtocol.RespondToChatActionMethod,
+            JsonSerializer.SerializeToElement(decision));
+        return ReadPayload<ChatActionDecisionReceipt>(
+            await SendAsync(request, cancellationToken, TimeSpan.FromMinutes(11)));
     }
 
     /// <summary>Runs the local read-only IBSng diagnostic pipeline through the service.</summary>

@@ -6,6 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Security.Cryptography;
 using ControlPlane.Api.Files;
+using ControlPlane.Api.Chat;
 
 namespace ControlPlane.Api.Tests;
 
@@ -186,6 +187,17 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
     }
 
     [Fact]
+    public async Task InternalMcpRejectsMissingSecretAndRemotePeers()
+    {
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await _client.GetAsync("/internal/mcp", TestCancellation)).StatusCode);
+
+        using var remote = _factory.CreateRemoteClient();
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await remote.GetAsync("/internal/mcp", TestCancellation)).StatusCode);
+    }
+
+    [Fact]
     public async Task RemotePeerCanReachAgentHealthAndArtifactSurfaces()
     {
         using var remote = _factory.CreateRemoteClient();
@@ -199,6 +211,43 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
             (await remote.GetAsync("/api/files/ibsng-dialer", TestCancellation)).StatusCode);
         Assert.Equal(HttpStatusCode.OK,
             (await remote.GetAsync("/api/files/office/catalog", TestCancellation)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await remote.GetAsync("/api/files/office/bugfix/catalog",
+                TestCancellation)).StatusCode);
+    }
+
+    [Fact]
+    public async Task EnrollmentCodesAreOneTimeAndIssueValidDeviceTokens()
+    {
+        var issueResponse = await _client.PostAsync(
+            "/api/agent-enrollments", content: null, TestCancellation);
+        Assert.Equal(HttpStatusCode.OK, issueResponse.StatusCode);
+        var issue = await issueResponse.Content.ReadFromJsonAsync<EnrollmentIssue>(
+            TestCancellation);
+        Assert.NotNull(issue);
+
+        using var remote = _factory.CreateRemoteClient();
+        var requestedAgentId = Guid.NewGuid().ToString("D");
+        var first = await remote.PostAsJsonAsync("/api/agent-enrollments/redeem",
+            new EnrollmentRequest(issue!.EnrollmentCode, requestedAgentId, "test-machine"),
+            TestCancellation);
+        var reused = await remote.PostAsJsonAsync("/api/agent-enrollments/redeem",
+            new EnrollmentRequest(issue.EnrollmentCode, requestedAgentId, "test-machine"),
+            TestCancellation);
+
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, reused.StatusCode);
+        var credential = await first.Content.ReadFromJsonAsync<EnrollmentRedemption>(
+            TestCancellation);
+        var store = _factory.Services.GetRequiredService<ChatStore>();
+        Assert.Equal(requestedAgentId, await store.ValidateDeviceTokenAsync(
+            credential!.DeviceToken, TestCancellation));
+
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await _client.PostAsync($"/api/devices/{requestedAgentId}/revoke",
+                content: null, TestCancellation)).StatusCode);
+        Assert.Null(await store.ValidateDeviceTokenAsync(
+            credential.DeviceToken, TestCancellation));
     }
 
     [Fact]
@@ -235,6 +284,47 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
             TestCancellation);
         var unknown = await remote.GetAsync("/api/files/office/not-catalogued",
             TestCancellation);
+
+        Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        Assert.Equal(hash, approved.Headers.GetValues("X-Artifact-Sha256").Single());
+        Assert.Equal(bytes, await approved.Content.ReadAsByteArrayAsync(TestCancellation));
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+    }
+
+    [Fact]
+    public async Task RemotePeerDownloadsOnlyCataloguedHashVerifiedOfficeBugfix()
+    {
+        var bytes = new byte[] { (byte)'M', (byte)'Z', 3, 4, 5 };
+        var hash = Convert.ToHexString(SHA256.HashData(bytes));
+        var fileName = "officebugfixmanager_16.0.exe";
+        await File.WriteAllBytesAsync(
+            Path.Combine(_factory.FileRepositoryRoot, fileName), bytes,
+            TestCancellation);
+        await File.WriteAllTextAsync(Path.Combine(_factory.FileRepositoryRoot,
+            "office-bugfix-managers.json"), JsonSerializer.Serialize(
+                new OfficeBugfixManifest
+                {
+                    Version = 1,
+                    Artifacts =
+                    [
+                        new OfficeBugfixManifestEntry
+                        {
+                            ArtifactId = "approved-office-bugfix",
+                            DisplayName = "Approved Office bugfix",
+                            Description = "Integration test artifact",
+                            FileName = fileName,
+                            Sha256 = hash,
+                            MinOfficeVersion = "16.0",
+                            MaxOfficeVersionExclusive = "17.0"
+                        }
+                    ]
+                }), TestCancellation);
+
+        using var remote = _factory.CreateRemoteClient();
+        var approved = await remote.GetAsync(
+            "/api/files/office/bugfix/approved-office-bugfix", TestCancellation);
+        var unknown = await remote.GetAsync(
+            "/api/files/office/bugfix/not-catalogued", TestCancellation);
 
         Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
         Assert.Equal(hash, approved.Headers.GetValues("X-Artifact-Sha256").Single());

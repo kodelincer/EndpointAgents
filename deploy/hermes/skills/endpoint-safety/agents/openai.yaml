@@ -1,0 +1,4 @@
+interface:
+  display_name: "Endpoint Safety"
+  short_description: "Enforce endpoint isolation, privacy, and consent."
+  default_prompt: "Apply endpoint safety policy to this support request."

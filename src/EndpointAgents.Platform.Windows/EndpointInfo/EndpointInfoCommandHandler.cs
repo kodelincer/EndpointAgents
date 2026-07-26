@@ -12,6 +12,7 @@ using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
+using System.Text.Json;
 
 namespace EndpointAgents.Platform.Windows.EndpointInfo;
 
@@ -42,8 +43,13 @@ public sealed class EndpointInfoCommandHandler : IEndpointCommandHandler
         cancellationToken.ThrowIfCancellationRequested();
 
         var warnings = new List<DiagnosticWarning>();
+        var requestedUserSid = ParseUserSid(request.Params);
         var activeSession = Safe("user.active_session",
-            () => _sessionLocator.GetActiveSessions().FirstOrDefault(), warnings);
+            () => string.IsNullOrWhiteSpace(requestedUserSid)
+                ? _sessionLocator.GetActiveSessions().FirstOrDefault()
+                : _sessionLocator.GetActiveSessions().FirstOrDefault(session =>
+                    session.UserSid.Equals(requestedUserSid,
+                        StringComparison.OrdinalIgnoreCase)), warnings);
         var result = new
         {
             User = CollectUserInfo(activeSession),
@@ -73,6 +79,7 @@ public sealed class EndpointInfoCommandHandler : IEndpointCommandHandler
                 activeSession.SessionId,
                 activeSession.UserName,
                 activeSession.DomainName,
+                activeSession.UserSid,
                 activeSession.DesktopPath
             },
             AgentExecutionIdentity = new
@@ -83,6 +90,13 @@ public sealed class EndpointInfoCommandHandler : IEndpointCommandHandler
             }
         };
     }
+
+    private static string? ParseUserSid(JsonElement? parameters) =>
+        parameters is { ValueKind: JsonValueKind.Object } element
+        && element.TryGetProperty("userSid", out var sid)
+        && sid.ValueKind == JsonValueKind.String
+            ? sid.GetString()
+            : null;
 
     private object CollectMachineInfo(List<DiagnosticWarning> warnings)
     {

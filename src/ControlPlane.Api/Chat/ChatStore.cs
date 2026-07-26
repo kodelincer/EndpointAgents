@@ -1,0 +1,1152 @@
+using EndpointAgents.Shared.Chat;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Options;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+namespace ControlPlane.Api.Chat;
+
+public sealed class ChatStore(IOptions<ChatOptions> options)
+{
+    private readonly string _databasePath = Path.GetFullPath(options.Value.DatabasePath);
+    private readonly SemaphoreSlim _gate = new(1, 1);
+
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        var directory = Path.GetDirectoryName(_databasePath)
+            ?? throw new InvalidOperationException("Chat database path has no parent directory.");
+        Directory.CreateDirectory(directory);
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                PRAGMA journal_mode=WAL;
+                PRAGMA foreign_keys=ON;
+                PRAGMA busy_timeout=5000;
+
+                CREATE TABLE IF NOT EXISTS devices (
+                    agent_id TEXT PRIMARY KEY,
+                    token_hash TEXT NOT NULL,
+                    machine_name TEXT NOT NULL,
+                    enrolled_at_utc TEXT NOT NULL,
+                    last_seen_at_utc TEXT NOT NULL,
+                    revoked_at_utc TEXT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS enrollment_codes (
+                    code_hash TEXT PRIMARY KEY,
+                    expires_at_utc TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    redeemed_at_utc TEXT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS conversations (
+                    conversation_id TEXT PRIMARY KEY,
+                    agent_id TEXT NOT NULL,
+                    user_sid TEXT NOT NULL,
+                    user_name TEXT NOT NULL,
+                    session_id INTEGER NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    last_sequence INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_conversations_active_owner
+                    ON conversations(agent_id, user_sid) WHERE is_active = 1;
+
+                CREATE TABLE IF NOT EXISTS messages (
+                    message_id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id),
+                    client_message_id TEXT NULL,
+                    sequence INTEGER NOT NULL,
+                    role TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    text_direction TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    run_id TEXT NULL,
+                    UNIQUE(conversation_id, sequence),
+                    UNIQUE(conversation_id, client_message_id)
+                );
+
+                CREATE TABLE IF NOT EXISTS agent_runs (
+                    run_id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id),
+                    user_message_id TEXT NOT NULL REFERENCES messages(message_id),
+                    state TEXT NOT NULL,
+                    capability_hash TEXT NULL,
+                    capability_expires_at_utc TEXT NULL,
+                    framework_run_id TEXT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    created_at_utc TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL,
+                    last_error TEXT NULL,
+                    UNIQUE(user_message_id)
+                );
+                CREATE INDEX IF NOT EXISTS ix_agent_runs_state
+                    ON agent_runs(state, created_at_utc);
+
+                CREATE TABLE IF NOT EXISTS action_proposals (
+                    action_id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id),
+                    run_id TEXT NOT NULL REFERENCES agent_runs(run_id),
+                    sequence INTEGER NOT NULL,
+                    method TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    parameters_json TEXT NULL,
+                    state TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    expires_at_utc TEXT NOT NULL,
+                    decided_at_utc TEXT NULL,
+                    executed_at_utc TEXT NULL,
+                    execution_error TEXT NULL,
+                    UNIQUE(conversation_id, sequence)
+                );
+
+                CREATE TABLE IF NOT EXISTS tool_audit (
+                    event_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    detail TEXT NULL,
+                    created_at_utc TEXT NOT NULL
+                );
+
+                UPDATE agent_runs
+                SET state = 'Queued', capability_hash = NULL,
+                    capability_expires_at_utc = NULL, framework_run_id = NULL,
+                    updated_at_utc = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                    last_error = 'Recovered after ControlPlane restart.'
+                WHERE state = 'Running';
+                UPDATE messages
+                SET state = 'Queued'
+                WHERE message_id IN (
+                    SELECT user_message_id FROM agent_runs WHERE state = 'Queued'
+                ) AND state = 'Working';
+                """;
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<EnrollmentIssue> CreateEnrollmentAsync(
+        TimeSpan lifetime, CancellationToken cancellationToken)
+    {
+        var code = CreateSecret(24);
+        var now = DateTimeOffset.UtcNow;
+        var expires = now.Add(lifetime);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                INSERT INTO enrollment_codes(code_hash, expires_at_utc, created_at_utc)
+                VALUES($hash, $expires, $created);
+                """;
+            command.Parameters.AddWithValue("$hash", HashSecret(code));
+            command.Parameters.AddWithValue("$expires", Format(expires));
+            command.Parameters.AddWithValue("$created", Format(now));
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            return new EnrollmentIssue(code, expires);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<EnrollmentRedemption?> RedeemEnrollmentAsync(
+        EnrollmentRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.EnrollmentCode)) return null;
+        var now = DateTimeOffset.UtcNow;
+        var agentId = Guid.TryParse(request.AgentId, out var parsed)
+            ? parsed.ToString("D")
+            : Guid.NewGuid().ToString("D");
+        var token = CreateSecret(32);
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using var lookup = connection.CreateCommand();
+            lookup.Transaction = (SqliteTransaction)transaction;
+            lookup.CommandText =
+                """
+                SELECT expires_at_utc, redeemed_at_utc
+                FROM enrollment_codes WHERE code_hash = $hash;
+                """;
+            lookup.Parameters.AddWithValue("$hash", HashSecret(request.EnrollmentCode.Trim()));
+            await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken)
+                || !reader.IsDBNull(1)
+                || Parse(reader.GetString(0)) <= now)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+            await reader.DisposeAsync();
+
+            await using var redeem = connection.CreateCommand();
+            redeem.Transaction = (SqliteTransaction)transaction;
+            redeem.CommandText =
+                """
+                UPDATE enrollment_codes SET redeemed_at_utc = $now
+                WHERE code_hash = $code_hash AND redeemed_at_utc IS NULL;
+
+                INSERT INTO devices(agent_id, token_hash, machine_name,
+                    enrolled_at_utc, last_seen_at_utc, revoked_at_utc)
+                VALUES($agent_id, $token_hash, $machine_name, $now, $now, NULL)
+                ON CONFLICT(agent_id) DO UPDATE SET
+                    token_hash = excluded.token_hash,
+                    machine_name = excluded.machine_name,
+                    enrolled_at_utc = excluded.enrolled_at_utc,
+                    last_seen_at_utc = excluded.last_seen_at_utc,
+                    revoked_at_utc = NULL;
+                """;
+            redeem.Parameters.AddWithValue("$now", Format(now));
+            redeem.Parameters.AddWithValue("$code_hash", HashSecret(request.EnrollmentCode.Trim()));
+            redeem.Parameters.AddWithValue("$agent_id", agentId);
+            redeem.Parameters.AddWithValue("$token_hash", HashSecret(token));
+            redeem.Parameters.AddWithValue("$machine_name", Normalize(request.MachineName, 256));
+            await redeem.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new EnrollmentRedemption(agentId, token, now);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<string?> ValidateDeviceTokenAsync(
+        string token, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(token)) return null;
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                SELECT agent_id FROM devices
+                WHERE token_hash = $hash AND revoked_at_utc IS NULL;
+                """;
+            command.Parameters.AddWithValue("$hash", HashSecret(token));
+            var value = await command.ExecuteScalarAsync(cancellationToken);
+            if (value is not string agentId) return null;
+
+            await using var touch = connection.CreateCommand();
+            touch.CommandText =
+                "UPDATE devices SET last_seen_at_utc = $now WHERE agent_id = $agent_id;";
+            touch.Parameters.AddWithValue("$now", Format(DateTimeOffset.UtcNow));
+            touch.Parameters.AddWithValue("$agent_id", agentId);
+            await touch.ExecuteNonQueryAsync(cancellationToken);
+            return agentId;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public Task RevokeDeviceAsync(string agentId, CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            """
+            UPDATE devices SET revoked_at_utc = $now
+            WHERE agent_id = $agent_id AND revoked_at_utc IS NULL;
+            """,
+            [("$now", Format(DateTimeOffset.UtcNow)), ("$agent_id", agentId)],
+            cancellationToken);
+
+    public async Task<bool> IsDeviceActiveAsync(
+        string agentId, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                """
+                SELECT EXISTS(
+                    SELECT 1 FROM devices
+                    WHERE agent_id = $agent_id AND revoked_at_utc IS NULL
+                );
+                """;
+            command.Parameters.AddWithValue("$agent_id", agentId);
+            return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken),
+                CultureInfo.InvariantCulture) == 1;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<ChatConversation> OpenConversationAsync(
+        string agentId, ChatIdentity identity, CancellationToken cancellationToken)
+    {
+        ValidateIdentity(identity);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            return await FindOrCreateConversationAsync(connection, null, agentId,
+                identity, cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<ChatMessageReceipt> SubmitMessageAsync(
+        string agentId, ChatMessageSubmission submission, CancellationToken cancellationToken)
+    {
+        ValidateIdentity(submission.Identity);
+        var body = Normalize(submission.MessageText, 8_000);
+        var clientId = Normalize(submission.ClientMessageId, 100);
+        if (string.IsNullOrWhiteSpace(body) || string.IsNullOrWhiteSpace(clientId))
+            return new ChatMessageReceipt(string.Empty, string.Empty, 0, false,
+                "A client message ID and message text are required.");
+
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            var conversation = await FindOrCreateConversationAsync(connection,
+                (SqliteTransaction)transaction, agentId, submission.Identity,
+                cancellationToken, submission.ConversationId);
+
+            await using var duplicate = connection.CreateCommand();
+            duplicate.Transaction = (SqliteTransaction)transaction;
+            duplicate.CommandText =
+                """
+                SELECT message_id, sequence FROM messages
+                WHERE conversation_id = $conversation_id AND client_message_id = $client_id;
+                """;
+            duplicate.Parameters.AddWithValue("$conversation_id", conversation.ConversationId);
+            duplicate.Parameters.AddWithValue("$client_id", clientId);
+            await using (var reader = await duplicate.ExecuteReaderAsync(cancellationToken))
+            {
+                if (await reader.ReadAsync(cancellationToken))
+                {
+                    var existing = new ChatMessageReceipt(conversation.ConversationId,
+                        reader.GetString(0), reader.GetInt64(1), true,
+                        "The message was already accepted.");
+                    await transaction.CommitAsync(cancellationToken);
+                    return existing;
+                }
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            var messageId = Guid.NewGuid().ToString("N");
+            var runId = Guid.NewGuid().ToString("N");
+            var sequence = conversation.LastSequence + 1;
+            await using var insert = connection.CreateCommand();
+            insert.Transaction = (SqliteTransaction)transaction;
+            insert.CommandText =
+                """
+                UPDATE conversations SET last_sequence = $sequence, updated_at_utc = $now,
+                    user_name = $user_name, session_id = $session_id
+                WHERE conversation_id = $conversation_id;
+
+                INSERT INTO messages(message_id, conversation_id, client_message_id, sequence,
+                    role, body, text_direction, state, created_at_utc, run_id)
+                VALUES($message_id, $conversation_id, $client_id, $sequence,
+                    $role, $body, $direction, $state, $now, $run_id);
+
+                INSERT INTO agent_runs(run_id, conversation_id, user_message_id, state,
+                    created_at_utc, updated_at_utc)
+                VALUES($run_id, $conversation_id, $message_id, 'Queued', $now, $now);
+                """;
+            insert.Parameters.AddWithValue("$sequence", sequence);
+            insert.Parameters.AddWithValue("$now", Format(now));
+            insert.Parameters.AddWithValue("$user_name",
+                Normalize(submission.Identity.UserName, 256));
+            insert.Parameters.AddWithValue("$session_id", submission.Identity.SessionId);
+            insert.Parameters.AddWithValue("$conversation_id", conversation.ConversationId);
+            insert.Parameters.AddWithValue("$message_id", messageId);
+            insert.Parameters.AddWithValue("$client_id", clientId);
+            insert.Parameters.AddWithValue("$role", ChatMessageRole.User.ToString());
+            insert.Parameters.AddWithValue("$body", body);
+            insert.Parameters.AddWithValue("$direction",
+                submission.TextDirection is "rtl" or "ltr" ? submission.TextDirection : "auto");
+            insert.Parameters.AddWithValue("$state", ChatMessageState.Queued.ToString());
+            insert.Parameters.AddWithValue("$run_id", runId);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new ChatMessageReceipt(conversation.ConversationId, messageId, sequence,
+                true, "The message was queued for the support agent.");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return new ChatMessageReceipt(string.Empty, string.Empty, 0, false,
+                "The conversation does not belong to this endpoint user.");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<ChatDelta?> GetDeltaAsync(string agentId, ChatDeltaRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateIdentity(request.Identity);
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            var conversation = await GetConversationAsync(connection, null,
+                request.ConversationId, cancellationToken);
+            if (conversation is null || conversation.AgentId != agentId
+                || conversation.UserSid != request.Identity.UserSid)
+                return null;
+
+            var messages = new List<ChatMessage>();
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText =
+                    """
+                    SELECT message_id, conversation_id, sequence, role, body, text_direction,
+                        state, created_at_utc, run_id
+                    FROM messages
+                    WHERE conversation_id = $conversation_id
+                      AND (
+                        sequence > $after
+                        OR (role = 'User' AND state IN ('Queued', 'Working'))
+                      )
+                    ORDER BY sequence;
+                    """;
+                command.Parameters.AddWithValue("$conversation_id", request.ConversationId);
+                command.Parameters.AddWithValue("$after", Math.Max(0, request.AfterSequence));
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                    messages.Add(ReadMessage(reader));
+            }
+
+            var actions = new List<ChatActionProposal>();
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText =
+                    """
+                    SELECT action_id, conversation_id, sequence, method, display_name,
+                        description, parameters_json, created_at_utc, expires_at_utc, state
+                    FROM action_proposals
+                    WHERE conversation_id = $conversation_id AND sequence > $after
+                    ORDER BY sequence;
+                    """;
+                command.Parameters.AddWithValue("$conversation_id", request.ConversationId);
+                command.Parameters.AddWithValue("$after", Math.Max(0, request.AfterSequence));
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                    actions.Add(ReadAction(reader));
+            }
+
+            var refreshed = await GetConversationAsync(connection, null,
+                request.ConversationId, cancellationToken) ?? conversation;
+            return new ChatDelta(refreshed, messages, actions);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<ChatRunLease?> LeaseNextRunAsync(
+        int historyLimit, TimeSpan capabilityLifetime, CancellationToken cancellationToken)
+    {
+        var capability = CreateSecret(32);
+        var now = DateTimeOffset.UtcNow;
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using var select = connection.CreateCommand();
+            select.Transaction = (SqliteTransaction)transaction;
+            select.CommandText =
+                """
+                SELECT r.run_id, r.conversation_id, r.user_message_id,
+                    c.agent_id, c.user_sid, c.user_name, COALESCE(d.machine_name, '')
+                FROM agent_runs r
+                JOIN conversations c ON c.conversation_id = r.conversation_id
+                LEFT JOIN devices d ON d.agent_id = c.agent_id
+                WHERE r.state = 'Queued'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM agent_runs active
+                    WHERE active.conversation_id = r.conversation_id
+                      AND active.state = 'Running')
+                ORDER BY r.created_at_utc
+                LIMIT 1;
+                """;
+            await using var reader = await select.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return null;
+            }
+            var runId = reader.GetString(0);
+            var conversationId = reader.GetString(1);
+            var userMessageId = reader.GetString(2);
+            var agentId = reader.GetString(3);
+            var userSid = reader.GetString(4);
+            var userName = reader.GetString(5);
+            var machineName = reader.GetString(6);
+            await reader.DisposeAsync();
+
+            await using var update = connection.CreateCommand();
+            update.Transaction = (SqliteTransaction)transaction;
+            update.CommandText =
+                """
+                UPDATE agent_runs
+                SET state = 'Running', capability_hash = $capability_hash,
+                    capability_expires_at_utc = $expires, attempts = attempts + 1,
+                    updated_at_utc = $now
+                WHERE run_id = $run_id AND state = 'Queued';
+                UPDATE messages SET state = 'Working' WHERE message_id = $message_id;
+                """;
+            update.Parameters.AddWithValue("$capability_hash", HashSecret(capability));
+            update.Parameters.AddWithValue("$expires", Format(now.Add(capabilityLifetime)));
+            update.Parameters.AddWithValue("$now", Format(now));
+            update.Parameters.AddWithValue("$run_id", runId);
+            update.Parameters.AddWithValue("$message_id", userMessageId);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) == 0)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+
+            var history = new List<ChatMessage>();
+            await using var historyCommand = connection.CreateCommand();
+            historyCommand.Transaction = (SqliteTransaction)transaction;
+            historyCommand.CommandText =
+                """
+                SELECT message_id, conversation_id, sequence, role, body, text_direction,
+                    state, created_at_utc, run_id
+                FROM (
+                    SELECT * FROM messages WHERE conversation_id = $conversation_id
+                    ORDER BY sequence DESC LIMIT $limit
+                ) ORDER BY sequence;
+                """;
+            historyCommand.Parameters.AddWithValue("$conversation_id", conversationId);
+            historyCommand.Parameters.AddWithValue("$limit", Math.Clamp(historyLimit, 1, 100));
+            await using var historyReader =
+                await historyCommand.ExecuteReaderAsync(cancellationToken);
+            while (await historyReader.ReadAsync(cancellationToken))
+                history.Add(ReadMessage(historyReader));
+            await transaction.CommitAsync(cancellationToken);
+
+            return new ChatRunLease(runId, conversationId, agentId, userSid, userName,
+                machineName, userMessageId, capability, history);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task SetFrameworkRunIdAsync(string runId, string frameworkRunId,
+        CancellationToken cancellationToken)
+    {
+        await ExecuteAsync(
+            "UPDATE agent_runs SET framework_run_id = $value, updated_at_utc = $now WHERE run_id = $id;",
+            [("$value", frameworkRunId), ("$now", Format(DateTimeOffset.UtcNow)), ("$id", runId)],
+            cancellationToken);
+    }
+
+    public async Task CompleteRunAsync(string runId, string response,
+        CancellationToken cancellationToken)
+    {
+        await FinishRunAsync(runId, Normalize(response, 32_000), succeeded: true,
+            cancellationToken);
+    }
+
+    public async Task FailRunAsync(string runId, string error,
+        CancellationToken cancellationToken)
+    {
+        await FinishRunAsync(runId,
+            "The support agent could not complete this request. Please try again.",
+            succeeded: false, cancellationToken, Normalize(error, 2_000));
+    }
+
+    public Task RequeueRunAsync(string runId, CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            """
+            UPDATE agent_runs
+            SET state = 'Queued', capability_hash = NULL,
+                capability_expires_at_utc = NULL, framework_run_id = NULL,
+                updated_at_utc = $now, last_error = 'Requeued during shutdown.'
+            WHERE run_id = $run_id AND state = 'Running';
+            UPDATE messages
+            SET state = 'Queued'
+            WHERE message_id = (
+                SELECT user_message_id FROM agent_runs WHERE run_id = $run_id
+            ) AND state = 'Working';
+            """,
+            [("$now", Format(DateTimeOffset.UtcNow)), ("$run_id", runId)],
+            cancellationToken);
+
+    public async Task<bool> TryRequeueTransientRunAsync(string runId, int maxAttempts,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText =
+                """
+                UPDATE agent_runs
+                SET state = 'Queued', capability_hash = NULL,
+                    capability_expires_at_utc = NULL, framework_run_id = NULL,
+                    updated_at_utc = $now, last_error = 'Transient Hermes failure; retry queued.'
+                WHERE run_id = $run_id AND state = 'Running' AND attempts < $max_attempts;
+                SELECT changes();
+                """;
+            command.Parameters.AddWithValue("$now", Format(DateTimeOffset.UtcNow));
+            command.Parameters.AddWithValue("$run_id", runId);
+            command.Parameters.AddWithValue("$max_attempts", Math.Clamp(maxAttempts, 1, 10));
+            var changed = Convert.ToInt64(
+                await command.ExecuteScalarAsync(cancellationToken),
+                CultureInfo.InvariantCulture) > 0;
+            if (changed)
+            {
+                await using var message = connection.CreateCommand();
+                message.Transaction = (SqliteTransaction)transaction;
+                message.CommandText =
+                    """
+                    UPDATE messages
+                    SET state = 'Queued'
+                    WHERE message_id = (
+                        SELECT user_message_id FROM agent_runs WHERE run_id = $run_id
+                    ) AND state = 'Working';
+                    """;
+                message.Parameters.AddWithValue("$run_id", runId);
+                await message.ExecuteNonQueryAsync(cancellationToken);
+            }
+            await transaction.CommitAsync(cancellationToken);
+            return changed;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<ChatRunScope?> ResolveCapabilityAsync(string capability,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(capability)) return null;
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            return await ResolveCapabilityAsync(connection, null, capability, cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<ChatActionProposal?> CreateActionProposalAsync(string capability,
+        string method, string displayName, string description, JsonElement? parameters,
+        TimeSpan lifetime, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            var scope = await ResolveCapabilityAsync(connection, (SqliteTransaction)transaction,
+                capability, cancellationToken);
+            if (scope is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return null;
+            }
+
+            var conversation = await GetConversationAsync(connection,
+                (SqliteTransaction)transaction, scope.ConversationId, cancellationToken)
+                ?? throw new InvalidOperationException("Run conversation disappeared.");
+            var now = DateTimeOffset.UtcNow;
+            var proposal = new ChatActionProposal(Guid.NewGuid().ToString("N"),
+                scope.ConversationId, conversation.LastSequence + 1,
+                Normalize(method, 200), Normalize(displayName, 200),
+                Normalize(description, 1_000), parameters?.Clone(), now,
+                now.Add(lifetime), ChatActionState.Pending);
+
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText =
+                """
+                UPDATE conversations SET last_sequence = $sequence, updated_at_utc = $now
+                WHERE conversation_id = $conversation_id;
+                INSERT INTO action_proposals(action_id, conversation_id, run_id, sequence,
+                    method, display_name, description, parameters_json, state,
+                    created_at_utc, expires_at_utc)
+                VALUES($action_id, $conversation_id, $run_id, $sequence, $method,
+                    $display_name, $description, $parameters, 'Pending', $now, $expires);
+                """;
+            command.Parameters.AddWithValue("$sequence", proposal.Sequence);
+            command.Parameters.AddWithValue("$now", Format(now));
+            command.Parameters.AddWithValue("$conversation_id", scope.ConversationId);
+            command.Parameters.AddWithValue("$action_id", proposal.ActionId);
+            command.Parameters.AddWithValue("$run_id", scope.RunId);
+            command.Parameters.AddWithValue("$method", proposal.Method);
+            command.Parameters.AddWithValue("$display_name", proposal.DisplayName);
+            command.Parameters.AddWithValue("$description", proposal.Description);
+            command.Parameters.AddWithValue("$parameters",
+                parameters is null ? DBNull.Value : parameters.Value.GetRawText());
+            command.Parameters.AddWithValue("$expires", Format(proposal.ExpiresAtUtc));
+            await command.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return proposal;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<ActionDecisionResult> DecideActionAsync(string agentId,
+        ChatActionDecision decision, CancellationToken cancellationToken)
+    {
+        ValidateIdentity(decision.Identity);
+        var now = DateTimeOffset.UtcNow;
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            var conversation = await GetConversationAsync(connection,
+                (SqliteTransaction)transaction, decision.ConversationId, cancellationToken);
+            if (conversation is null || conversation.AgentId != agentId
+                || conversation.UserSid != decision.Identity.UserSid)
+                return new ActionDecisionResult(false, null,
+                    "The action does not belong to this endpoint user.");
+
+            await using var lookup = connection.CreateCommand();
+            lookup.Transaction = (SqliteTransaction)transaction;
+            lookup.CommandText =
+                """
+                SELECT action_id, conversation_id, sequence, method, display_name,
+                    description, parameters_json, created_at_utc, expires_at_utc, state
+                FROM action_proposals
+                WHERE action_id = $action_id AND conversation_id = $conversation_id;
+                """;
+            lookup.Parameters.AddWithValue("$action_id", decision.ActionId);
+            lookup.Parameters.AddWithValue("$conversation_id", decision.ConversationId);
+            await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+                return new ActionDecisionResult(false, null, "The action was not found.");
+            var proposal = ReadAction(reader);
+            await reader.DisposeAsync();
+            if (proposal.State != ChatActionState.Pending)
+                return new ActionDecisionResult(false, proposal,
+                    "The action was already decided.");
+            if (proposal.ExpiresAtUtc <= now)
+            {
+                await UpdateActionStateAsync(connection, (SqliteTransaction)transaction,
+                    proposal.ActionId, ChatActionState.Expired, now, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return new ActionDecisionResult(false, proposal with
+                {
+                    State = ChatActionState.Expired
+                }, "The action proposal expired.");
+            }
+
+            var state = decision.Approved
+                ? ChatActionState.Approved
+                : ChatActionState.Rejected;
+            await UpdateActionStateAsync(connection, (SqliteTransaction)transaction,
+                proposal.ActionId, state, now, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new ActionDecisionResult(true, proposal with { State = state },
+                decision.Approved ? "The action was approved." : "The action was rejected.");
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task MarkActionExecutedAsync(string actionId, bool succeeded, string? error,
+        CancellationToken cancellationToken)
+    {
+        var state = succeeded ? ChatActionState.Executed : ChatActionState.Failed;
+        await ExecuteAsync(
+            """
+            UPDATE action_proposals SET state = $state, executed_at_utc = $now,
+                execution_error = $error
+            WHERE action_id = $id AND state = 'Approved';
+
+            INSERT INTO tool_audit(event_id, run_id, conversation_id, agent_id,
+                tool_name, outcome, detail, created_at_utc)
+            SELECT $event_id, p.run_id, p.conversation_id, c.agent_id,
+                'endpoint_action:' || p.method, $outcome, $error, $now
+            FROM action_proposals p
+            JOIN conversations c ON c.conversation_id = p.conversation_id
+            WHERE p.action_id = $id AND p.state = $state AND changes() = 1;
+            """,
+            [("$state", state.ToString()), ("$now", Format(DateTimeOffset.UtcNow)),
+                ("$error", (object?)Normalize(error ?? string.Empty, 2_000) ?? DBNull.Value),
+                ("$id", actionId), ("$event_id", Guid.NewGuid().ToString("N")),
+                ("$outcome", succeeded ? "executed" : "failed")],
+            cancellationToken);
+    }
+
+    public Task WriteToolAuditAsync(ChatRunScope scope, string toolName,
+        string outcome, string? detail, CancellationToken cancellationToken) =>
+        ExecuteAsync(
+            """
+            INSERT INTO tool_audit(event_id, run_id, conversation_id, agent_id,
+                tool_name, outcome, detail, created_at_utc)
+            VALUES($event_id, $run_id, $conversation_id, $agent_id,
+                $tool_name, $outcome, $detail, $now);
+            """,
+            [("$event_id", Guid.NewGuid().ToString("N")), ("$run_id", scope.RunId),
+                ("$conversation_id", scope.ConversationId), ("$agent_id", scope.AgentId),
+                ("$tool_name", Normalize(toolName, 200)), ("$outcome", Normalize(outcome, 100)),
+                ("$detail", (object?)Normalize(detail ?? string.Empty, 2_000) ?? DBNull.Value),
+                ("$now", Format(DateTimeOffset.UtcNow))],
+            cancellationToken);
+
+    public async Task<int> PurgeExpiredDataAsync(DateTimeOffset cutoff,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText =
+                """
+                DELETE FROM enrollment_codes
+                WHERE expires_at_utc < $cutoff;
+
+                DELETE FROM tool_audit
+                WHERE created_at_utc < $cutoff;
+
+                CREATE TEMP TABLE IF NOT EXISTS expired_conversations (
+                    conversation_id TEXT PRIMARY KEY
+                );
+                DELETE FROM expired_conversations;
+                INSERT INTO expired_conversations(conversation_id)
+                SELECT c.conversation_id
+                FROM conversations c
+                WHERE c.updated_at_utc < $cutoff
+                  AND NOT EXISTS (
+                    SELECT 1 FROM agent_runs r
+                    WHERE r.conversation_id = c.conversation_id
+                      AND r.state IN ('Queued', 'Running')
+                  );
+
+                DELETE FROM action_proposals
+                WHERE conversation_id IN (SELECT conversation_id FROM expired_conversations);
+                DELETE FROM agent_runs
+                WHERE conversation_id IN (SELECT conversation_id FROM expired_conversations);
+                DELETE FROM messages
+                WHERE conversation_id IN (SELECT conversation_id FROM expired_conversations);
+                DELETE FROM conversations
+                WHERE conversation_id IN (SELECT conversation_id FROM expired_conversations);
+                """;
+            command.Parameters.AddWithValue("$cutoff", Format(cutoff));
+            var affected = await command.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return affected;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task FinishRunAsync(string runId, string response, bool succeeded,
+        CancellationToken cancellationToken, string? error = null)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using var lookup = connection.CreateCommand();
+            lookup.Transaction = (SqliteTransaction)transaction;
+            lookup.CommandText =
+                """
+                SELECT r.conversation_id, r.user_message_id, c.last_sequence
+                FROM agent_runs r
+                JOIN conversations c ON c.conversation_id = r.conversation_id
+                WHERE r.run_id = $run_id AND r.state = 'Running';
+                """;
+            lookup.Parameters.AddWithValue("$run_id", runId);
+            await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return;
+            }
+            var conversationId = reader.GetString(0);
+            var userMessageId = reader.GetString(1);
+            var sequence = reader.GetInt64(2) + 1;
+            await reader.DisposeAsync();
+            var now = DateTimeOffset.UtcNow;
+
+            await using var update = connection.CreateCommand();
+            update.Transaction = (SqliteTransaction)transaction;
+            update.CommandText =
+                """
+                UPDATE conversations SET last_sequence = $sequence, updated_at_utc = $now
+                WHERE conversation_id = $conversation_id;
+                UPDATE messages SET state = $user_state WHERE message_id = $user_message_id;
+                INSERT INTO messages(message_id, conversation_id, sequence, role, body,
+                    text_direction, state, created_at_utc, run_id)
+                VALUES($message_id, $conversation_id, $sequence, 'Assistant', $body,
+                    'auto', $assistant_state, $now, $run_id);
+                UPDATE agent_runs SET state = $run_state, capability_hash = NULL,
+                    capability_expires_at_utc = NULL, updated_at_utc = $now, last_error = $error
+                WHERE run_id = $run_id;
+                """;
+            update.Parameters.AddWithValue("$sequence", sequence);
+            update.Parameters.AddWithValue("$now", Format(now));
+            update.Parameters.AddWithValue("$conversation_id", conversationId);
+            update.Parameters.AddWithValue("$user_state",
+                (succeeded ? ChatMessageState.Completed : ChatMessageState.Failed).ToString());
+            update.Parameters.AddWithValue("$user_message_id", userMessageId);
+            update.Parameters.AddWithValue("$message_id", Guid.NewGuid().ToString("N"));
+            update.Parameters.AddWithValue("$body", response);
+            update.Parameters.AddWithValue("$assistant_state",
+                (succeeded ? ChatMessageState.Completed : ChatMessageState.Failed).ToString());
+            update.Parameters.AddWithValue("$run_state", succeeded ? "Completed" : "Failed");
+            update.Parameters.AddWithValue("$run_id", runId);
+            update.Parameters.AddWithValue("$error", error is null ? DBNull.Value : error);
+            await update.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task<ChatConversation> FindOrCreateConversationAsync(SqliteConnection connection,
+        SqliteTransaction? transaction, string agentId, ChatIdentity identity,
+        CancellationToken cancellationToken, string? requestedConversationId = null)
+    {
+        if (!string.IsNullOrWhiteSpace(requestedConversationId))
+        {
+            var requested = await GetConversationAsync(connection, transaction,
+                requestedConversationId, cancellationToken);
+            if (requested is null || requested.AgentId != agentId
+                || requested.UserSid != identity.UserSid)
+                throw new UnauthorizedAccessException();
+            return requested;
+        }
+
+        await using var find = connection.CreateCommand();
+        find.Transaction = transaction;
+        find.CommandText =
+            """
+            SELECT conversation_id, agent_id, user_sid, user_name, session_id,
+                created_at_utc, updated_at_utc, last_sequence
+            FROM conversations
+            WHERE agent_id = $agent_id AND user_sid = $user_sid AND is_active = 1;
+            """;
+        find.Parameters.AddWithValue("$agent_id", agentId);
+        find.Parameters.AddWithValue("$user_sid", identity.UserSid);
+        await using (var reader = await find.ExecuteReaderAsync(cancellationToken))
+        {
+            if (await reader.ReadAsync(cancellationToken))
+                return ReadConversation(reader);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var conversation = new ChatConversation(Guid.NewGuid().ToString("N"), agentId,
+            identity.UserSid, Normalize(identity.UserName, 256), identity.SessionId,
+            now, now, 0);
+        await using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText =
+            """
+            INSERT INTO conversations(conversation_id, agent_id, user_sid, user_name,
+                session_id, created_at_utc, updated_at_utc, is_active, last_sequence)
+            VALUES($conversation_id, $agent_id, $user_sid, $user_name, $session_id,
+                $created, $updated, 1, 0);
+            """;
+        insert.Parameters.AddWithValue("$conversation_id", conversation.ConversationId);
+        insert.Parameters.AddWithValue("$agent_id", conversation.AgentId);
+        insert.Parameters.AddWithValue("$user_sid", conversation.UserSid);
+        insert.Parameters.AddWithValue("$user_name", conversation.UserName);
+        insert.Parameters.AddWithValue("$session_id", conversation.SessionId);
+        insert.Parameters.AddWithValue("$created", Format(now));
+        insert.Parameters.AddWithValue("$updated", Format(now));
+        await insert.ExecuteNonQueryAsync(cancellationToken);
+        return conversation;
+    }
+
+    private static async Task<ChatConversation?> GetConversationAsync(
+        SqliteConnection connection, SqliteTransaction? transaction,
+        string conversationId, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT conversation_id, agent_id, user_sid, user_name, session_id,
+                created_at_utc, updated_at_utc, last_sequence
+            FROM conversations WHERE conversation_id = $conversation_id AND is_active = 1;
+            """;
+        command.Parameters.AddWithValue("$conversation_id", conversationId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadConversation(reader) : null;
+    }
+
+    private static async Task<ChatRunScope?> ResolveCapabilityAsync(SqliteConnection connection,
+        SqliteTransaction? transaction, string capability, CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT r.run_id, r.conversation_id, c.agent_id, c.user_sid,
+                r.capability_expires_at_utc
+            FROM agent_runs r
+            JOIN conversations c ON c.conversation_id = r.conversation_id
+            WHERE r.capability_hash = $hash AND r.state = 'Running';
+            """;
+        command.Parameters.AddWithValue("$hash", HashSecret(capability));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var scope = new ChatRunScope(reader.GetString(0), reader.GetString(1),
+            reader.GetString(2), reader.GetString(3), Parse(reader.GetString(4)));
+        return scope.ExpiresAtUtc > DateTimeOffset.UtcNow ? scope : null;
+    }
+
+    private async Task ExecuteAsync(string sql, (string Name, object? Value)[] parameters,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText = sql;
+            foreach (var parameter in parameters)
+                command.Parameters.AddWithValue(parameter.Name, parameter.Value ?? DBNull.Value);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    private async Task<SqliteConnection> OpenAsync(CancellationToken cancellationToken)
+    {
+        var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = _databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Cache = SqliteCacheMode.Shared,
+            Pooling = true
+        }.ToString());
+        await connection.OpenAsync(cancellationToken);
+        await using var pragma = connection.CreateCommand();
+        pragma.CommandText = "PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;";
+        await pragma.ExecuteNonQueryAsync(cancellationToken);
+        return connection;
+    }
+
+    private static Task UpdateActionStateAsync(SqliteConnection connection,
+        SqliteTransaction transaction, string actionId, ChatActionState state,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE action_proposals SET state = $state, decided_at_utc = $now
+            WHERE action_id = $action_id AND state = 'Pending';
+            """;
+        command.Parameters.AddWithValue("$state", state.ToString());
+        command.Parameters.AddWithValue("$now", Format(now));
+        command.Parameters.AddWithValue("$action_id", actionId);
+        return ExecuteAndDisposeAsync(command, cancellationToken);
+    }
+
+    private static async Task ExecuteAndDisposeAsync(
+        SqliteCommand command, CancellationToken cancellationToken)
+    {
+        await using (command)
+            await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static ChatConversation ReadConversation(SqliteDataReader reader) =>
+        new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
+            reader.GetString(3), reader.GetInt32(4), Parse(reader.GetString(5)),
+            Parse(reader.GetString(6)), reader.GetInt64(7));
+
+    private static ChatMessage ReadMessage(SqliteDataReader reader) =>
+        new(reader.GetString(0), reader.GetString(1), reader.GetInt64(2),
+            Enum.Parse<ChatMessageRole>(reader.GetString(3)), reader.GetString(4),
+            reader.GetString(5), Enum.Parse<ChatMessageState>(reader.GetString(6)),
+            Parse(reader.GetString(7)), reader.IsDBNull(8) ? null : reader.GetString(8));
+
+    private static ChatActionProposal ReadAction(SqliteDataReader reader) =>
+        new(reader.GetString(0), reader.GetString(1), reader.GetInt64(2),
+            reader.GetString(3), reader.GetString(4), reader.GetString(5),
+            reader.IsDBNull(6) ? null : JsonSerializer.Deserialize<JsonElement>(reader.GetString(6)),
+            Parse(reader.GetString(7)), Parse(reader.GetString(8)),
+            Enum.Parse<ChatActionState>(reader.GetString(9)));
+
+    private static void ValidateIdentity(ChatIdentity identity)
+    {
+        if (string.IsNullOrWhiteSpace(identity.UserSid)
+            || !identity.UserSid.StartsWith("S-1-", StringComparison.Ordinal)
+            || identity.UserSid.Length > 184)
+            throw new ArgumentException("A valid Windows user SID is required.", nameof(identity));
+    }
+
+    private static string Normalize(string? value, int maximum) =>
+        new string((value ?? string.Empty)
+            .Where(character => character is '\r' or '\n' or '\t' || !char.IsControl(character))
+            .Take(maximum).ToArray()).Trim();
+
+    private static string CreateSecret(int byteCount) =>
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(byteCount))
+            .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    private static string HashSecret(string value) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
+
+    private static string Format(DateTimeOffset value) =>
+        value.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
+
+    private static DateTimeOffset Parse(string value) =>
+        DateTimeOffset.Parse(value, CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal);
+}

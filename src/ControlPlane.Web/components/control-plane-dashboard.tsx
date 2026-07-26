@@ -1,8 +1,9 @@
 "use client";
 
 import { Activity as ActivityIcon, Check, ChevronDown, CircleAlert, Clock3, Copy,
-  MoreHorizontal, PanelRightClose, Play, RefreshCw, Search, Server, SlidersHorizontal, X } from "lucide-react";
+  ChevronRight, MoreHorizontal, PanelRightClose, Play, RefreshCw, Search, Server, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { commandGroup } from "@/lib/commands";
 import { runCommand } from "@/lib/control-plane";
 import { useControlPlane } from "@/lib/control-plane-context";
 import type { Activity, Agent, CommandDefinition, RpcRequest } from "@/lib/types";
@@ -34,8 +35,9 @@ export function ControlPlaneDashboard() {
   const [copied, setCopied] = useState<string>();
   const [railOpen, setRailOpen] = useState(true);
   const [menu, setMenu] = useState<{ x: number; y: number; agent: Agent }>();
+  const [openCommandGroup, setOpenCommandGroup] = useState<string>();
   useEffect(() => {
-    const close = () => setMenu(undefined);
+    const close = () => { setMenu(undefined); setOpenCommandGroup(undefined); };
     window.addEventListener("click", close); window.addEventListener("resize", close);
     return () => { window.removeEventListener("click", close); window.removeEventListener("resize", close); };
   }, []);
@@ -54,6 +56,8 @@ export function ControlPlaneDashboard() {
   const visibleActivity = useMemo(() => activity.filter(item =>
     (!agentFilter || item.agentId === agentFilter) && (!eventFilter || item.type === eventFilter) &&
     (!statusFilter || item.status === statusFilter)).reverse(), [activity, agentFilter, eventFilter, statusFilter]);
+
+  const commandGroups = useMemo(() => Object.entries(Object.groupBy(commands, command => commandGroup(command.method))), [commands]);
 
   const openReview = (agent: Agent, command = commands[0]) => {
     if (!command) return;
@@ -103,13 +107,13 @@ export function ControlPlaneDashboard() {
         visibleAgents.length === 0 ? <div className="empty-state"><span className="empty-icon"><Server size={23} /></span><h2>{query ? "No matching agents" : "Waiting for endpoint agents"}</h2><p>{query ? "Try a different hostname, user, or agent ID." : "Start an endpoint service configured for this control plane. It will appear here as soon as it registers."}</p></div> :
         <div className="agent-table-wrap"><table className="agent-table"><thead><tr><th>Agent</th><th>Host</th><th>User</th><th>Version</th><th>Connected</th><th>Last activity</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{visibleAgents.map(agent => { const last = lastByAgent.get(agent.agentId); return <tr key={agent.agentId} tabIndex={0}
-            onContextMenu={e => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, agent }); }} onKeyDown={e => { if (e.key === "Enter") openReview(agent); }}>
+            onContextMenu={e => { e.preventDefault(); setOpenCommandGroup(undefined); setMenu({ x: e.clientX, y: e.clientY, agent }); }} onKeyDown={e => { if (e.key === "Enter") openReview(agent); }}>
             <td data-label="Agent"><span className="agent-identity"><span className="online-indicator" aria-label="Online" /><span><strong>{agent.agentId}</strong><small>{agent.machineName}</small></span></span></td>
             <td data-label="Host">{agent.hostname}</td><td data-label="User">{agent.userName}</td><td data-label="Version"><code>{agent.version}</code></td>
             <td data-label="Connected" title={new Date(agent.connectedAtUtc).toLocaleString()}>{relative(agent.connectedAtUtc)}</td>
             <td data-label="Last activity">{last ? <span className={`table-status ${last.status}`}>{last.status} · {relative(last.timestampUtc)}</span> : <span className="muted">No commands</span>}</td>
             <td className="row-actions"><button className="icon-button" aria-label={`Actions for ${agent.agentId}`} aria-haspopup="menu"
-              onClick={e => { e.stopPropagation(); const box = e.currentTarget.getBoundingClientRect(); setMenu({ x: box.right - 220, y: box.bottom + 6, agent }); }}><MoreHorizontal size={17} /></button></td>
+              onClick={e => { e.stopPropagation(); const box = e.currentTarget.getBoundingClientRect(); setOpenCommandGroup(undefined); setMenu({ x: box.right - 220, y: box.bottom + 6, agent }); }}><MoreHorizontal size={17} /></button></td>
           </tr>; })}</tbody></table></div>}
       </section>
 
@@ -128,7 +132,17 @@ export function ControlPlaneDashboard() {
     </div>
 
     {menu && <div className="context-menu" role="menu" style={{ left: Math.min(menu.x, window.innerWidth - 240), top: Math.min(menu.y, window.innerHeight - 160) }} onClick={e => e.stopPropagation()}>
-      <span className="menu-label">Run on {menu.agent.agentId}</span>{commands.map(command => <button role="menuitem" key={command.method} onClick={() => { openReview(menu.agent, command); setMenu(undefined); }}><Play size={14} /><span><strong>{command.name}</strong><small>{command.method}</small></span></button>)}</div>}
+      <span className="menu-label">Run on {menu.agent.agentId}</span>{commandGroups.map(([group, groupCommands]) => <div className="command-group" key={group}>
+        <button role="menuitem" aria-haspopup="menu" aria-expanded={openCommandGroup === group}
+          onClick={() => setOpenCommandGroup(current => current === group ? undefined : group)}>
+          <span><strong>{group}</strong><small>{groupCommands?.length ?? 0} commands</small></span><ChevronRight className="submenu-chevron" size={14} />
+        </button>
+        {openCommandGroup === group && <div className="command-submenu" role="menu" aria-label={`${group} commands`}>
+          {groupCommands?.map(command => <button role="menuitem" key={command.method} onClick={() => { openReview(menu.agent, command); setMenu(undefined); setOpenCommandGroup(undefined); }}>
+            <Play size={14} /><span><strong>{command.name}</strong><small>{command.method}</small></span>
+          </button>)}
+        </div>}
+      </div>)}</div>}
 
     {(selectedAgent && selectedCommand || selectedTrace) && <><button className="drawer-backdrop" aria-label="Close panel" onClick={() => { setSelectedAgent(undefined); setSelectedTrace(undefined); }} /><aside className="drawer" aria-label={selectedTrace ? "RPC trace details" : "Review command"}>
       <div className="drawer-header"><div><span>{selectedTrace ? "RPC trace" : "Command review"}</span><h2>{selectedTrace ? selectedTrace.agentId : selectedCommand?.name}</h2></div><button className="icon-button" onClick={() => { setSelectedAgent(undefined); setSelectedTrace(undefined); }} aria-label="Close panel"><X size={18} /></button></div>

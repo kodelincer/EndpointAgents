@@ -1,0 +1,237 @@
+# Isolated Hermes Support Agent
+
+## Authority boundary
+
+Hermes is a reasoning worker, not the routing or authorization boundary.
+`ControlPlane.Api` owns device identity, Windows-user identity, conversations,
+message delivery, consent, command allow-listing, and audit data.
+
+```mermaid
+flowchart LR
+    T["Tray for Windows user SID"] -->|named pipe| S["Endpoint Service"]
+    S -->|authenticated HTTPS + SignalR| C["ControlPlane.Api"]
+    C --> D[("SQLite WAL")]
+    C -->|isolated /v1/runs| H["Hermes on 127.0.0.1:8642"]
+    H -->|redacted prompt| L["Configured LLM API"]
+    H -->|run-scoped capability| M["ControlPlane MCP on loopback"]
+    M --> C
+    C -->|allow-listed RPC| S
+```
+
+Hermes never receives an `agentId` tool argument and never sends a response to
+an endpoint. Each random run capability resolves server-side to one active run,
+conversation, authenticated device, and user SID. The final assistant message
+is committed to SQLite before the run is marked complete. The Tray retrieves
+only its own sequence delta while its chat view is visible.
+
+## Implemented surfaces
+
+- One-time enrollment codes and random device bearer tokens. Only token hashes
+  are stored by ControlPlane; endpoints protect credentials with machine-scoped
+  DPAPI.
+- Conversations keyed by authenticated device ID and Windows user SID.
+- Idempotent user turns through unique client message IDs and monotonic
+  per-conversation sequences.
+- Durable queued/running/completed/failed runs in SQLite WAL mode. Interrupted
+  running rows are safely re-queued during ControlPlane startup.
+- Four concurrent conversations by default, with one active run per
+  conversation and a ten-minute run timeout.
+- A unique Hermes session per run. ControlPlane supplies the bounded
+  conversation history and removes the Hermes session after reconciliation, so
+  Hermes is not the conversation store.
+- Loopback MCP endpoint at `/internal/mcp`, protected by a separate bearer key.
+- Read-only diagnostics plus immutable, single-use action proposals. The
+  proposal never runs a command; the same endpoint user must approve it in the
+  Tray, and Office/IBSng keep their endpoint-local confirmation gate.
+- Thirty-day cleanup for completed conversation data; devices and their
+  revocation state are retained.
+
+## Production installation
+
+### 1. Install ControlPlane and configure HTTPS
+
+Run from an elevated PowerShell session:
+
+```powershell
+.\scripts\install-control-plane.ps1
+```
+
+Keep `C:\ProgramData\EndpointAgents\ControlPlane` on a BitLocker- or
+equivalently encrypted server volume. The installer restricts the data tree to
+SYSTEM and Administrators, but it does not enable volume encryption.
+
+Configure Kestrel with a trusted server certificate before enrolling endpoints.
+The production setting `AgentSecurity:RequireHttps=true` rejects remote
+enrollment, SignalR, and artifact traffic over HTTP. Keep the operator dashboard
+and operator APIs on loopback. A reverse proxy requires an explicit trusted
+forwarded-header configuration first; that is not enabled by the default
+application profile.
+
+Do not enable `AgentSecurity:RequireAuthentication` until the staged endpoint
+enrollment described below is complete.
+
+### 2. Install a pinned Hermes runtime
+
+Use Hermes's native Windows installer with an explicit release tag or commit,
+an installation directory under Program Files, and no automatic update job.
+The exact release must first pass the test matrix for this repository.
+
+Example shape (replace the pin):
+
+```powershell
+$installer = Invoke-RestMethod `
+  https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1
+& ([scriptblock]::Create($installer)) `
+  -Tag 'vX.Y.Z' `
+  -SkipSetup `
+  -HermesHome 'C:\ProgramData\EndpointAgents\Hermes' `
+  -InstallDir 'C:\Program Files\EndpointAgents\HermesRuntime'
+```
+
+The native installer and supported pinning parameters are documented in the
+[Hermes Windows guide](https://hermes-agent.nousresearch.com/docs/user-guide/windows-native).
+
+Install a reviewed, pinned NSSM build, then configure the service:
+
+```powershell
+$providerKey = Read-Host 'LLM provider API key' -AsSecureString
+.\scripts\install-hermes-service.ps1 `
+  -HermesExecutable 'C:\Program Files\EndpointAgents\HermesRuntime\venv\Scripts\hermes.exe' `
+  -ExpectedVersion 'X.Y.Z' `
+  -NssmPath 'C:\Program Files\nssm\win64\nssm.exe' `
+  -ProviderEnvironmentName 'OPENROUTER_API_KEY' `
+  -ModelProvider 'openrouter' `
+  -ModelId 'YOUR-REVIEWED-AGENT-CAPABLE-MODEL' `
+  -ProviderApiKey $providerKey
+```
+
+The script:
+
+- verifies the expected Hermes version and refuses an existing service;
+- pins the configured provider and model for new Hermes sessions;
+- generates different random API-server and MCP bearer secrets;
+- synchronizes those secrets into ControlPlane's protected settings;
+- copies the reviewed skills and locks them read-only to Hermes;
+- runs Hermes as the low-privilege virtual account
+  `NT SERVICE\EndpointAgents.Hermes`;
+- binds the API server only to `127.0.0.1:8642`;
+- starts both services and verifies run-submission and stop capabilities.
+
+Hermes configuration follows its documented
+[API-server bearer/bind settings](https://hermes-agent.nousresearch.com/docs/user-guide/features/api-server/),
+[dynamic MCP toolset](https://hermes-agent.nousresearch.com/docs/reference/toolsets-reference),
+and [MCP allow-listing](https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference).
+
+The production API profile contains only `mcp-controlplane`. Global
+defense-in-depth disables terminal, files, browser, web, memory, session search,
+skills, learning/curation, cron, delegation, code execution, computer use, and
+other unrelated toolsets. The four reviewed skill files are read by
+ControlPlane and injected into each run as immutable instructions; Hermes does
+not receive `skill_manage`.
+
+### 3. Enroll endpoint devices
+
+Create one enrollment code per endpoint from a loopback administrator session:
+
+```powershell
+$issue = Invoke-RestMethod -Method Post `
+  -Uri 'http://127.0.0.1:5052/api/agent-enrollments'
+$issue
+```
+
+Install or update the endpoint with its one-time code and the production HTTPS
+hub URL:
+
+```powershell
+.\scripts\install-endpoint.ps1 `
+  -ControlPlaneHubUrl 'https://controlplane.example/agent-hub' `
+  -EnrollmentCode $issue.enrollmentCode
+```
+
+The Service redeems the code over HTTPS, stores the DPAPI-protected credential
+in the SYSTEM/Administrators-only
+`C:\ProgramData\EndpointAgents\Credentials` directory, and authenticates
+SignalR through `AccessTokenProvider`.
+
+After all supported endpoint versions are enrolled and visible, set:
+
+```json
+{
+  "AgentSecurity": {
+    "RequireAuthentication": true,
+    "RequireHttps": true
+  }
+}
+```
+
+Restart `EndpointAgents.ControlPlane.Api`, verify coverage, and remove the
+legacy support-request path only after older endpoint versions are retired.
+Revoke a compromised device from a loopback administrator session:
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri 'http://127.0.0.1:5052/api/devices/DEVICE-ID/revoke'
+```
+
+## LLM privacy
+
+Hermes runs locally, but the configured LLM provider receives each prompt,
+bounded conversation history, tool schemas, and any sanitized tool results.
+ControlPlane masks known bearer/credential patterns, endpoint identity values,
+SIDs, raw IPv4 addresses, usernames, and machine names before run submission.
+This is risk reduction, not a mathematical guarantee that free-form user text
+contains no personal data. Obtain the appropriate organizational approval,
+configure the provider's retention/privacy terms, and do not send unnecessary
+logs.
+
+## Consent and action lifecycle
+
+Only these tools are visible to Hermes:
+
+- `endpoint_get_info`
+- `ibsng_diagnose`
+- `office_inventory`
+- `office_activation_status`
+- `propose_endpoint_action`
+
+The proposal tool accepts only cataloged Office remediation/bugfix and IBSng
+install/launch methods. It stores the exact method and parameters with the run,
+conversation, endpoint, SID, expiry, and pending state. A decision is immutable
+and single-use. Approval dispatches the stored command, never user- or
+model-supplied replacement parameters. IBSng installation or repair then shows
+a second endpoint-local Tray confirmation before stopping a process,
+quarantining a duplicate, downloading, or installing a file.
+
+## Verification checklist
+
+Run the automated suite:
+
+```powershell
+dotnet test .\EndpointAgents.slnx -c Release
+```
+
+Before broad rollout, also verify:
+
+1. Two endpoints sending identical prompts cannot read each other's messages
+   or tool results.
+2. Two Windows SIDs on one endpoint receive separate conversations.
+3. Forged device IDs, revoked tokens, foreign conversation IDs, reused run
+   capabilities, and reused action decisions fail.
+4. ControlPlane/Hermes restart, endpoint reconnect, offline delivery, timeout,
+   and the Hermes stop endpoint behave correctly.
+5. Prompt injection cannot activate a built-in Hermes toolset or address a
+   different endpoint.
+6. Persian/RTL and mixed Persian/English responses render correctly.
+7. Four active runs and at least 500 SignalR connections remain stable.
+
+Inspect `C:\ProgramData\EndpointAgents\Hermes\logs` and the ControlPlane Windows
+service log during testing. Do not log run capabilities, device tokens, or LLM
+provider keys.
+
+## Controlled improvement
+
+Production conversations never edit skills or memory. Collect only explicit
+resolved/not-resolved feedback and opted-in sanitized outcomes. Any future
+improvement job must operate offline, create a reviewable Git diff, pass this
+test matrix, and require administrator promotion of a versioned package into
+the read-only production skills directory. Cross-user memory remains disabled.
