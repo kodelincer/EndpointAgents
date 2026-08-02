@@ -13,6 +13,29 @@ namespace EndpointAgents.Tray;
 /// </summary>
 public sealed class OfficeRemediationLauncher
 {
+    public TrayIpcResponse ConfirmBugfix(TrayIpcRequest request)
+    {
+        var bugfix = request.OfficeBugfixConsent;
+        if (request.Method != TrayIpcProtocol.OfficeBugfixConsentMethod
+            || bugfix is null
+            || bugfix.ArtifactId != "office-activation-repair")
+            return new TrayIpcResponse(request.Id, false, "InvalidOfficeBugfixRequest");
+
+        var consent = MessageBox.Show(
+            $"The helpdesk recommends this Office activation repair:\n\n" +
+            $"{bugfix.DisplayName}\n\n{bugfix.Description}\n\n" +
+            "It will run silently with local SYSTEM privileges and select menu item 1. Run it now?",
+            "EndpointAgents Office repair",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2);
+        return consent == DialogResult.Yes
+            ? new TrayIpcResponse(request.Id, true, "UserApproved",
+                OfficeRemediationArtifactId: bugfix.ArtifactId)
+            : new TrayIpcResponse(request.Id, false, "UserDeclined",
+                OfficeRemediationArtifactId: bugfix.ArtifactId);
+    }
+
     public async Task<TrayIpcResponse> LaunchAsync(TrayIpcRequest request,
         CancellationToken cancellationToken)
     {

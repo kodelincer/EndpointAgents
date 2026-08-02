@@ -76,6 +76,8 @@ public sealed class TrayIpcServer
                     await _officeActivation.ProbeAsync(request.Id, cancellationToken),
                 TrayIpcProtocol.OfficeRemediationLaunchMethod =>
                     await _officeRemediation.LaunchAsync(request, cancellationToken),
+                TrayIpcProtocol.OfficeBugfixConsentMethod =>
+                    _officeRemediation.ConfirmBugfix(request),
                 _ => await _launcher.LaunchAsync(request, cancellationToken)
             };
         }

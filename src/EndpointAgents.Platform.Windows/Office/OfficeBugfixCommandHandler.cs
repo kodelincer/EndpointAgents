@@ -18,6 +18,7 @@ public sealed class OfficeBugfixCommandHandler(
     IOfficeUserSessionSource sessionSource,
     ITrayCommandClient trayClient,
     OfficeArtifactDownloader downloader,
+    OfficeBugfixRunner runner,
     ILogger<OfficeBugfixCommandHandler> logger) : IEndpointCommandHandler
 {
     public string Method => "software.office_bugfix_run";
@@ -70,6 +71,12 @@ public sealed class OfficeBugfixCommandHandler(
                     descriptor.MinOfficeVersion,
                     descriptor.MaxOfficeVersionExclusive
                 });
+        if (!descriptor.ArtifactId.Equals("office-activation-repair",
+                StringComparison.Ordinal)
+            || !descriptor.FileName.Equals("office-activation-repair.bat",
+                StringComparison.OrdinalIgnoreCase))
+            return RpcResponse.Failure(request.Id, 412,
+                "The Office bugfix catalog did not return the fixed approved batch file.");
 
         var session = sessionSource.GetActiveSession(userSid);
         if (session is null)
@@ -80,14 +87,12 @@ public sealed class OfficeBugfixCommandHandler(
         {
             var download = await downloader.EnsureAsync(descriptor.ArtifactId,
                 descriptor.FileName, descriptor.Sha256, descriptor.DownloadPath,
-                cancellationToken);
-            var launch = new OfficeRemediationLaunchRequest(descriptor.ArtifactId,
-                descriptor.DisplayName, descriptor.Description, download.FilePath,
-                descriptor.Sha256,
-                OfficeArtifactTrustPolicies.AdministratorApprovedSha256);
+                cancellationToken, requirePortableExecutable: false);
+            var consent = new OfficeBugfixConsentRequest(descriptor.ArtifactId,
+                descriptor.DisplayName, descriptor.Description);
             var trayRequest = new TrayIpcRequest(request.Id,
-                TrayIpcProtocol.OfficeRemediationLaunchMethod, string.Empty,
-                string.Empty, null, OfficeRemediation: launch);
+                TrayIpcProtocol.OfficeBugfixConsentMethod, string.Empty,
+                string.Empty, null, OfficeBugfixConsent: consent);
             var trayResponse = await trayClient.SendAsync(session.SessionId,
                 trayRequest, cancellationToken);
             if (!trayResponse.Success)
@@ -98,16 +103,23 @@ public sealed class OfficeBugfixCommandHandler(
                     new { trayResponse.Message, descriptor.ArtifactId, session.UserName });
             }
 
+            var exitCode = await runner.RunAsync(download.FilePath, descriptor.Sha256,
+                cancellationToken);
+            if (exitCode != 0)
+                return RpcResponse.Failure(request.Id, 500,
+                    "The approved Office bugfix returned a failure exit code.",
+                    new { descriptor.ArtifactId, ExitCode = exitCode });
+
             var warnings = snapshot.Issues.Select(issue => new DiagnosticWarning(
                 issue.Source, issue.Message, issue.Exception)).ToArray();
             return RpcResponse.Success(request.Id, DiagnosticResponse.Create(context, new
             {
-                State = trayResponse.State,
+                State = "Completed",
                 descriptor.ArtifactId,
                 descriptor.DisplayName,
                 OfficeVersion = snapshot.Inventory.Version,
                 download.Downloaded,
-                trayResponse.ProcessId,
+                ExitCode = exitCode,
                 session.SessionId,
                 session.UserName
             }, warnings));

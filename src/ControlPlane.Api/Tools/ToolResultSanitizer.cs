@@ -39,7 +39,8 @@ public static class ToolResultSanitizer
 
         if (node is JsonArray array)
         {
-            foreach (var child in array) RedactNode(child);
+            for (var index = 0; index < array.Count; index++)
+                RedactNode(array[index]);
             return;
         }
 

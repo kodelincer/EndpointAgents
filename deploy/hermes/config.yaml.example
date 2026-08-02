@@ -1,8 +1,9 @@
 # This Hermes home is dedicated to the EndpointAgents API profile.
-# It deliberately exposes only the dynamic MCP toolset below.
+# It exposes the scoped ControlPlane MCP tools plus Hermes-native skills.
 platform_toolsets:
   api_server:
     - mcp-controlplane
+    - skills
 
 model:
   provider: ${ENDPOINTAGENTS_MODEL_PROVIDER}
@@ -25,7 +26,6 @@ agent:
     - safe
     - search
     - session_search
-    - skills
     - terminal
     - todo
     - tts
@@ -46,8 +46,6 @@ mcp_servers:
     supports_parallel_tool_calls: false
     tools:
       include:
-        - endpoint_get_info
-        - ibsng_diagnose
         - office_inventory
         - office_activation_status
         - propose_endpoint_action
@@ -69,6 +67,12 @@ memory:
 
 curator:
   enabled: false
+
+# Skills are created and maintained in this Hermes profile. Endpoint runs may
+# list/view them; every model-requested write is staged for an administrator.
+skills:
+  write_approval: true
+  guard_agent_created: true
 
 plugins:
   enabled: []

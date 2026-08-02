@@ -95,8 +95,6 @@ New-Item -ItemType Directory -Path $home -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $home "logs") -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $templateRoot "config.yaml.example") `
     -Destination (Join-Path $home "config.yaml") -Force
-Copy-Item -LiteralPath (Join-Path $templateRoot "skills") `
-    -Destination $home -Recurse -Force
 
 $apiServerKey = New-RandomSecret
 $controlPlaneMcpKey = New-RandomSecret
@@ -125,7 +123,6 @@ $settings.Hermes.BaseUrl = "http://127.0.0.1:8642"
 $settings.Hermes.ApiKey = $apiServerKey
 $settings.Hermes.McpApiKey = $controlPlaneMcpKey
 $settings.Hermes.Model = ""
-$settings.Hermes.SkillsRoot = Join-Path $home "skills"
 $settings | ConvertTo-Json -Depth 20 |
     Set-Content -LiteralPath $settingsPath -Encoding utf8
 & icacls.exe $settingsPath /inheritance:r `
@@ -155,9 +152,6 @@ if ($LASTEXITCODE -ne 0) {
 & icacls.exe $home /inheritance:r `
     /grant:r "SYSTEM:(OI)(CI)F" "BUILTIN\Administrators:(OI)(CI)F" `
     "${serviceIdentity}:(OI)(CI)M" | Out-Null
-& icacls.exe (Join-Path $home "skills") /inheritance:r `
-    /grant:r "SYSTEM:(OI)(CI)F" "BUILTIN\Administrators:(OI)(CI)F" `
-    "${serviceIdentity}:(OI)(CI)RX" /T | Out-Null
 & icacls.exe (Join-Path $home ".env") /inheritance:r `
     /grant:r "SYSTEM:F" "BUILTIN\Administrators:F" "${serviceIdentity}:R" | Out-Null
 & icacls.exe (Join-Path $home "config.yaml") /inheritance:r `
@@ -187,5 +181,5 @@ if ($null -eq $capabilities -or
 
 Write-Host "Hermes $ExpectedVersion is running as $serviceIdentity."
 Write-Host "API: http://127.0.0.1:8642 (loopback only)"
-Write-Host "Skills: $home\skills (read-only to Hermes)"
+Write-Host "Import reviewed skills from $templateRoot\skills into the Hermes profile."
 Write-Host "ControlPlane was configured and restarted."

@@ -1,53 +1,35 @@
-# Office bugfix managers
+# Single Office activation repair
 
-The endpoint exposes a two-step general Office support workflow:
-
-1. Run `software.office_inventory`.
-2. Select a compatible catalog artifact ID and run `software.office_bugfix_run`.
-
-The control-plane repository stores `office-bugfix-managers.json` and its executable
-files directly under:
+The control plane exposes exactly one administrator-managed Office repair file:
 
 ```text
-C:\ProgramData\EndpointAgents\ControlPlane\FileRepository
+C:\ProgramData\EndpointAgents\ControlPlane\FileRepository\office-activation-repair.bat
 ```
 
-Only filenames matching `officebugfixmanager_<version>.exe` are accepted. The
-manifest is the source of truth for the executable SHA-256 and its inclusive minimum
-and exclusive maximum Office versions. The endpoint accepts only an artifact ID,
-rechecks compatibility, downloads into
-`C:\ProgramData\EndpointAgents\OfficeRemediation`, verifies the hash, asks the
-signed-in user for consent, and launches without arguments.
+`scripts\install-control-plane.ps1` copies a harmless sample into that location
+when the file does not already exist. Replace it with the reviewed production BAT
+and restart `EndpointAgents.ControlPlane.Api`. No manifest or MD5 sidecar is used;
+the API computes SHA-256 from the current file and the endpoint verifies that exact
+hash after downloading it.
 
-Retailer bugfix managers use administrator-approved SHA-256 trust. Existing
-Microsoft Office remediation continues to require a trusted Microsoft Authenticode
-signature. Raw `.bat` and `.cmd` files are not downloadable or executable.
+The BAT must expose **Office activation problem as menu item 1**, accept `1` from standard
+input, perform its work without a desktop UI, and return exit code `0` on success.
 
-## Manifest example
+## Runtime flow
 
-```json
-{
-  "version": 1,
-  "artifacts": [
-    {
-      "artifactId": "office-bugfix-16",
-      "displayName": "Office 16 bugfix manager",
-      "description": "Administrator-reviewed retailer Office repair.",
-      "fileName": "officebugfixmanager_16.0.exe",
-      "sha256": "REPLACE_WITH_64_HEXADECIMAL_CHARACTERS",
-      "minOfficeVersion": "16.0",
-      "maxOfficeVersionExclusive": "17.0"
-    }
-  ]
-}
-```
+1. Hermes calls `office_inventory` and `office_activation_status` when the user
+   reports Product Unlicensed, an activation failure, or the red activation warning.
+2. If Office is installed and its version is readable, Hermes proposes
+   `software.office_bugfix_run` with artifact ID `office-activation-repair`.
+3. The endpoint user confirms the privileged repair in the Tray.
+4. The LocalSystem endpoint service downloads `office-activation-repair.bat`, verifies its
+   SHA-256, rejects reparse points and unexpected paths, and runs it through the
+   system `cmd.exe` with menu input `1`.
+5. Exit code `0` is returned as `Completed`; other exit codes are failures.
 
-The sample seeder copies harmless Notepad executables and clearly marks them as
-non-repair samples:
-
-```powershell
-.\scripts\seed-office-bugfix-samples.ps1
-```
+Hermes cannot supply a filename, path, URL, menu selection, script, or command-line
+argument. Only an administrator who can write the protected control-plane repository
+can replace the approved BAT.
 
 Example RPC:
 
@@ -57,11 +39,7 @@ Example RPC:
   "id": "office-bugfix-1",
   "method": "software.office_bugfix_run",
   "params": {
-    "artifactId": "sample-office-bugfix-16"
+    "artifactId": "office-activation-repair"
   }
 }
 ```
-
-A successful response means the Tray launched the executable and includes its
-process ID. The endpoint does not elevate, pass arguments, terminate Office
-applications, or wait for the tool to finish.

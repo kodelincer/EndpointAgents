@@ -22,7 +22,7 @@ export type FileInventory = {
   issues: { source: string; message: string }[];
   repository: {
     expectedPattern: string; officeManifestPath: string;
-    officeBugfixManifestPath: string; downloadMethod: string;
+    officeBugfixFilePath: string; downloadMethod: string;
   };
 };
 

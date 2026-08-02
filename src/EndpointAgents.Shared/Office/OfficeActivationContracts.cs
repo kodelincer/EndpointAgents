@@ -117,6 +117,11 @@ public sealed record OfficeRemediationLaunchRequest(
     string ExpectedSha256,
     string TrustPolicy = OfficeArtifactTrustPolicies.MicrosoftSigned);
 
+public sealed record OfficeBugfixConsentRequest(
+    string ArtifactId,
+    string DisplayName,
+    string Description);
+
 /// <summary>Stable, AI-ready result returned by software.office_activation_status.</summary>
 public sealed record OfficeActivationReport(
     bool OfficeInstalled,

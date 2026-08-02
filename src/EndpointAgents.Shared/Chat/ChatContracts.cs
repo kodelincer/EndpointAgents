@@ -27,6 +27,34 @@ public enum ChatActionState
     Failed
 }
 
+public enum ChatProgressStage
+{
+    Queued,
+    AssistantStarted,
+    WaitingForModel,
+    EndpointCheckStarted,
+    EndpointCheckCompleted,
+    Retrying,
+    Completed,
+    Failed
+}
+
+public enum ChatProgressActivity
+{
+    None,
+    OfficeInventory,
+    OfficeActivationStatus,
+    ProposedAction,
+    EndpointCheck
+}
+
+public enum ChatProgressOutcome
+{
+    None,
+    Success,
+    Failure
+}
+
 public sealed record ChatIdentity(string UserSid, string UserName, int SessionId);
 
 public sealed record ChatConversation(
@@ -92,7 +120,18 @@ public sealed record ChatActionDecisionReceipt(
     ChatActionProposal? Proposal,
     string Message);
 
+public sealed record ChatRunProgressEvent(
+    string EventId,
+    string ConversationId,
+    string RunId,
+    long Sequence,
+    ChatProgressStage Stage,
+    ChatProgressActivity Activity,
+    ChatProgressOutcome Outcome,
+    DateTimeOffset CreatedAtUtc);
+
 public sealed record ChatDelta(
     ChatConversation Conversation,
     IReadOnlyList<ChatMessage> Messages,
-    IReadOnlyList<ChatActionProposal> Actions);
+    IReadOnlyList<ChatActionProposal> Actions,
+    IReadOnlyList<ChatRunProgressEvent>? ProgressEvents = null);

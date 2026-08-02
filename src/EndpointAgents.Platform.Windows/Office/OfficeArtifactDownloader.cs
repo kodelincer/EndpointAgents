@@ -13,7 +13,7 @@ public sealed class OfficeArtifactDownloader(
 
     public async Task<OfficeArtifactDownload> EnsureAsync(string artifactId,
         string fileName, string sha256, string downloadPath,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool requirePortableExecutable = true)
     {
         if (Path.GetFileName(fileName) != fileName)
             throw new InvalidDataException("The Office artifact filename is invalid.");
@@ -32,7 +32,8 @@ public sealed class OfficeArtifactDownloader(
 
         Directory.CreateDirectory(artifactDirectory);
         var destination = Path.Combine(artifactDirectory, fileName);
-        if (await IsApprovedLocalFileAsync(destination, sha256, cancellationToken))
+        if (await IsApprovedLocalFileAsync(destination, sha256, cancellationToken,
+                requirePortableExecutable))
             return new OfficeArtifactDownload(destination, false);
 
         var artifactUri = new Uri(hubUri, downloadPath);
@@ -73,7 +74,8 @@ public sealed class OfficeArtifactDownloader(
                 await output.FlushAsync(cancellationToken);
             }
 
-            if (!await IsApprovedLocalFileAsync(partial, sha256, cancellationToken))
+            if (!await IsApprovedLocalFileAsync(partial, sha256, cancellationToken,
+                    requirePortableExecutable))
                 throw new InvalidDataException(
                     "The downloaded Office artifact does not match its approved executable hash.");
             File.Move(partial, destination, overwrite: true);
@@ -86,17 +88,21 @@ public sealed class OfficeArtifactDownloader(
     }
 
     internal static async Task<bool> IsApprovedLocalFileAsync(string path,
-        string expectedSha256, CancellationToken cancellationToken)
+        string expectedSha256, CancellationToken cancellationToken,
+        bool requirePortableExecutable = true)
     {
         if (!File.Exists(path)) return false;
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
             FileShare.Read, 64 * 1024, FileOptions.Asynchronous
             | FileOptions.SequentialScan);
-        var header = new byte[2];
-        if (await stream.ReadAsync(header, cancellationToken) != 2
-            || header[0] != (byte)'M' || header[1] != (byte)'Z')
-            return false;
-        stream.Position = 0;
+        if (requirePortableExecutable)
+        {
+            var header = new byte[2];
+            if (await stream.ReadAsync(header, cancellationToken) != 2
+                || header[0] != (byte)'M' || header[1] != (byte)'Z')
+                return false;
+            stream.Position = 0;
+        }
         var actual = Convert.ToHexString(
             await SHA256.HashDataAsync(stream, cancellationToken));
         return actual.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase);

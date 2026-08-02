@@ -19,6 +19,13 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
     ChatStore chatStore, CommandCatalog commandCatalog,
     IOptions<AgentSecurityOptions> security, ILogger<AgentHub> logger) : Hub
 {
+    private static readonly HashSet<string> OfficeChatActions =
+        new(StringComparer.Ordinal)
+        {
+            "software.office_remediation_run",
+            "software.office_bugfix_run"
+        };
+
     /// <summary>Associates the current SignalR connection with a durable agent identity.</summary>
     public async Task RegisterAgent(AgentRegistration registration)
     {
@@ -71,7 +78,7 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
             request with { Identity = Normalize(request.Identity) },
             Context.ConnectionAborted);
         return delta ?? throw new HubException(
-            "The conversation does not belong to this endpoint user.");
+            "این گفتگو متعلق به کاربر فعلی نیست.");
     }
 
     public async Task<ChatActionDecisionReceipt> RespondToChatAction(
@@ -87,14 +94,15 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
                 result.Message);
 
         var proposal = result.Proposal;
-        if (!commandCatalog.Contains(proposal.Method)
+        if (!OfficeChatActions.Contains(proposal.Method)
+            || !commandCatalog.Contains(proposal.Method)
             || SensitiveCommandParameterGuard.ContainsSensitiveData(proposal.Parameters))
         {
             await chatStore.MarkActionExecutedAsync(proposal.ActionId, false,
                 "The stored action is no longer allow-listed.", Context.ConnectionAborted);
             return new ChatActionDecisionReceipt(false,
                 proposal with { State = ChatActionState.Failed },
-                "The stored action is no longer allow-listed.");
+                "این اقدام دیگر مجاز نیست.");
         }
 
         var rpcParameters = AddUserScope(proposal.Parameters, decision.Identity.UserSid);
@@ -108,7 +116,9 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
                 State = response.Error is null
                     ? ChatActionState.Executed
                     : ChatActionState.Failed
-            }, response.Error?.Message ?? "The approved endpoint action completed.");
+            }, response.Error is null
+                ? "اقدام تأییدشده انجام شد."
+                : "انجام اقدام ناموفق بود. لطفاً با پشتیبانی تماس بگیرید.");
     }
 
     public async Task<SupportRequestReceipt> SubmitSupportRequest(

@@ -15,6 +15,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $serviceOutput = Join-Path $InstallRoot "Service"
 $trayOutput = Join-Path $InstallRoot "Tray"
 $credentialRoot = Join-Path $env:ProgramData "EndpointAgents\Credentials"
+$officeRemediationRoot = Join-Path $env:ProgramData "EndpointAgents\OfficeRemediation"
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -88,7 +89,10 @@ New-ItemProperty -Path $runKey -Name "EndpointAgents.Tray" `
 New-Item -ItemType Directory -Path "C:\ProgramData\EndpointAgents\Quarantine\Ibsng" `
     -Force | Out-Null
 New-Item -ItemType Directory -Path $credentialRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $officeRemediationRoot -Force | Out-Null
 & icacls.exe $credentialRoot /inheritance:r `
+    /grant:r "SYSTEM:(OI)(CI)F" "BUILTIN\Administrators:(OI)(CI)F" | Out-Null
+& icacls.exe $officeRemediationRoot /inheritance:r `
     /grant:r "SYSTEM:(OI)(CI)F" "BUILTIN\Administrators:(OI)(CI)F" | Out-Null
 
 Start-Service -Name $serviceName

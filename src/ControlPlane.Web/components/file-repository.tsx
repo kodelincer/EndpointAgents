@@ -66,7 +66,7 @@ export function FileRepository() {
 
     {loading ? <div className="file-list" aria-label="Loading files"><div className="file-skeleton" /><div className="file-skeleton" /></div> : files.length === 0 ?
       <section className="file-empty"><span className="empty-icon"><FileArchive size={23} /></span><h2>No endpoint files available</h2>
-        <p>Place the IBSng file, add Microsoft remediation entries to <code>office-artifacts.json</code>, or add retailer managers to <code>office-bugfix-managers.json</code>. Files with missing or mismatched hashes are rejected.</p>
+        <p>Place the IBSng file, add Microsoft remediation entries to <code>office-artifacts.json</code>, or provide the single approved <code>office-activation-repair.bat</code>. Endpoint downloads are SHA-256 verified.</p>
         <code className="repository-path">C:\ProgramData\EndpointAgents\ControlPlane\FileRepository</code>
       </section> :
       <section className="file-list" aria-label="Available endpoint files">{files.map(file => <FileRow key={file.artifactId} file={file} copied={copied} onCopy={() => void copyUrl(file)} />)}</section>}

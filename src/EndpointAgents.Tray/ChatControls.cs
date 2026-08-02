@@ -1,3 +1,4 @@
+using EndpointAgents.Shared.Chat;
 using System.Drawing.Drawing2D;
 
 namespace EndpointAgents.Tray;
@@ -116,6 +117,7 @@ internal sealed class ChatMessageView : Control
     private readonly string _author;
     private readonly string _time;
     private readonly bool _fromUser;
+    private readonly RichTextBox _bodyView;
 
     public ChatMessageView(string author, string body, bool fromUser, DateTime timestamp)
     {
@@ -135,6 +137,24 @@ internal sealed class ChatMessageView : Control
         AccessibleRole = AccessibleRole.StaticText;
         AccessibleName = author;
         AccessibleDescription = body;
+        var rtl = BidiText.IsRightToLeft(body);
+        _bodyView = new RichTextBox
+        {
+            BackColor = fromUser ? UserBubble : AssistantBubble,
+            BorderStyle = BorderStyle.None,
+            Cursor = Cursors.IBeam,
+            DetectUrls = false,
+            Font = Font,
+            ForeColor = Ink,
+            ReadOnly = true,
+            RightToLeft = rtl ? RightToLeft.Yes : RightToLeft.No,
+            ScrollBars = RichTextBoxScrollBars.None,
+            ShortcutsEnabled = true,
+            TabStop = true,
+            Text = body,
+            WordWrap = true
+        };
+        Controls.Add(_bodyView);
         RecalculateHeight();
     }
 
@@ -142,6 +162,7 @@ internal sealed class ChatMessageView : Control
     {
         base.OnResize(e);
         RecalculateHeight();
+        if (ClientSize.Width >= 180) _bodyView.Bounds = CalculateLayout().Body;
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -169,7 +190,6 @@ internal sealed class ChatMessageView : Control
         }
 
         var rtl = BidiText.IsRightToLeft(_body);
-        var bodyFlags = BodyFlags(rtl);
         var headerFlags = TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine
             | (rtl ? TextFormatFlags.RightToLeft | TextFormatFlags.Right : TextFormatFlags.Left);
         using var headerFont = new Font(Font, FontStyle.Bold);
@@ -179,7 +199,6 @@ internal sealed class ChatMessageView : Control
             | (rtl ? TextFormatFlags.Left : TextFormatFlags.Right);
         using var timeFont = new Font("Segoe UI", 8F);
         TextRenderer.DrawText(e.Graphics, _time, timeFont, layout.Time, Muted, timeFlags);
-        TextRenderer.DrawText(e.Graphics, _body, Font, layout.Body, Ink, bodyFlags);
     }
 
     private void RecalculateHeight()
@@ -218,6 +237,251 @@ internal sealed class ChatMessageView : Control
 
     private sealed record MessageLayout(Rectangle Bubble, Rectangle Header,
         Rectangle Time, Rectangle Body);
+}
+
+internal sealed class ChatRunProgressView : Control
+{
+    private const int HeaderHeight = 44;
+    private const int RowHeight = 28;
+    private static readonly Color Surface = Color.White;
+    private static readonly Color Ink = Color.FromArgb(37, 43, 52);
+    private static readonly Color Muted = Color.FromArgb(91, 99, 111);
+    private static readonly Color Line = Color.FromArgb(218, 222, 228);
+    private static readonly Color Action = Color.FromArgb(37, 99, 178);
+    private static readonly Color Success = Color.FromArgb(28, 125, 76);
+    private static readonly Color Danger = Color.FromArgb(178, 48, 48);
+    private readonly List<ChatRunProgressEvent> _events = [];
+    private bool _expanded = true;
+    private bool _terminal;
+
+    public ChatRunProgressView(string runId)
+    {
+        Name = "ChatProgress";
+        Tag = runId;
+        BackColor = Color.Transparent;
+        Font = new Font("Segoe UI", 9F);
+        Margin = new Padding(0, 0, 0, 10);
+        TabStop = false;
+        AccessibleRole = AccessibleRole.StaticText;
+        SetStyle(ControlStyles.AllPaintingInWmPaint
+            | ControlStyles.OptimizedDoubleBuffer
+            | ControlStyles.ResizeRedraw
+            | ControlStyles.UserPaint
+            | ControlStyles.SupportsTransparentBackColor, true);
+        UpdateHeight();
+    }
+
+    public void AddEvent(ChatRunProgressEvent progress)
+    {
+        _events.Add(progress);
+        _events.Sort(static (left, right) => left.Sequence.CompareTo(right.Sequence));
+        _terminal = progress.Stage is ChatProgressStage.Completed or ChatProgressStage.Failed;
+        if (_terminal)
+        {
+            _expanded = false;
+            TabStop = true;
+            Cursor = Cursors.Hand;
+            AccessibleRole = AccessibleRole.PushButton;
+        }
+        AccessibleName = CurrentLabel();
+        AccessibleDescription = string.Join("، ", _events.Select(EventLabel));
+        UpdateHeight();
+        Invalidate();
+    }
+
+    public void RefreshElapsed() => Invalidate();
+
+    protected override void OnMouseDown(MouseEventArgs e)
+    {
+        base.OnMouseDown(e);
+        if (_terminal && PanelBounds().Contains(e.Location)) Focus();
+    }
+
+    protected override void OnClick(EventArgs e)
+    {
+        base.OnClick(e);
+        if (!_terminal) return;
+        _expanded = !_expanded;
+        UpdateHeight();
+        Invalidate();
+    }
+
+    protected override void OnKeyDown(KeyEventArgs e)
+    {
+        if (_terminal && e.KeyCode is Keys.Enter or Keys.Space)
+        {
+            OnClick(EventArgs.Empty);
+            e.Handled = true;
+            return;
+        }
+        base.OnKeyDown(e);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        if (_events.Count == 0 || ClientSize.Width < 180) return;
+
+        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        var panel = PanelBounds();
+        using var path = UiDrawing.CreateRoundedRectangle(panel, 10);
+        using var fill = new SolidBrush(Surface);
+        using var border = new Pen(Focused ? Action : Line, Focused ? 2F : 1F);
+        e.Graphics.FillPath(fill, path);
+        e.Graphics.DrawPath(border, path);
+
+        var latest = _events[^1];
+        var iconBounds = new Rectangle(panel.Right - 34, panel.Top + 12, 18, 18);
+        DrawStatusIcon(e.Graphics, iconBounds, latest, current: true);
+        var elapsedBounds = new Rectangle(panel.Left + 12, panel.Top + 9, 118, 24);
+        TextRenderer.DrawText(e.Graphics, ElapsedText(), Font, elapsedBounds, Muted,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        var currentBounds = new Rectangle(panel.Left + 136, panel.Top + 8,
+            Math.Max(60, panel.Width - 184), 26);
+        using var currentFont = new Font(Font, FontStyle.Bold);
+        TextRenderer.DrawText(e.Graphics, CurrentLabel(), currentFont, currentBounds, Ink,
+            TextFormatFlags.RightToLeft | TextFormatFlags.Right
+            | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis
+            | TextFormatFlags.NoPrefix);
+
+        if (_terminal)
+        {
+            var toggleBounds = new Rectangle(panel.Left + 12, panel.Top + 29, 118, 12);
+            using var toggleFont = new Font("Segoe UI", 7.5F);
+            TextRenderer.DrawText(e.Graphics,
+                _expanded ? "بستن جزئیات ▲" : "نمایش جزئیات ▼",
+                toggleFont, toggleBounds, Muted,
+                TextFormatFlags.Left | TextFormatFlags.NoPrefix);
+        }
+
+        if (!_expanded) return;
+        using var line = new Pen(Line);
+        using var timeFont = new Font("Segoe UI", 8F);
+        e.Graphics.DrawLine(line, panel.Left + 12, panel.Top + HeaderHeight,
+            panel.Right - 12, panel.Top + HeaderHeight);
+        for (var index = 0; index < _events.Count; index++)
+        {
+            var progress = _events[index];
+            var rowTop = panel.Top + HeaderHeight + 6 + index * RowHeight;
+            var rowIcon = new Rectangle(panel.Right - 32, rowTop + 5, 14, 14);
+            DrawStatusIcon(e.Graphics, rowIcon, progress,
+                current: index == _events.Count - 1);
+            var timeBounds = new Rectangle(panel.Left + 12, rowTop, 70, RowHeight);
+            TextRenderer.DrawText(e.Graphics,
+                ToPersianDigits(progress.CreatedAtUtc.LocalDateTime.ToString("HH:mm:ss")),
+                timeFont, timeBounds, Muted,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter
+                | TextFormatFlags.NoPrefix);
+            var labelBounds = new Rectangle(panel.Left + 88, rowTop,
+                Math.Max(80, panel.Width - 132), RowHeight);
+            TextRenderer.DrawText(e.Graphics, EventLabel(progress), Font,
+                labelBounds, Ink, TextFormatFlags.RightToLeft | TextFormatFlags.Right
+                | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis
+                | TextFormatFlags.NoPrefix);
+        }
+    }
+
+    private void DrawStatusIcon(Graphics graphics, Rectangle bounds,
+        ChatRunProgressEvent progress, bool current)
+    {
+        var failed = progress.Stage == ChatProgressStage.Failed
+            || progress.Outcome == ChatProgressOutcome.Failure;
+        var complete = progress.Stage == ChatProgressStage.Completed
+            || progress.Outcome == ChatProgressOutcome.Success || !current;
+        var color = failed ? Danger : complete ? Success : Action;
+        var glyph = failed ? "!" : complete ? "✓" : "…";
+        using var brush = new SolidBrush(color);
+        using var glyphFont = new Font("Segoe UI", bounds.Width <= 14 ? 7F : 9F,
+            FontStyle.Bold);
+        graphics.FillEllipse(brush, bounds);
+        TextRenderer.DrawText(graphics, glyph, glyphFont, bounds, Color.White,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter
+            | TextFormatFlags.NoPrefix);
+    }
+
+    private Rectangle PanelBounds()
+    {
+        var width = Math.Min(620, Math.Max(300, ClientSize.Width - 96));
+        return new Rectangle(ClientSize.Width - width - 18, 2,
+            width, Math.Max(1, Height - 4));
+    }
+
+    private void UpdateHeight()
+    {
+        var desired = HeaderHeight + 6;
+        if (_expanded) desired += 12 + _events.Count * RowHeight;
+        if (Height != desired) Height = desired;
+    }
+
+    private string CurrentLabel() => _events.Count == 0
+        ? "روند بررسی درخواست"
+        : EventLabel(_events[^1]);
+
+    private string ElapsedText()
+    {
+        if (_events.Count == 0) return string.Empty;
+        var end = _terminal ? _events[^1].CreatedAtUtc : DateTimeOffset.UtcNow;
+        var elapsed = end - _events[0].CreatedAtUtc;
+        var seconds = Math.Max(0, (int)elapsed.TotalSeconds);
+        var text = seconds < 60
+            ? $"{seconds} ثانیه"
+            : $"{seconds / 60} دقیقه و {seconds % 60} ثانیه";
+        return ToPersianDigits(text);
+    }
+
+    private static string EventLabel(ChatRunProgressEvent progress) => progress.Stage switch
+    {
+        ChatProgressStage.Queued => "درخواست در صف بررسی قرار گرفت",
+        ChatProgressStage.AssistantStarted => "درخواست به دستیار پشتیبانی ارسال شد",
+        ChatProgressStage.WaitingForModel => "در انتظار پاسخ مدل",
+        ChatProgressStage.EndpointCheckStarted => StartLabel(progress.Activity),
+        ChatProgressStage.EndpointCheckCompleted => CompleteLabel(
+            progress.Activity, progress.Outcome),
+        ChatProgressStage.Retrying => "ارتباط با دستیار برقرار نشد؛ تلاش دوباره",
+        ChatProgressStage.Completed => "پاسخ آماده شد",
+        ChatProgressStage.Failed => "بررسی درخواست کامل نشد",
+        _ => "در حال بررسی درخواست"
+    };
+
+    private static string StartLabel(ChatProgressActivity activity) => activity switch
+    {
+        ChatProgressActivity.OfficeInventory =>
+            "درخواست بررسی نصب و نسخه آفیس به عامل ارسال شد",
+        ChatProgressActivity.OfficeActivationStatus =>
+            "درخواست بررسی فعال‌سازی آفیس به عامل ارسال شد",
+        ChatProgressActivity.ProposedAction => "در حال آماده‌سازی اقدام پیشنهادی",
+        _ => "درخواست بررسی به عامل ارسال شد"
+    };
+
+    private static string CompleteLabel(ChatProgressActivity activity,
+        ChatProgressOutcome outcome)
+    {
+        var failed = outcome == ChatProgressOutcome.Failure;
+        return activity switch
+        {
+            ChatProgressActivity.OfficeInventory => failed
+                ? "بررسی نصب و نسخه آفیس ناموفق بود"
+                : "بررسی نصب و نسخه آفیس کامل شد",
+            ChatProgressActivity.OfficeActivationStatus => failed
+                ? "بررسی فعال‌سازی آفیس ناموفق بود"
+                : "بررسی فعال‌سازی آفیس کامل شد",
+            ChatProgressActivity.ProposedAction => failed
+                ? "آماده‌سازی اقدام پیشنهادی ناموفق بود"
+                : "اقدام پیشنهادی آماده شد",
+            _ => failed ? "بررسی عامل ناموفق بود" : "بررسی عامل کامل شد"
+        };
+    }
+
+    private static string ToPersianDigits(string value)
+    {
+        const string western = "0123456789";
+        const string persian = "۰۱۲۳۴۵۶۷۸۹";
+        return string.Concat(value.Select(character =>
+        {
+            var index = western.IndexOf(character);
+            return index >= 0 ? persian[index] : character;
+        }));
+    }
 }
 
 internal static class UiDrawing

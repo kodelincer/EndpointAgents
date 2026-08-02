@@ -1,0 +1,63 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "EndpointAgents.Tray/1.0.0": {
+        "dependencies": {
+          "EndpointAgents.Shared": "1.0.0",
+          "System.ServiceProcess.ServiceController": "10.0.9"
+        },
+        "runtime": {
+          "EndpointAgents.Tray.dll": {}
+        }
+      },
+      "System.ServiceProcess.ServiceController/10.0.9": {
+        "runtime": {
+          "lib/net10.0/System.ServiceProcess.ServiceController.dll": {
+            "assemblyVersion": "10.0.0.9",
+            "fileVersion": "10.0.926.27113"
+          }
+        },
+        "runtimeTargets": {
+          "runtimes/win/lib/net10.0/System.ServiceProcess.ServiceController.dll": {
+            "rid": "win",
+            "assetType": "runtime",
+            "assemblyVersion": "10.0.0.9",
+            "fileVersion": "10.0.926.27113"
+          }
+        }
+      },
+      "EndpointAgents.Shared/1.0.0": {
+        "runtime": {
+          "EndpointAgents.Shared.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "EndpointAgents.Tray/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "System.ServiceProcess.ServiceController/10.0.9": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-VaYklIT689DthcRzbqt3S8z3GkymiD+US+RLzMFfoPxNIyUxMpXT116cO6rVrKHSuwgdvb35HRKN/PmDmbL+3g==",
+      "path": "system.serviceprocess.servicecontroller/10.0.9",
+      "hashPath": "system.serviceprocess.servicecontroller.10.0.9.nupkg.sha512"
+    },
+    "EndpointAgents.Shared/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

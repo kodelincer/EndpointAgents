@@ -294,35 +294,16 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
     [Fact]
     public async Task RemotePeerDownloadsOnlyCataloguedHashVerifiedOfficeBugfix()
     {
-        var bytes = new byte[] { (byte)'M', (byte)'Z', 3, 4, 5 };
+        var bytes = "@echo off\r\nexit /b 0\r\n"u8.ToArray();
         var hash = Convert.ToHexString(SHA256.HashData(bytes));
-        var fileName = "officebugfixmanager_16.0.exe";
+        var fileName = "office-activation-repair.bat";
         await File.WriteAllBytesAsync(
             Path.Combine(_factory.FileRepositoryRoot, fileName), bytes,
             TestCancellation);
-        await File.WriteAllTextAsync(Path.Combine(_factory.FileRepositoryRoot,
-            "office-bugfix-managers.json"), JsonSerializer.Serialize(
-                new OfficeBugfixManifest
-                {
-                    Version = 1,
-                    Artifacts =
-                    [
-                        new OfficeBugfixManifestEntry
-                        {
-                            ArtifactId = "approved-office-bugfix",
-                            DisplayName = "Approved Office bugfix",
-                            Description = "Integration test artifact",
-                            FileName = fileName,
-                            Sha256 = hash,
-                            MinOfficeVersion = "16.0",
-                            MaxOfficeVersionExclusive = "17.0"
-                        }
-                    ]
-                }), TestCancellation);
 
         using var remote = _factory.CreateRemoteClient();
         var approved = await remote.GetAsync(
-            "/api/files/office/bugfix/approved-office-bugfix", TestCancellation);
+            "/api/files/office/bugfix/office-activation-repair", TestCancellation);
         var unknown = await remote.GetAsync(
             "/api/files/office/bugfix/not-catalogued", TestCancellation);
 

@@ -92,6 +92,20 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
                 CREATE INDEX IF NOT EXISTS ix_agent_runs_state
                     ON agent_runs(state, created_at_utc);
 
+                CREATE TABLE IF NOT EXISTS chat_progress_events (
+                    event_id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id),
+                    run_id TEXT NOT NULL REFERENCES agent_runs(run_id),
+                    sequence INTEGER NOT NULL,
+                    stage TEXT NOT NULL,
+                    activity TEXT NOT NULL,
+                    outcome TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    UNIQUE(conversation_id, sequence)
+                );
+                CREATE INDEX IF NOT EXISTS ix_chat_progress_events_run
+                    ON chat_progress_events(run_id, sequence);
+
                 CREATE TABLE IF NOT EXISTS action_proposals (
                     action_id TEXT PRIMARY KEY,
                     conversation_id TEXT NOT NULL REFERENCES conversations(conversation_id),
@@ -325,7 +339,7 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
         var clientId = Normalize(submission.ClientMessageId, 100);
         if (string.IsNullOrWhiteSpace(body) || string.IsNullOrWhiteSpace(clientId))
             return new ChatMessageReceipt(string.Empty, string.Empty, 0, false,
-                "A client message ID and message text are required.");
+                "متن پیام نمی‌تواند خالی باشد.");
 
         await _gate.WaitAsync(cancellationToken);
         try
@@ -351,7 +365,7 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
                 {
                     var existing = new ChatMessageReceipt(conversation.ConversationId,
                         reader.GetString(0), reader.GetInt64(1), true,
-                        "The message was already accepted.");
+                        "این پیام قبلاً دریافت شده است.");
                     await transaction.CommitAsync(cancellationToken);
                     return existing;
                 }
@@ -393,14 +407,17 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
             insert.Parameters.AddWithValue("$state", ChatMessageState.Queued.ToString());
             insert.Parameters.AddWithValue("$run_id", runId);
             await insert.ExecuteNonQueryAsync(cancellationToken);
+            await AppendProgressAsync(connection, (SqliteTransaction)transaction, runId,
+                ChatProgressStage.Queued, ChatProgressActivity.None,
+                ChatProgressOutcome.None, now, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new ChatMessageReceipt(conversation.ConversationId, messageId, sequence,
-                true, "The message was queued for the support agent.");
+                true, "پیام برای بررسی در صف قرار گرفت.");
         }
         catch (UnauthorizedAccessException)
         {
             return new ChatMessageReceipt(string.Empty, string.Empty, 0, false,
-                "The conversation does not belong to this endpoint user.");
+                "این گفتگو متعلق به کاربر فعلی نیست.");
         }
         finally
         {
@@ -462,9 +479,27 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
                     actions.Add(ReadAction(reader));
             }
 
+            var progressEvents = new List<ChatRunProgressEvent>();
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText =
+                    """
+                    SELECT event_id, conversation_id, run_id, sequence, stage,
+                        activity, outcome, created_at_utc
+                    FROM chat_progress_events
+                    WHERE conversation_id = $conversation_id AND sequence > $after
+                    ORDER BY sequence;
+                    """;
+                command.Parameters.AddWithValue("$conversation_id", request.ConversationId);
+                command.Parameters.AddWithValue("$after", Math.Max(0, request.AfterSequence));
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                    progressEvents.Add(ReadProgressEvent(reader));
+            }
+
             var refreshed = await GetConversationAsync(connection, null,
                 request.ConversationId, cancellationToken) ?? conversation;
-            return new ChatDelta(refreshed, messages, actions);
+            return new ChatDelta(refreshed, messages, actions, progressEvents);
         }
         finally
         {
@@ -535,6 +570,9 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
                 await transaction.RollbackAsync(cancellationToken);
                 return null;
             }
+            await AppendProgressAsync(connection, (SqliteTransaction)transaction, runId,
+                ChatProgressStage.AssistantStarted, ChatProgressActivity.None,
+                ChatProgressOutcome.None, now, cancellationToken);
 
             var history = new List<ChatMessage>();
             await using var historyCommand = connection.CreateCommand();
@@ -574,6 +612,25 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
             cancellationToken);
     }
 
+    public async Task WriteProgressAsync(string runId, ChatProgressStage stage,
+        ChatProgressActivity activity, ChatProgressOutcome outcome,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await AppendProgressAsync(connection, (SqliteTransaction)transaction, runId,
+                stage, activity, outcome, DateTimeOffset.UtcNow, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task CompleteRunAsync(string runId, string response,
         CancellationToken cancellationToken)
     {
@@ -585,26 +642,58 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
         CancellationToken cancellationToken)
     {
         await FinishRunAsync(runId,
-            "The support agent could not complete this request. Please try again.",
+            "متأسفم، بررسی این درخواست کامل نشد. لطفاً دوباره تلاش کنید.",
             succeeded: false, cancellationToken, Normalize(error, 2_000));
     }
 
-    public Task RequeueRunAsync(string runId, CancellationToken cancellationToken) =>
-        ExecuteAsync(
-            """
-            UPDATE agent_runs
-            SET state = 'Queued', capability_hash = NULL,
-                capability_expires_at_utc = NULL, framework_run_id = NULL,
-                updated_at_utc = $now, last_error = 'Requeued during shutdown.'
-            WHERE run_id = $run_id AND state = 'Running';
-            UPDATE messages
-            SET state = 'Queued'
-            WHERE message_id = (
-                SELECT user_message_id FROM agent_runs WHERE run_id = $run_id
-            ) AND state = 'Working';
-            """,
-            [("$now", Format(DateTimeOffset.UtcNow)), ("$run_id", runId)],
-            cancellationToken);
+    public async Task RequeueRunAsync(string runId, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            var now = DateTimeOffset.UtcNow;
+            await using var command = connection.CreateCommand();
+            command.Transaction = (SqliteTransaction)transaction;
+            command.CommandText =
+                """
+                UPDATE agent_runs
+                SET state = 'Queued', capability_hash = NULL,
+                    capability_expires_at_utc = NULL, framework_run_id = NULL,
+                    updated_at_utc = $now, last_error = 'Requeued during shutdown.'
+                WHERE run_id = $run_id AND state = 'Running';
+                SELECT changes();
+                """;
+            command.Parameters.AddWithValue("$now", Format(now));
+            command.Parameters.AddWithValue("$run_id", runId);
+            var changed = Convert.ToInt64(
+                await command.ExecuteScalarAsync(cancellationToken),
+                CultureInfo.InvariantCulture) > 0;
+            if (changed)
+            {
+                await using var message = connection.CreateCommand();
+                message.Transaction = (SqliteTransaction)transaction;
+                message.CommandText =
+                    """
+                    UPDATE messages SET state = 'Queued'
+                    WHERE message_id = (
+                        SELECT user_message_id FROM agent_runs WHERE run_id = $run_id
+                    ) AND state = 'Working';
+                    """;
+                message.Parameters.AddWithValue("$run_id", runId);
+                await message.ExecuteNonQueryAsync(cancellationToken);
+                await AppendProgressAsync(connection, (SqliteTransaction)transaction, runId,
+                    ChatProgressStage.Retrying, ChatProgressActivity.None,
+                    ChatProgressOutcome.None, now, cancellationToken);
+            }
+            await transaction.CommitAsync(cancellationToken);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     public async Task<bool> TryRequeueTransientRunAsync(string runId, int maxAttempts,
         CancellationToken cancellationToken)
@@ -645,6 +734,9 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
                     """;
                 message.Parameters.AddWithValue("$run_id", runId);
                 await message.ExecuteNonQueryAsync(cancellationToken);
+                await AppendProgressAsync(connection, (SqliteTransaction)transaction, runId,
+                    ChatProgressStage.Retrying, ChatProgressActivity.None,
+                    ChatProgressOutcome.None, DateTimeOffset.UtcNow, cancellationToken);
             }
             await transaction.CommitAsync(cancellationToken);
             return changed;
@@ -746,7 +838,7 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
             if (conversation is null || conversation.AgentId != agentId
                 || conversation.UserSid != decision.Identity.UserSid)
                 return new ActionDecisionResult(false, null,
-                    "The action does not belong to this endpoint user.");
+                    "این اقدام متعلق به کاربر فعلی نیست.");
 
             await using var lookup = connection.CreateCommand();
             lookup.Transaction = (SqliteTransaction)transaction;
@@ -761,12 +853,12 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
             lookup.Parameters.AddWithValue("$conversation_id", decision.ConversationId);
             await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken))
-                return new ActionDecisionResult(false, null, "The action was not found.");
+                return new ActionDecisionResult(false, null, "اقدام پیشنهادی پیدا نشد.");
             var proposal = ReadAction(reader);
             await reader.DisposeAsync();
             if (proposal.State != ChatActionState.Pending)
                 return new ActionDecisionResult(false, proposal,
-                    "The action was already decided.");
+                    "درباره این اقدام قبلاً تصمیم گرفته شده است.");
             if (proposal.ExpiresAtUtc <= now)
             {
                 await UpdateActionStateAsync(connection, (SqliteTransaction)transaction,
@@ -775,7 +867,7 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
                 return new ActionDecisionResult(false, proposal with
                 {
                     State = ChatActionState.Expired
-                }, "The action proposal expired.");
+                }, "زمان تأیید این اقدام به پایان رسیده است.");
             }
 
             var state = decision.Approved
@@ -785,7 +877,7 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
                 proposal.ActionId, state, now, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return new ActionDecisionResult(true, proposal with { State = state },
-                decision.Approved ? "The action was approved." : "The action was rejected.");
+                decision.Approved ? "اقدام تأیید شد." : "اقدام رد شد.");
         }
         finally
         {
@@ -868,6 +960,8 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
 
                 DELETE FROM action_proposals
                 WHERE conversation_id IN (SELECT conversation_id FROM expired_conversations);
+                DELETE FROM chat_progress_events
+                WHERE conversation_id IN (SELECT conversation_id FROM expired_conversations);
                 DELETE FROM agent_runs
                 WHERE conversation_id IN (SELECT conversation_id FROM expired_conversations);
                 DELETE FROM messages
@@ -898,7 +992,7 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
             lookup.Transaction = (SqliteTransaction)transaction;
             lookup.CommandText =
                 """
-                SELECT r.conversation_id, r.user_message_id, c.last_sequence
+                SELECT r.conversation_id, r.user_message_id
                 FROM agent_runs r
                 JOIN conversations c ON c.conversation_id = r.conversation_id
                 WHERE r.run_id = $run_id AND r.state = 'Running';
@@ -912,26 +1006,37 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
             }
             var conversationId = reader.GetString(0);
             var userMessageId = reader.GetString(1);
-            var sequence = reader.GetInt64(2) + 1;
             await reader.DisposeAsync();
             var now = DateTimeOffset.UtcNow;
+            var progress = await AppendProgressAsync(connection,
+                (SqliteTransaction)transaction, runId,
+                succeeded ? ChatProgressStage.Completed : ChatProgressStage.Failed,
+                ChatProgressActivity.None,
+                succeeded ? ChatProgressOutcome.Success : ChatProgressOutcome.Failure,
+                now, cancellationToken);
+            if (progress is null)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return;
+            }
+            var messageSequence = progress.Sequence + 1;
 
             await using var update = connection.CreateCommand();
             update.Transaction = (SqliteTransaction)transaction;
             update.CommandText =
                 """
-                UPDATE conversations SET last_sequence = $sequence, updated_at_utc = $now
+                UPDATE conversations SET last_sequence = $message_sequence, updated_at_utc = $now
                 WHERE conversation_id = $conversation_id;
                 UPDATE messages SET state = $user_state WHERE message_id = $user_message_id;
                 INSERT INTO messages(message_id, conversation_id, sequence, role, body,
                     text_direction, state, created_at_utc, run_id)
-                VALUES($message_id, $conversation_id, $sequence, 'Assistant', $body,
+                VALUES($message_id, $conversation_id, $message_sequence, 'Assistant', $body,
                     'auto', $assistant_state, $now, $run_id);
                 UPDATE agent_runs SET state = $run_state, capability_hash = NULL,
                     capability_expires_at_utc = NULL, updated_at_utc = $now, last_error = $error
                 WHERE run_id = $run_id;
                 """;
-            update.Parameters.AddWithValue("$sequence", sequence);
+            update.Parameters.AddWithValue("$message_sequence", messageSequence);
             update.Parameters.AddWithValue("$now", Format(now));
             update.Parameters.AddWithValue("$conversation_id", conversationId);
             update.Parameters.AddWithValue("$user_state",
@@ -951,6 +1056,53 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
         {
             _gate.Release();
         }
+    }
+
+    private static async Task<ChatRunProgressEvent?> AppendProgressAsync(
+        SqliteConnection connection, SqliteTransaction transaction, string runId,
+        ChatProgressStage stage, ChatProgressActivity activity,
+        ChatProgressOutcome outcome, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using var lookup = connection.CreateCommand();
+        lookup.Transaction = transaction;
+        lookup.CommandText =
+            """
+            SELECT r.conversation_id, c.last_sequence
+            FROM agent_runs r
+            JOIN conversations c ON c.conversation_id = r.conversation_id
+            WHERE r.run_id = $run_id AND r.state IN ('Queued', 'Running');
+            """;
+        lookup.Parameters.AddWithValue("$run_id", runId);
+        await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken)) return null;
+        var conversationId = reader.GetString(0);
+        var sequence = reader.GetInt64(1) + 1;
+        await reader.DisposeAsync();
+
+        var progress = new ChatRunProgressEvent(Guid.NewGuid().ToString("N"),
+            conversationId, runId, sequence, stage, activity, outcome, now);
+        await using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText =
+            """
+            UPDATE conversations SET last_sequence = $sequence, updated_at_utc = $now
+            WHERE conversation_id = $conversation_id;
+            INSERT INTO chat_progress_events(event_id, conversation_id, run_id, sequence,
+                stage, activity, outcome, created_at_utc)
+            VALUES($event_id, $conversation_id, $run_id, $sequence,
+                $stage, $activity, $outcome, $now);
+            """;
+        insert.Parameters.AddWithValue("$sequence", progress.Sequence);
+        insert.Parameters.AddWithValue("$now", Format(progress.CreatedAtUtc));
+        insert.Parameters.AddWithValue("$conversation_id", progress.ConversationId);
+        insert.Parameters.AddWithValue("$event_id", progress.EventId);
+        insert.Parameters.AddWithValue("$run_id", progress.RunId);
+        insert.Parameters.AddWithValue("$stage", progress.Stage.ToString());
+        insert.Parameters.AddWithValue("$activity", progress.Activity.ToString());
+        insert.Parameters.AddWithValue("$outcome", progress.Outcome.ToString());
+        await insert.ExecuteNonQueryAsync(cancellationToken);
+        return progress;
     }
 
     private async Task<ChatConversation> FindOrCreateConversationAsync(SqliteConnection connection,
@@ -1122,6 +1274,13 @@ public sealed class ChatStore(IOptions<ChatOptions> options)
             reader.IsDBNull(6) ? null : JsonSerializer.Deserialize<JsonElement>(reader.GetString(6)),
             Parse(reader.GetString(7)), Parse(reader.GetString(8)),
             Enum.Parse<ChatActionState>(reader.GetString(9)));
+
+    private static ChatRunProgressEvent ReadProgressEvent(SqliteDataReader reader) =>
+        new(reader.GetString(0), reader.GetString(1), reader.GetString(2),
+            reader.GetInt64(3), Enum.Parse<ChatProgressStage>(reader.GetString(4)),
+            Enum.Parse<ChatProgressActivity>(reader.GetString(5)),
+            Enum.Parse<ChatProgressOutcome>(reader.GetString(6)),
+            Parse(reader.GetString(7)));
 
     private static void ValidateIdentity(ChatIdentity identity)
     {

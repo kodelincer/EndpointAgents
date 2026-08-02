@@ -13,6 +13,7 @@ public static class TrayIpcProtocol
     public const string ReadIbsngUiMethod = "ibsng.read_ui_snapshot";
     public const string OfficeActivationStatusMethod = "office.activation_status";
     public const string OfficeRemediationLaunchMethod = "office.remediation_launch";
+    public const string OfficeBugfixConsentMethod = "office.bugfix_consent";
     public const int MaxMessageCharacters = 16 * 1024;
 
     public static string GetPipeName(string prefix, int sessionId) =>
@@ -26,7 +27,8 @@ public sealed record TrayIpcRequest(
     string ExpectedSha256,
     string? ServerHost,
     string DialerSearchPattern = "IBSngDialer*.exe",
-    OfficeRemediationLaunchRequest? OfficeRemediation = null);
+    OfficeRemediationLaunchRequest? OfficeRemediation = null,
+    OfficeBugfixConsentRequest? OfficeBugfixConsent = null);
 
 public sealed record TrayIpcResponse(
     string Id,

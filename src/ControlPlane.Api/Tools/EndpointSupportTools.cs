@@ -1,6 +1,8 @@
 using ControlPlane.Api.Agents;
 using ControlPlane.Api.Chat;
 using ControlPlane.Api.Commands;
+using ControlPlane.Api.Hermes;
+using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Rpc;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
@@ -11,13 +13,11 @@ namespace ControlPlane.Api.Tools;
 [McpServerToolType]
 public sealed class EndpointSupportTools
 {
-    private static readonly HashSet<string> MutatingMethods =
+    private static readonly HashSet<string> OfficeMutatingMethods =
         new(StringComparer.Ordinal)
         {
             "software.office_remediation_run",
-            "software.office_bugfix_run",
-            "network.ibsng_ensure_dialer",
-            "network.ibsng_launch"
+            "software.office_bugfix_run"
         };
 
     [McpServerTool(Name = "endpoint_get_info"), Description(
@@ -65,7 +65,7 @@ public sealed class EndpointSupportTools
             "software.office_activation_status", parameters: null, cancellationToken);
 
     [McpServerTool(Name = "propose_endpoint_action"), Description(
-        "Create an immutable action card for the endpoint user. This never executes the action. Use only after diagnosis.")]
+        "Create an immutable Office action card for the endpoint user. This never executes the action. Use only after Office diagnosis.")]
     public static async Task<string> ProposeEndpointAction(
         ChatStore store,
         CommandCatalog catalog,
@@ -80,7 +80,7 @@ public sealed class EndpointSupportTools
         CancellationToken cancellationToken)
     {
         var definition = catalog.GetAll().SingleOrDefault(item => item.Method == method);
-        if (definition is null || !MutatingMethods.Contains(method))
+        if (definition is null || !OfficeMutatingMethods.Contains(method))
             return """{"ok":false,"error":"The requested action is not allow-listed."}""";
         if (SensitiveCommandParameterGuard.ContainsSensitiveData(parameters))
             return """{"ok":false,"error":"Credentials and secrets are not accepted."}""";
@@ -92,16 +92,38 @@ public sealed class EndpointSupportTools
                 error = validationError
             });
 
+        var progressScope = await store.ResolveCapabilityAsync(
+            runCapability, cancellationToken);
+        if (progressScope is not null)
+            await store.WriteProgressAsync(progressScope.RunId,
+                ChatProgressStage.EndpointCheckStarted,
+                ChatProgressActivity.ProposedAction, ChatProgressOutcome.None,
+                cancellationToken);
+
         var proposal = await store.CreateActionProposalAsync(runCapability, method,
-            definition.Name, reason, validatedParameters, TimeSpan.FromMinutes(10),
-            cancellationToken);
+            definition.Name, PersianUserTextPolicy.ActionReason(reason),
+            validatedParameters, TimeSpan.FromMinutes(10), cancellationToken);
         if (proposal is null)
+        {
+            if (progressScope is not null)
+                await store.WriteProgressAsync(progressScope.RunId,
+                    ChatProgressStage.EndpointCheckCompleted,
+                    ChatProgressActivity.ProposedAction, ChatProgressOutcome.Failure,
+                    cancellationToken);
             return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+
+        }
 
         var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
         if (scope is not null)
+        {
             await store.WriteToolAuditAsync(scope, "propose_endpoint_action", "proposed",
                 method, cancellationToken);
+            await store.WriteProgressAsync(scope.RunId,
+                ChatProgressStage.EndpointCheckCompleted,
+                ChatProgressActivity.ProposedAction, ChatProgressOutcome.Success,
+                cancellationToken);
+        }
         return ToolResultSanitizer.Sanitize(new
         {
             ok = true,
@@ -124,31 +146,37 @@ public sealed class EndpointSupportTools
         var scopedParameters = AddUserScope(parameters, scope.UserSid);
         var request = RpcRequest.Create(
             Guid.NewGuid().ToString("N"), method, scopedParameters);
+        var activity = GetProgressActivity(method);
+        await store.WriteProgressAsync(scope.RunId,
+            ChatProgressStage.EndpointCheckStarted, activity,
+            ChatProgressOutcome.None, cancellationToken);
         var response = await registry.SendCommandAsync(scope.AgentId, request, cancellationToken);
         var outcome = response.Error is null ? "success" : "error";
         await store.WriteToolAuditAsync(scope, method, outcome,
             response.Error?.Message, cancellationToken);
+        await store.WriteProgressAsync(scope.RunId,
+            ChatProgressStage.EndpointCheckCompleted, activity,
+            response.Error is null
+                ? ChatProgressOutcome.Success
+                : ChatProgressOutcome.Failure,
+            cancellationToken);
         return ToolResultSanitizer.Sanitize(response.Error is null
             ? new { ok = true, result = response.Result }
             : new { ok = false, error = response.Error.Message });
     }
+
+    private static ChatProgressActivity GetProgressActivity(string method) => method switch
+    {
+        "software.office_inventory" => ChatProgressActivity.OfficeInventory,
+        "software.office_activation_status" => ChatProgressActivity.OfficeActivationStatus,
+        _ => ChatProgressActivity.EndpointCheck
+    };
 
     private static bool TryValidateActionParameters(string method, JsonElement? parameters,
         out JsonElement? validated, out string error)
     {
         validated = null;
         error = string.Empty;
-        if (method is "network.ibsng_ensure_dialer" or "network.ibsng_launch")
-        {
-            if (parameters is null
-                || parameters.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
-                || parameters.Value.ValueKind == JsonValueKind.Object
-                && !parameters.Value.EnumerateObject().Any())
-                return true;
-            error = "This IBSng action does not accept model-supplied parameters.";
-            return false;
-        }
-
         if (parameters is not { ValueKind: JsonValueKind.Object } value)
         {
             error = "An approved artifactId is required.";

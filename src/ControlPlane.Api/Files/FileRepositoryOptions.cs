@@ -12,8 +12,7 @@ public sealed class FileRepositoryOptions
 
     public string OfficeManifestFileName { get; set; } = "office-artifacts.json";
 
-    public string OfficeBugfixManifestFileName { get; set; } =
-        "office-bugfix-managers.json";
+    public string OfficeBugfixFileName { get; set; } = "office-activation-repair.bat";
 
     public long MaxFileSizeBytes { get; set; } = 100 * 1024 * 1024;
 }

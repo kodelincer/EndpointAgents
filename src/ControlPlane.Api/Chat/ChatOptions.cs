@@ -29,9 +29,6 @@ public sealed class HermesOptions
 
     public string McpApiKey { get; set; } = string.Empty;
 
-    public string SkillsRoot { get; set; } =
-        @"C:\ProgramData\EndpointAgents\Hermes\skills";
-
     public int MaxConcurrentRuns { get; set; } = 4;
 
     public int RunTimeoutSeconds { get; set; } = 600;

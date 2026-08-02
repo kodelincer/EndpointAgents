@@ -7,6 +7,39 @@ namespace EndpointAgents.Platform.Windows.Tests;
 public sealed class SupportFormRenderingTests
 {
     [Fact]
+    public void ReportsTabContainsEndpointActivityList()
+    {
+        Exception? renderingError = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                using var form = new SupportForm(() => Task.CompletedTask);
+                form.ShowTab(SupportFormTab.Logs);
+                Application.DoEvents();
+                Assert.Single(form.Controls.Find("EndpointActivityReport", true)
+                    .OfType<ListView>());
+                using var bitmap = new Bitmap(form.Width, form.Height);
+                form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size));
+                var snapshotPath = Environment.GetEnvironmentVariable(
+                    "ENDPOINTAGENTS_REPORTS_SNAPSHOT_PATH");
+                if (!string.IsNullOrWhiteSpace(snapshotPath))
+                    bitmap.Save(snapshotPath);
+                form.ClosePermanently();
+            }
+            catch (Exception ex)
+            {
+                renderingError = ex;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(10)),
+            "The Reports tab did not finish rendering before the timeout.");
+        Assert.Null(renderingError);
+    }
+
+    [Fact]
     public void TextOnlyConversationRendersOnAnStaThread()
     {
         Exception? renderingError = null;

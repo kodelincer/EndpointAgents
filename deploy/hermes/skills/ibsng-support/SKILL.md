@@ -1,20 +1,17 @@
 ---
 name: ibsng-support
-description: Diagnose EndpointAgents IBSng dialer, route, DNS, DHCP, protocol, and Windows RAS/VPN symptoms without collecting credentials. Use for IBSng login, connection, dialer installation, launch, timeout, DNS, gateway, or VPN prompts.
+description: Diagnose EndpointAgents IBSng dialer, route, DNS, DHCP, protocol, and Windows RAS or VPN symptoms without collecting credentials. Use only in a Hermes profile where the ControlPlane IBSng diagnostic and approved IBSng action tools have been explicitly enabled.
 ---
 
 # IBSng Support
 
+This is a future skill template. Do not install it in the current Office-only production profile.
+
 1. Never ask for an IBSng username, password, OTP, or saved dialer configuration.
 2. Call `mcp_controlplane_ibsng_diagnose` for connection, timeout, route, protocol, missing-dialer, or launch symptoms.
-3. Interpret only returned sanitized evidence. Distinguish:
-   - missing or unverified approved dialer;
-   - local gateway, DHCP, DNS, or clock issue;
-   - IBSng server route or reachability issue;
-   - Windows RAS/VPN state;
-   - insufficient evidence.
-4. Prefer a manual read-only next check when diagnosis is inconclusive.
-5. Propose `network.ibsng_ensure_dialer` only when evidence indicates the approved dialer is missing or invalid.
-6. Propose `network.ibsng_launch` only when the approved dialer is present and launching it is the appropriate next step.
+3. Interpret only sanitized evidence and distinguish a missing dialer, local network problem, remote reachability problem, Windows RAS/VPN state, and insufficient evidence.
+4. Prefer a manual read-only check when evidence is inconclusive.
+5. Propose only explicitly allow-listed IBSng actions after ControlPlane enables them.
+6. Treat every proposal as awaiting endpoint-user approval and local confirmation.
 
-Both actions require the endpoint user's action-card approval. Installation or repair also requires endpoint-local confirmation. Never report either as executed from the proposal result.
+Never report installation, repair, or launch as executed based only on a proposal result.

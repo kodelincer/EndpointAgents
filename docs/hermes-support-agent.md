@@ -46,6 +46,24 @@ only its own sequence delta while its chat view is visible.
 - Thirty-day cleanup for completed conversation data; devices and their
   revocation state are retained.
 
+## Local development settings
+
+Local ControlPlane values are stored in
+`src/ControlPlane.Api/appsettings.Development.json`. They include the local
+SQLite path, Hermes loopback URL, development API/MCP keys, and relaxed local
+HTTP/authentication switches. Start the API without temporary environment
+variables:
+
+```powershell
+dotnet run --project src\ControlPlane.Api\ControlPlane.Api.csproj
+```
+
+The development Hermes API and MCP keys in that file must exactly match the
+selected Hermes profile. They are test credentials only; replace them in the
+installed production `appsettings.json` and never reuse them outside localhost.
+The relative development SQLite path is resolved against the API project root,
+so the command works regardless of the shell's current directory.
+
 ## Production installation
 
 ### 1. Install ControlPlane and configure HTTPS
@@ -111,7 +129,6 @@ The script:
 - pins the configured provider and model for new Hermes sessions;
 - generates different random API-server and MCP bearer secrets;
 - synchronizes those secrets into ControlPlane's protected settings;
-- copies the reviewed skills and locks them read-only to Hermes;
 - runs Hermes as the low-privilege virtual account
   `NT SERVICE\EndpointAgents.Hermes`;
 - binds the API server only to `127.0.0.1:8642`;
@@ -122,12 +139,32 @@ Hermes configuration follows its documented
 [dynamic MCP toolset](https://hermes-agent.nousresearch.com/docs/reference/toolsets-reference),
 and [MCP allow-listing](https://hermes-agent.nousresearch.com/docs/reference/mcp-config-reference).
 
-The production API profile contains only `mcp-controlplane`. Global
+The production API profile contains `mcp-controlplane` and the Hermes `skills`
+toolset. Global
 defense-in-depth disables terminal, files, browser, web, memory, session search,
-skills, learning/curation, cron, delegation, code execution, computer use, and
-other unrelated toolsets. The four reviewed skill files are read by
-ControlPlane and injected into each run as immutable instructions; Hermes does
-not receive `skill_manage`.
+learning/curation, cron, delegation, code execution, computer use, and other
+unrelated toolsets.
+
+Reviewed source templates live in `deploy/hermes/skills`. ControlPlane does not
+read, copy, parse, or manage these files at runtime. An authorized administrator
+reviews changes in Git and manually imports or copies the approved skill folders
+into the dedicated Hermes profile. Hermes is then the live skill-management
+surface. Endpoint runs may list and view relevant skills, but their system
+instructions prohibit skill modification; Hermes also stages model-requested
+writes for administrator approval.
+
+For the current Office-only profile, promote only `office-support`. It contains
+the routing, safety, inventory, and single approved bugfix instructions.
+
+Do not promote `ibsng-support` until IBSng tools and actions are deliberately
+enabled in the profile and ControlPlane allowlists. Skill text cannot grant a
+tool permission that ControlPlane or the Hermes MCP allowlist has withheld.
+
+When using the service layout from this guide, the manual filesystem target is
+`C:\ProgramData\EndpointAgents\Hermes\skills`. Stop Hermes, replace only the
+reviewed `office-support` skill folder, then start Hermes and verify that the
+skill appears in the selected API-server profile. The same promotion can
+be performed through Hermes Desktop if it manages that exact profile.
 
 ### 3. Enroll endpoint devices
 
@@ -188,19 +225,15 @@ logs.
 
 Only these tools are visible to Hermes:
 
-- `endpoint_get_info`
-- `ibsng_diagnose`
 - `office_inventory`
 - `office_activation_status`
 - `propose_endpoint_action`
 
-The proposal tool accepts only cataloged Office remediation/bugfix and IBSng
-install/launch methods. It stores the exact method and parameters with the run,
-conversation, endpoint, SID, expiry, and pending state. A decision is immutable
-and single-use. Approval dispatches the stored command, never user- or
-model-supplied replacement parameters. IBSng installation or repair then shows
-a second endpoint-local Tray confirmation before stopping a process,
-quarantining a duplicate, downloading, or installing a file.
+The proposal tool accepts only cataloged Office remediation and bugfix methods.
+It stores the exact method and parameters with the run, conversation, endpoint,
+SID, expiry, and pending state. A decision is immutable and single-use. Approval
+dispatches the stored command, never user- or model-supplied replacement
+parameters.
 
 ## Verification checklist
 
@@ -219,9 +252,11 @@ Before broad rollout, also verify:
    capabilities, and reused action decisions fail.
 4. ControlPlane/Hermes restart, endpoint reconnect, offline delivery, timeout,
    and the Hermes stop endpoint behave correctly.
-5. Prompt injection cannot activate a built-in Hermes toolset or address a
-   different endpoint.
-6. Persian/RTL and mixed Persian/English responses render correctly.
+5. Prompt injection cannot activate a built-in Hermes toolset, select a
+   non-Office action, or address a different endpoint.
+6. In-scope Office responses are simple Persian; unrelated and ambiguous
+   prompts receive the fixed Persian refusal or clarification without invoking
+   Hermes.
 7. Four active runs and at least 500 SignalR connections remain stable.
 
 Inspect `C:\ProgramData\EndpointAgents\Hermes\logs` and the ControlPlane Windows
@@ -230,8 +265,8 @@ provider keys.
 
 ## Controlled improvement
 
-Production conversations never edit skills or memory. Collect only explicit
-resolved/not-resolved feedback and opted-in sanitized outcomes. Any future
-improvement job must operate offline, create a reviewable Git diff, pass this
-test matrix, and require administrator promotion of a versioned package into
-the read-only production skills directory. Cross-user memory remains disabled.
+Production endpoint conversations never edit skills or memory. Edit proposed
+skill revisions under `deploy/hermes/skills`, review and test the Git diff, and
+then manually promote the approved folders to the dedicated Hermes profile.
+Keep skill-write approval enabled so any model-requested write is staged rather
+than applied automatically. Cross-user memory remains disabled.

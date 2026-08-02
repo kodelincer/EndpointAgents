@@ -52,8 +52,11 @@ public sealed class SupportForm : Form
     private readonly Label _logState = new();
     private readonly System.Windows.Forms.Timer _searchTimer = new() { Interval = 450 };
     private readonly System.Windows.Forms.Timer _chatTimer = new() { Interval = 2_000 };
+    private readonly System.Windows.Forms.Timer _reportTimer = new() { Interval = 5_000 };
     private readonly HashSet<string> _renderedMessageIds = [];
     private readonly HashSet<string> _seenActionIds = [];
+    private readonly HashSet<string> _seenProgressEventIds = [];
+    private readonly Dictionary<string, ChatRunProgressView> _progressViews = [];
     private IReadOnlyList<EndpointEventLogEntry> _logs = [];
     private TrayStatus _currentStatus = new(TrayHealthState.Checking,
         EndpointServiceState.Unknown, null, "در حال بررسی عامل", "وضعیت فعلی در حال دریافت است.");
@@ -91,6 +94,7 @@ public sealed class SupportForm : Form
         {
             if (_tabs.SelectedTab == _logsTab) await RefreshLogsAsync();
             UpdateChatPolling();
+            UpdateReportPolling();
             if (_tabs.SelectedTab == _helpdeskTab) await SyncChatAsync();
         };
         _searchTimer.Tick += async (_, _) =>
@@ -102,10 +106,16 @@ public sealed class SupportForm : Form
         {
             await _refreshStatus();
             UpdateChatPolling();
+            UpdateReportPolling();
             if (_tabs.SelectedTab == _helpdeskTab) await SyncChatAsync();
         };
-        VisibleChanged += (_, _) => UpdateChatPolling();
+        VisibleChanged += (_, _) =>
+        {
+            UpdateChatPolling();
+            UpdateReportPolling();
+        };
         _chatTimer.Tick += async (_, _) => await SyncChatAsync();
+        _reportTimer.Tick += async (_, _) => await RefreshLogsAsync();
     }
 
     public void ShowTab(SupportFormTab tab)
@@ -121,6 +131,7 @@ public sealed class SupportForm : Form
         Activate();
         BringToFront();
         UpdateChatPolling();
+        UpdateReportPolling();
         if (tab == SupportFormTab.Helpdesk) _ = SyncChatAsync();
     }
 
@@ -164,6 +175,7 @@ public sealed class SupportForm : Form
         _lifetime.Cancel();
         _searchTimer.Dispose();
         _chatTimer.Dispose();
+        _reportTimer.Dispose();
         Close();
     }
 
@@ -503,13 +515,40 @@ public sealed class SupportForm : Form
             Dock = DockStyle.Fill,
             Padding = new Padding(18, 16, 18, 16),
             ColumnCount = 1,
-            RowCount = 4,
+            RowCount = 5,
             RightToLeft = RightToLeft.Yes
         };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 64));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 36));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+        var heading = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+        heading.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+        heading.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
+        heading.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "گزارش فعالیت عامل",
+            Font = new Font("Segoe UI", 13F, FontStyle.Bold),
+            ForeColor = Ink,
+            TextAlign = ContentAlignment.MiddleRight
+        }, 0, 0);
+        heading.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "اتصال‌ها، فرمان‌ها، نتیجه اجرا و اقدامات محلی این رایانه",
+            ForeColor = Muted,
+            TextAlign = ContentAlignment.MiddleRight
+        }, 0, 1);
+        root.Controls.Add(heading, 0, 0);
         var filters = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill,
@@ -538,7 +577,7 @@ public sealed class SupportForm : Form
         var export = SecondaryButton("خروجی…");
         export.Click += async (_, _) => await ExportLogsAsync();
         filters.Controls.AddRange([_logAge, _logLevel, _logSearch, refresh, copy, export]);
-        root.Controls.Add(filters, 0, 0);
+        root.Controls.Add(filters, 0, 1);
 
         _logList.Dock = DockStyle.Fill;
         _logList.View = View.Details;
@@ -547,13 +586,14 @@ public sealed class SupportForm : Form
         _logList.GridLines = true;
         _logList.RightToLeft = RightToLeft.Yes;
         _logList.RightToLeftLayout = true;
+        _logList.Name = "EndpointActivityReport";
         _logList.Columns.Add("زمان", 145);
         _logList.Columns.Add("سطح", 90);
         _logList.Columns.Add("منبع", 170);
         _logList.Columns.Add("رویداد", 65);
         _logList.Columns.Add("پیام", 360);
         _logList.SelectedIndexChanged += (_, _) => ShowSelectedLog();
-        root.Controls.Add(_logList, 0, 1);
+        root.Controls.Add(_logList, 0, 2);
         _logDetail.Dock = DockStyle.Fill;
         _logDetail.ReadOnly = true;
         _logDetail.BackColor = Surface;
@@ -561,11 +601,11 @@ public sealed class SupportForm : Form
         _logDetail.Font = new Font("Segoe UI", 9F);
         _logDetail.RightToLeft = RightToLeft.Yes;
         _logDetail.Text = "برای مشاهده متن کامل، یک رویداد را انتخاب کنید.";
-        root.Controls.Add(_logDetail, 0, 2);
+        root.Controls.Add(_logDetail, 0, 3);
         _logState.Dock = DockStyle.Fill;
         _logState.ForeColor = Muted;
         _logState.TextAlign = ContentAlignment.MiddleRight;
-        root.Controls.Add(_logState, 0, 3);
+        root.Controls.Add(_logState, 0, 4);
         _logsTab.Controls.Add(root);
     }
 
@@ -719,6 +759,14 @@ public sealed class SupportForm : Form
         else if (!shouldPoll && _chatTimer.Enabled) _chatTimer.Stop();
     }
 
+    private void UpdateReportPolling()
+    {
+        var shouldPoll = Visible && _tabs.SelectedTab == _logsTab
+            && !_lifetime.IsCancellationRequested;
+        if (shouldPoll && !_reportTimer.Enabled) _reportTimer.Start();
+        else if (!shouldPoll && _reportTimer.Enabled) _reportTimer.Stop();
+    }
+
     private async Task EnsureChatOpenedAsync()
     {
         if (!string.IsNullOrWhiteSpace(_conversationId)) return;
@@ -741,12 +789,14 @@ public sealed class SupportForm : Form
             var request = new ChatDeltaRequest(_conversationId!, _lastChatSequence,
                 LocalChatIdentity());
             var delta = await _serviceClient.GetChatDeltaAsync(request, _lifetime.Token);
-            var entries =
-                new List<(long Sequence, ChatMessage? Message, ChatActionProposal? Action)>();
+            var entries = new List<(long Sequence, ChatMessage? Message,
+                ChatActionProposal? Action, ChatRunProgressEvent? Progress)>();
             foreach (var message in delta.Messages)
-                entries.Add((message.Sequence, message, null));
+                entries.Add((message.Sequence, message, null, null));
             foreach (var action in delta.Actions)
-                entries.Add((action.Sequence, null, action));
+                entries.Add((action.Sequence, null, action, null));
+            foreach (var progress in delta.ProgressEvents ?? [])
+                entries.Add((progress.Sequence, null, null, progress));
             foreach (var entry in entries.OrderBy(entry => entry.Sequence))
             {
                 if (entry.Message is { } message)
@@ -764,8 +814,15 @@ public sealed class SupportForm : Form
                 {
                     await HandleActionProposalAsync(action);
                 }
+                else if (entry.Progress is { } progress
+                         && _seenProgressEventIds.Add(progress.EventId))
+                {
+                    AddProgressEvent(progress);
+                }
                 _lastChatSequence = Math.Max(_lastChatSequence, entry.Sequence);
             }
+            foreach (var progress in _progressViews.Values)
+                progress.RefreshElapsed();
             _conversationId = delta.Conversation.ConversationId;
             _lastChatSequence = Math.Max(_lastChatSequence,
                 delta.Conversation.LastSequence);
@@ -788,7 +845,8 @@ public sealed class SupportForm : Form
         if (proposal.State != ChatActionState.Pending)
         {
             AddChatMessage(false,
-                $"{proposal.DisplayName}\r\nوضعیت: {proposal.State}", "اقدام پیشنهادی");
+                $"{proposal.DisplayName}\r\nوضعیت: {PersianActionState(proposal.State)}",
+                "اقدام پیشنهادی");
             return;
         }
 
@@ -845,6 +903,22 @@ public sealed class SupportForm : Form
         _conversation.Controls.Add(message);
         LayoutConversationMessages();
         _conversation.ScrollControlIntoView(message);
+    }
+
+    private void AddProgressEvent(ChatRunProgressEvent progress)
+    {
+        var added = false;
+        if (!_progressViews.TryGetValue(progress.RunId, out var view))
+        {
+            view = new ChatRunProgressView(progress.RunId);
+            view.SizeChanged += (_, _) => LayoutConversationMessages();
+            _progressViews.Add(progress.RunId, view);
+            _conversation.Controls.Add(view);
+            added = true;
+        }
+        view.AddEvent(progress);
+        LayoutConversationMessages();
+        if (added) _conversation.ScrollControlIntoView(view);
     }
 
     private void LayoutConversationMessages()
@@ -987,6 +1061,17 @@ public sealed class SupportForm : Form
         "Warning" => "هشدار",
         "Error" => "خطا",
         _ => level
+    };
+
+    private static string PersianActionState(ChatActionState state) => state switch
+    {
+        ChatActionState.Pending => "در انتظار تأیید",
+        ChatActionState.Approved => "تأییدشده",
+        ChatActionState.Rejected => "ردشده",
+        ChatActionState.Expired => "منقضی‌شده",
+        ChatActionState.Executed => "اجراشده",
+        ChatActionState.Failed => "ناموفق",
+        _ => "نامشخص"
     };
 
     private static string FormatLog(EndpointEventLogEntry item) =>

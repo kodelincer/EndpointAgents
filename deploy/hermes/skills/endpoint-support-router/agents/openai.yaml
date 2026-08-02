@@ -1,4 +1,0 @@
-interface:
-  display_name: "Endpoint Support Router"
-  short_description: "Route endpoint support requests safely."
-  default_prompt: "Diagnose this endpoint support request using only approved ControlPlane tools."

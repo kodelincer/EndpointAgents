@@ -49,6 +49,46 @@ public sealed class OfficeRemediationTests
     }
 
     [Fact]
+    public async Task DownloaderAllowsHashVerifiedBatchOnlyWhenPeHeaderIsNotRequired()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"EndpointAgents-bat-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "office-activation-repair.bat");
+            var bytes = "@echo off\r\nexit /b 0\r\n"u8.ToArray();
+            await File.WriteAllBytesAsync(path, bytes,
+                TestContext.Current.CancellationToken);
+            var hash = Convert.ToHexString(SHA256.HashData(bytes));
+
+            Assert.True(await OfficeArtifactDownloader.IsApprovedLocalFileAsync(
+                path, hash, TestContext.Current.CancellationToken,
+                requirePortableExecutable: false));
+            Assert.False(await OfficeArtifactDownloader.IsApprovedLocalFileAsync(
+                path, hash, TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void BugfixRunnerUsesFixedCmdAndRedirectedMenuInput()
+    {
+        var path = @"C:\ProgramData\EndpointAgents\OfficeRemediation\office-activation-repair\office-activation-repair.bat";
+
+        var startInfo = OfficeBugfixRunner.CreateStartInfo(path);
+
+        Assert.Equal(Path.Combine(Environment.SystemDirectory, "cmd.exe"),
+            startInfo.FileName);
+        Assert.Equal(["/d", "/s", "/c", path], startInfo.ArgumentList);
+        Assert.True(startInfo.RedirectStandardInput);
+        Assert.False(startInfo.UseShellExecute);
+        Assert.True(startInfo.CreateNoWindow);
+    }
+
+    [Fact]
     public async Task TrayRejectsRemediationOutsideAgentStagingRoot()
     {
         var launch = new OfficeRemediationLaunchRequest("m365-repair", "Microsoft repair",
@@ -71,9 +111,9 @@ public sealed class OfficeRemediationTests
     public void BugfixCompatibilityUsesExclusiveMaximum(string officeVersion,
         bool expected)
     {
-        var artifact = new OfficeBugfixArtifactDescriptor("office-bugfix-14",
-            "Office 14 bugfix", "Approved retailer tool",
-            "officebugfixmanager_14.0.exe", new string('A', 64),
+        var artifact = new OfficeBugfixArtifactDescriptor("office-activation-repair",
+            "Office activation repair", "Approved batch tool",
+            "office-activation-repair.bat", new string('A', 64),
             "14.0", "15.0", "/api/files/office/bugfix/office-bugfix-14");
 
         Assert.Equal(expected, OfficeBugfixCommandHandler.IsCompatible(

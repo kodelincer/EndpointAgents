@@ -137,81 +137,44 @@ public sealed class FileArtifactRepositoryTests
     }
 
     [Fact]
-    public async Task LoadsOnlyHashVerifiedVersionedOfficeBugfixExecutables()
+    public async Task LoadsSingleOfficeBugfixBatchAndComputesSha256()
     {
         var root = CreateRoot();
         try
         {
-            var bytes = new byte[] { (byte)'M', (byte)'Z', 1, 2, 3, 4 };
-            var fileName = "officebugfixmanager_16.0.exe";
+            var bytes = "@echo off\r\nexit /b 0\r\n"u8.ToArray();
+            var fileName = "office-activation-repair.bat";
             await File.WriteAllBytesAsync(Path.Combine(root, fileName), bytes,
                 TestContext.Current.CancellationToken);
-            await WriteBugfixManifestAsync(root, BugfixEntry(
-                "office-bugfix-16", fileName,
-                Convert.ToHexString(SHA256.HashData(bytes)), "16.0", "17.0"));
 
             var catalog = await CreateRepository(root).GetOfficeBugfixCatalogAsync(
                 TestContext.Current.CancellationToken);
 
             var artifact = Assert.Single(catalog.Artifacts);
-            Assert.Equal("/api/files/office/bugfix/office-bugfix-16",
+            Assert.Equal("office-activation-repair", artifact.Descriptor.ArtifactId);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)),
+                artifact.Descriptor.Sha256);
+            Assert.Equal("/api/files/office/bugfix/office-activation-repair",
                 artifact.Descriptor.DownloadPath);
-            Assert.Equal("17.0", artifact.Descriptor.MaxOfficeVersionExclusive);
             Assert.Empty(catalog.Issues);
         }
         finally { Directory.Delete(root, recursive: true); }
     }
 
     [Fact]
-    public async Task RejectsBugfixHashMismatchBadNameAndInvalidVersionRange()
+    public async Task IgnoresOtherBatchFileNames()
     {
         var root = CreateRoot();
         try
         {
-            var bytes = new byte[] { (byte)'M', (byte)'Z', 1, 2 };
-            await File.WriteAllBytesAsync(
-                Path.Combine(root, "officebugfixmanager_16.0.exe"), bytes,
+            await File.WriteAllTextAsync(Path.Combine(root, "other.bat"), "@echo off",
                 TestContext.Current.CancellationToken);
-            await File.WriteAllBytesAsync(Path.Combine(root, "unsafe.bat"), bytes,
-                TestContext.Current.CancellationToken);
-            await WriteBugfixManifestAsync(root,
-                BugfixEntry("wrong-hash", "officebugfixmanager_16.0.exe",
-                    new string('A', 64), "16.0", "17.0"),
-                BugfixEntry("bad-name", "unsafe.bat",
-                    Convert.ToHexString(SHA256.HashData(bytes)), "16.0", "17.0"),
-                BugfixEntry("bad-range", "officebugfixmanager_15.0.exe",
-                    Convert.ToHexString(SHA256.HashData(bytes)), "17.0", "16.0"));
 
             var catalog = await CreateRepository(root).GetOfficeBugfixCatalogAsync(
                 TestContext.Current.CancellationToken);
 
             Assert.Empty(catalog.Artifacts);
-            Assert.Equal(3, catalog.Issues.Count);
-        }
-        finally { Directory.Delete(root, recursive: true); }
-    }
-
-    [Fact]
-    public async Task RejectsDuplicateBugfixIdsAndFilenames()
-    {
-        var root = CreateRoot();
-        try
-        {
-            await WriteBugfixManifestAsync(root,
-                BugfixEntry("duplicate-id", "officebugfixmanager_14.0.exe",
-                    new string('A', 64), "14.0", "15.0"),
-                BugfixEntry("duplicate-id", "officebugfixmanager_15.0.exe",
-                    new string('B', 64), "15.0", "16.0"),
-                BugfixEntry("first", "officebugfixmanager_16.0.exe",
-                    new string('C', 64), "16.0", "17.0"),
-                BugfixEntry("second", "officebugfixmanager_16.0.exe",
-                    new string('D', 64), "16.0", "17.0"));
-
-            var catalog = await CreateRepository(root).GetOfficeBugfixCatalogAsync(
-                TestContext.Current.CancellationToken);
-
-            Assert.Empty(catalog.Artifacts);
-            Assert.Equal(2, catalog.Issues.Count);
+            Assert.Empty(catalog.Issues);
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -240,34 +203,12 @@ public sealed class FileArtifactRepositoryTests
             ActivationStates = ["Unlicensed"]
         };
 
-    private static OfficeBugfixManifestEntry BugfixEntry(string id, string fileName,
-        string sha256, string minimum, string maximumExclusive) => new()
-    {
-        ArtifactId = id,
-        DisplayName = id,
-        Description = "Approved test bugfix",
-        FileName = fileName,
-        Sha256 = sha256,
-        MinOfficeVersion = minimum,
-        MaxOfficeVersionExclusive = maximumExclusive
-    };
-
     private static async Task WriteManifestAsync(string officeRoot,
         params OfficeArtifactManifestEntry[] entries)
     {
         await using var stream = File.Create(Path.Combine(officeRoot, "office-artifacts.json"));
         await JsonSerializer.SerializeAsync(stream,
             new OfficeArtifactManifest { Version = 1, Artifacts = [.. entries] },
-            cancellationToken: TestContext.Current.CancellationToken);
-    }
-
-    private static async Task WriteBugfixManifestAsync(string root,
-        params OfficeBugfixManifestEntry[] entries)
-    {
-        await using var stream = File.Create(
-            Path.Combine(root, "office-bugfix-managers.json"));
-        await JsonSerializer.SerializeAsync(stream,
-            new OfficeBugfixManifest { Version = 1, Artifacts = [.. entries] },
             cancellationToken: TestContext.Current.CancellationToken);
     }
 

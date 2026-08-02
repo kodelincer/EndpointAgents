@@ -38,6 +38,12 @@ builder.Services.AddSingleton<SupportRequestStore>();
 builder.Services.AddSingleton<SupportRequestPublisher>();
 builder.Services.AddOptions<ChatOptions>()
     .Bind(builder.Configuration.GetSection("Chat"))
+    .PostConfigure(options =>
+    {
+        if (!Path.IsPathFullyQualified(options.DatabasePath))
+            options.DatabasePath = Path.GetFullPath(options.DatabasePath,
+                builder.Environment.ContentRootPath);
+    })
     .Validate(options => Path.IsPathFullyQualified(options.DatabasePath),
         "Chat:DatabasePath must be an absolute path.")
     .Validate(options => options.RetentionDays is >= 1 and <= 3650,
@@ -56,15 +62,12 @@ builder.Services.AddOptions<HermesOptions>()
         "Hermes:MaxConcurrentRuns must be between 1 and 32.")
     .Validate(options => options.RunTimeoutSeconds is >= 30 and <= 3600,
         "Hermes:RunTimeoutSeconds must be between 30 and 3600.")
-    .Validate(options => Path.IsPathFullyQualified(options.SkillsRoot),
-        "Hermes:SkillsRoot must be an absolute path.")
     .Validate(options => !options.Enabled
         || (options.ApiKey.Length >= 32 && options.McpApiKey.Length >= 32),
         "Hermes API and MCP keys must each contain at least 32 characters when Hermes is enabled.")
     .ValidateOnStart();
 builder.Services.AddSingleton<ChatStore>();
 builder.Services.AddHostedService<ChatRetentionWorker>();
-builder.Services.AddSingleton<HermesSkillInstructions>();
 builder.Services.AddHermesHttpClient(builder.Configuration);
 builder.Services.AddHostedService<HermesRunWorker>();
 builder.Services.AddMcpServer()
@@ -85,12 +88,9 @@ builder.Services.AddOptions<FileRepositoryOptions>()
         && Path.GetFileName(options.OfficeManifestFileName) == options.OfficeManifestFileName
         && options.OfficeManifestFileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase),
         "FileRepository:OfficeManifestFileName must be a JSON file name.")
-    .Validate(options => !string.IsNullOrWhiteSpace(options.OfficeBugfixManifestFileName)
-        && Path.GetFileName(options.OfficeBugfixManifestFileName)
-            == options.OfficeBugfixManifestFileName
-        && options.OfficeBugfixManifestFileName.EndsWith(
-            ".json", StringComparison.OrdinalIgnoreCase),
-        "FileRepository:OfficeBugfixManifestFileName must be a JSON file name.")
+    .Validate(options => options.OfficeBugfixFileName.Equals(
+            "office-activation-repair.bat", StringComparison.OrdinalIgnoreCase),
+        "FileRepository:OfficeBugfixFileName must be office-activation-repair.bat.")
     .Validate(options => options.MaxFileSizeBytes is >= 1 and <= 1024L * 1024 * 1024,
         "FileRepository:MaxFileSizeBytes must be between 1 byte and 1 GiB.")
     .ValidateOnStart();
@@ -253,7 +253,7 @@ app.MapGet("/api/files", async (FileArtifactRepository repository,
         {
             expectedPattern = repository.IbsngDialerFileName,
             officeManifestPath = repository.OfficeManifestPath,
-            officeBugfixManifestPath = repository.OfficeBugfixManifestPath,
+            officeBugfixFilePath = repository.OfficeBugfixFilePath,
             downloadMethod = "GET"
         }
     });

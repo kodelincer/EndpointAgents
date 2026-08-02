@@ -114,6 +114,7 @@ builder.Services.AddSingleton<IOfficeActivationCatalogClient, OfficeActivationCa
 builder.Services.AddSingleton<IOfficeBugfixCatalogClient, OfficeBugfixCatalogClient>();
 builder.Services.AddSingleton<OfficeActivationService>();
 builder.Services.AddSingleton<OfficeArtifactDownloader>();
+builder.Services.AddSingleton<OfficeBugfixRunner>();
 builder.Services.AddSingleton<ITrayCommandClient, TrayCommandClient>();
 builder.Services.AddSingleton(provider => new Uri(
     provider.GetRequiredService<IOptions<ControlPlaneOptions>>().Value.HubUrl));

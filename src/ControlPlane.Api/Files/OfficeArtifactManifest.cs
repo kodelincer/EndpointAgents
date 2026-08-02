@@ -24,21 +24,4 @@ public sealed class OfficeArtifactManifestEntry
     public bool RequiresRestart { get; set; }
 }
 
-public sealed class OfficeBugfixManifest
-{
-    public int Version { get; set; } = 1;
-    public List<OfficeBugfixManifestEntry> Artifacts { get; set; } = [];
-}
-
-public sealed class OfficeBugfixManifestEntry
-{
-    public string ArtifactId { get; set; } = string.Empty;
-    public string DisplayName { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
-    public string FileName { get; set; } = string.Empty;
-    public string Sha256 { get; set; } = string.Empty;
-    public string MinOfficeVersion { get; set; } = string.Empty;
-    public string MaxOfficeVersionExclusive { get; set; } = string.Empty;
-}
-
 public sealed record FileRepositoryIssue(string Source, string Message);
