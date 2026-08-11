@@ -12,7 +12,16 @@ public sealed class FileRepositoryOptions
 
     public string OfficeManifestFileName { get; set; } = "office-artifacts.json";
 
-    public string OfficeBugfixFileName { get; set; } = "office-activation-repair.bat";
+    public string OfficeBugfixManifestFileName { get; set; } =
+        "office-bugfix-managers.json";
+
+    public string WindowsDirectoryName { get; set; } = "Windows";
+
+    public string WindowsBugfixFileName { get; set; } = "windowsbugfixer.bat";
+
+    public string WindowsHelloSampleFileName { get; set; } = "windows-hello-sample.bat";
+
+    public bool RequireProtectedAcl { get; set; } = true;
 
     public long MaxFileSizeBytes { get; set; } = 100 * 1024 * 1024;
 }

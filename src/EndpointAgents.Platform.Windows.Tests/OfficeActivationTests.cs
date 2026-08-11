@@ -132,6 +132,26 @@ public sealed class OfficeActivationTests
     }
 
     [Fact]
+    public async Task Office2021VersionReturnsAutomaticRepairArtifactId()
+    {
+        var service = CreateService(new TrayIpcResponse("test", false,
+                "TrayUnavailable"),
+            new OfficeActivationProbeResult("OSPP", false, false, [], "NotCalled"),
+            bugfixes:
+            [
+                Bugfix("office-repair-15", "15.0", "16.0"),
+                Bugfix("office-activation-repair", "16.0", "17.0")
+            ]);
+
+        var snapshot = await service.GetStatusAsync("test",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal("16.0.14332", snapshot.Report.OfficeVersion);
+        Assert.Equal(["office-activation-repair"],
+            snapshot.Report.CompatibleBugfixArtifactIds);
+    }
+
+    [Fact]
     public async Task ActivationCollectionHonorsCancellation()
     {
         using var cancellation = new CancellationTokenSource();
@@ -145,12 +165,14 @@ public sealed class OfficeActivationTests
 
     private static OfficeActivationService CreateService(TrayIpcResponse trayResponse,
         OfficeActivationProbeResult volumeResponse,
-        string productReleaseIds = "O365ProPlusRetail")
+        string productReleaseIds = "O365ProPlusRetail",
+        IReadOnlyList<OfficeBugfixArtifactDescriptor>? bugfixes = null)
     {
         var inventorySource = new ActivationInventorySource(productReleaseIds);
         return new OfficeActivationService(new OfficeInventoryCollector(inventorySource),
             new FakeSessionSource(), new FakeTrayClient(trayResponse),
-            new FakeVolumeProbe(volumeResponse), new FakeCatalogClient());
+            new FakeVolumeProbe(volumeResponse), new FakeCatalogClient(),
+            new FakeBugfixCatalogClient(bugfixes ?? []));
     }
 
     private static OfficeRemediationArtifactDescriptor Artifact(string id,
@@ -159,12 +181,17 @@ public sealed class OfficeActivationTests
         "PowerShellScript", families, "16.0", null, states, [], true, true,
         false, $"/api/files/office/{id}");
 
+    private static OfficeBugfixArtifactDescriptor Bugfix(string id, string minimum,
+        string maximumExclusive) => new(id, id, "Approved Office BAT", $"{id}.bat",
+        new string('A', 64), minimum, maximumExclusive,
+        $"/api/files/office/bugfix/{id}");
+
     private sealed class ActivationInventorySource(string productReleaseIds)
         : IOfficeInstallationSource
     {
         public OfficeClickToRunInstallation? ReadClickToRun(RegistryView view) =>
             view == RegistryView.Registry64
-                ? new OfficeClickToRunInstallation("Registry64", "16.0", "x64", "en-US",
+                ? new OfficeClickToRunInstallation("Registry64", "16.0.14332", "x64", "en-US",
                     "Current", productReleaseIds, @"C:\Office") : null;
         public IReadOnlyList<OfficeInstalledProduct> ReadInstalledProducts(RegistryView view) => [];
         public IReadOnlyList<OfficeInstalledApplication> ReadInstalledApplications(
@@ -196,5 +223,13 @@ public sealed class OfficeActivationTests
         public Task<IReadOnlyList<OfficeRemediationArtifactDescriptor>> GetArtifactsAsync(
             CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<OfficeRemediationArtifactDescriptor>>([]);
+    }
+
+    private sealed class FakeBugfixCatalogClient(
+        IReadOnlyList<OfficeBugfixArtifactDescriptor> artifacts)
+        : IOfficeBugfixCatalogClient
+    {
+        public Task<IReadOnlyList<OfficeBugfixArtifactDescriptor>> GetArtifactsAsync(
+            CancellationToken cancellationToken) => Task.FromResult(artifacts);
     }
 }

@@ -1,6 +1,8 @@
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 
+using System.Drawing;
+
 namespace EndpointAgents.Tray;
 
 public sealed class TrayIconFactory : IDisposable
@@ -97,4 +99,3 @@ public sealed class TrayIconFactory : IDisposable
         internal static extern bool DestroyIcon(IntPtr handle);
     }
 }
-

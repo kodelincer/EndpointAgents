@@ -1,5 +1,10 @@
 import type { EndpointFile } from "./types";
 
+export function fileRequiresEndpointToken(file: EndpointFile) {
+  return file.downloadPath.startsWith("/api/files/office/")
+    || file.downloadPath.startsWith("/api/files/windows/");
+}
+
 export function fileCompatibilityLabel(file: EndpointFile) {
   if (file.category === "Office bugfix") {
     return `Office ${file.minOfficeVersion ?? "any"} to < ${file.maxOfficeVersionExclusive ?? "latest"}`;

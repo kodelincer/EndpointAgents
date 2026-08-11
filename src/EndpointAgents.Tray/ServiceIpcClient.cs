@@ -47,6 +47,17 @@ public sealed class ServiceIpcClient
             await SendAsync(request, cancellationToken));
     }
 
+    public async Task<IReadOnlyList<ChatConversationSummary>> ListChatsAsync(
+        int sessionId, CancellationToken cancellationToken)
+    {
+        var list = new ChatConversationListRequest(
+            new ChatIdentity("S-1-0-0", Environment.UserName, sessionId), 50);
+        var request = new ServiceIpcRequest(Guid.NewGuid().ToString("N"),
+            ServiceIpcProtocol.ListChatsMethod, JsonSerializer.SerializeToElement(list));
+        return ReadPayload<IReadOnlyList<ChatConversationSummary>>(
+            await SendAsync(request, cancellationToken, TimeSpan.FromSeconds(20)));
+    }
+
     public async Task<ChatMessageReceipt> SendChatMessageAsync(
         ChatMessageSubmission submission, CancellationToken cancellationToken)
     {
@@ -64,6 +75,15 @@ public sealed class ServiceIpcClient
             ServiceIpcProtocol.GetChatDeltaMethod, JsonSerializer.SerializeToElement(delta));
         return ReadPayload<ChatDelta>(
             await SendAsync(request, cancellationToken, TimeSpan.FromSeconds(20)));
+    }
+
+    public async Task<ChatConversationCloseReceipt> CloseChatAsync(
+        ChatConversationCloseRequest close, CancellationToken cancellationToken)
+    {
+        var request = new ServiceIpcRequest(Guid.NewGuid().ToString("N"),
+            ServiceIpcProtocol.CloseChatMethod, JsonSerializer.SerializeToElement(close));
+        return ReadPayload<ChatConversationCloseReceipt>(
+            await SendAsync(request, cancellationToken));
     }
 
     public async Task<ChatActionDecisionReceipt> RespondToChatActionAsync(

@@ -1,4 +1,5 @@
 using ControlPlane.Api.Files;
+using EndpointAgents.Shared.Windows;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -24,7 +25,8 @@ public sealed class FileArtifactRepositoryTests
             File.SetLastWriteTimeUtc(decoy, DateTime.UtcNow);
 
             var repository = new FileArtifactRepository(
-                Options.Create(new FileRepositoryOptions { RootPath = root }),
+                Options.Create(new FileRepositoryOptions
+                    { RootPath = root, RequireProtectedAcl = false }),
                 new TestHostEnvironment(root));
             var artifact = await repository.GetIbsngDialerAsync(TestContext.Current.CancellationToken);
 
@@ -108,6 +110,31 @@ public sealed class FileArtifactRepositoryTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Theory]
+    [InlineData("{\"version\":1,\"artifacts\":null}", "collection")]
+    [InlineData("{\"version\":1,\"artifacts\":[null]}", "entry")]
+    public async Task RejectsNullRegularOfficeManifestDataWithoutFailingTheCatalog(
+        string json, string expectedMessage)
+    {
+        var root = CreateRoot();
+        try
+        {
+            var officeRoot = Directory.CreateDirectory(Path.Combine(root, "Office"))
+                .FullName;
+            await File.WriteAllTextAsync(Path.Combine(officeRoot,
+                "office-artifacts.json"), json, TestContext.Current.CancellationToken);
+
+            var catalog = await CreateRepository(root).GetOfficeCatalogAsync(
+                TestContext.Current.CancellationToken);
+
+            Assert.Empty(catalog.Artifacts);
+            var issue = Assert.Single(catalog.Issues);
+            Assert.Contains(expectedMessage, issue.Message,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     [Fact]
     public async Task CatalogRejectsBatchFilesAndAcceptsMicrosoftExecutableKind()
     {
@@ -137,32 +164,72 @@ public sealed class FileArtifactRepositoryTests
     }
 
     [Fact]
-    public async Task LoadsSingleOfficeBugfixBatchAndComputesSha256()
+    public async Task LoadsMultipleHashPinnedOfficeBugfixBatches()
     {
         var root = CreateRoot();
         try
         {
-            var bytes = "@echo off\r\nexit /b 0\r\n"u8.ToArray();
-            var fileName = "office-activation-repair.bat";
-            await File.WriteAllBytesAsync(Path.Combine(root, fileName), bytes,
-                TestContext.Current.CancellationToken);
+            var firstBytes = "@echo off\r\nexit /b 0\r\n"u8.ToArray();
+            var secondBytes = "@echo off\r\nexit /b 1\r\n"u8.ToArray();
+            await File.WriteAllBytesAsync(Path.Combine(root, "office-repair-15.bat"),
+                firstBytes, TestContext.Current.CancellationToken);
+            await File.WriteAllBytesAsync(Path.Combine(root, "office-repair-16.bat"),
+                secondBytes, TestContext.Current.CancellationToken);
+            await WriteBugfixManifestAsync(root,
+                BugfixEntry("office-repair-15", "office-repair-15.bat",
+                    Convert.ToHexString(SHA256.HashData(firstBytes)), "15.0", "16.0"),
+                BugfixEntry("office-repair-16", "office-repair-16.bat",
+                    Convert.ToHexString(SHA256.HashData(secondBytes)), "16.0", "17.0"));
 
             var catalog = await CreateRepository(root).GetOfficeBugfixCatalogAsync(
                 TestContext.Current.CancellationToken);
 
-            var artifact = Assert.Single(catalog.Artifacts);
-            Assert.Equal("office-activation-repair", artifact.Descriptor.ArtifactId);
-            Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)),
-                artifact.Descriptor.Sha256);
-            Assert.Equal("/api/files/office/bugfix/office-activation-repair",
-                artifact.Descriptor.DownloadPath);
+            Assert.Equal(2, catalog.Artifacts.Count);
+            Assert.Equal("office-repair-15", catalog.Artifacts[0].Descriptor.ArtifactId);
+            Assert.Equal("office-repair-16", catalog.Artifacts[1].Descriptor.ArtifactId);
+            Assert.Equal("/api/files/office/bugfix/office-repair-16",
+                catalog.Artifacts[1].Descriptor.DownloadPath);
             Assert.Empty(catalog.Issues);
         }
         finally { Directory.Delete(root, recursive: true); }
     }
 
     [Fact]
-    public async Task IgnoresOtherBatchFileNames()
+    public async Task LoadsSeededOffice16BatAndRejectsLegacyExeEntry()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var batBytes = "@echo off\r\nexit /b 0\r\n"u8.ToArray();
+            var exeBytes = new byte[] { (byte)'M', (byte)'Z', 1, 2 };
+            await File.WriteAllBytesAsync(Path.Combine(root,
+                "office-activation-repair.bat"), batBytes,
+                TestContext.Current.CancellationToken);
+            await File.WriteAllBytesAsync(Path.Combine(root,
+                "officebugfixmanager_16.0.exe"), exeBytes,
+                TestContext.Current.CancellationToken);
+            var legacy = BugfixEntry("sample-office-bugfix-16",
+                "officebugfixmanager_16.0.exe",
+                Convert.ToHexString(SHA256.HashData(exeBytes)), "16.0", "17.0");
+            await WriteBugfixManifestAsync(root,
+                BugfixEntry("office-activation-repair",
+                    "office-activation-repair.bat",
+                    Convert.ToHexString(SHA256.HashData(batBytes)), "16.0", "17.0"),
+                legacy);
+
+            var catalog = await CreateRepository(root).GetOfficeBugfixCatalogAsync(
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal("office-activation-repair",
+                Assert.Single(catalog.Artifacts).Descriptor.ArtifactId);
+            Assert.Contains(catalog.Issues,
+                issue => issue.Source == "office_bugfix.sample-office-bugfix-16");
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task IgnoresUnmanifestedOfficeBatchFiles()
     {
         var root = CreateRoot();
         try
@@ -179,6 +246,126 @@ public sealed class FileArtifactRepositoryTests
         finally { Directory.Delete(root, recursive: true); }
     }
 
+    [Fact]
+    public async Task ProtectedRepositoryModeRejectsAUserOwnedDevelopmentDirectory()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var repository = new FileArtifactRepository(Options.Create(
+                new FileRepositoryOptions
+                {
+                    RootPath = root,
+                    RequireProtectedAcl = true
+                }), new TestHostEnvironment(root));
+
+            var catalog = await repository.GetOfficeBugfixCatalogAsync(
+                TestContext.Current.CancellationToken);
+
+            Assert.Empty(catalog.Artifacts);
+            var issue = Assert.Single(catalog.Issues);
+            Assert.Contains("protected", issue.Message,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task RejectsOfficeBugfixHashMismatchAndUnsafeFilename()
+    {
+        var root = CreateRoot();
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "wrong.bat"), "@echo off",
+                TestContext.Current.CancellationToken);
+            await WriteBugfixManifestAsync(root,
+                BugfixEntry("wrong", "wrong.bat", new string('A', 64), "16.0", "17.0"),
+                BugfixEntry("unsafe", "different-name.bat", new string('B', 64),
+                    "16.0", "17.0"));
+
+            var catalog = await CreateRepository(root).GetOfficeBugfixCatalogAsync(
+                TestContext.Current.CancellationToken);
+
+            Assert.Empty(catalog.Artifacts);
+            Assert.Equal(2, catalog.Issues.Count);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task RejectsNullOfficeBugfixManifestEntryWithoutFailingTheCatalog()
+    {
+        var root = CreateRoot();
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root,
+                "office-bugfix-managers.json"),
+                """{"version":1,"artifacts":[null]}""",
+                TestContext.Current.CancellationToken);
+
+            var catalog = await CreateRepository(root).GetOfficeBugfixCatalogAsync(
+                TestContext.Current.CancellationToken);
+
+            Assert.Empty(catalog.Artifacts);
+            var issue = Assert.Single(catalog.Issues);
+            Assert.Contains("null manifest entry", issue.Message,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task LoadsOnlyFixedWindowsBugfixAndComputesSha256()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var windows = Directory.CreateDirectory(Path.Combine(root, "Windows")).FullName;
+            var bytes = "@echo off\r\nexit /b 0\r\n"u8.ToArray();
+            await File.WriteAllBytesAsync(Path.Combine(windows, "windowsbugfixer.bat"),
+                bytes, TestContext.Current.CancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(windows, "other.bat"), "@echo off",
+                TestContext.Current.CancellationToken);
+
+            var catalog = await CreateRepository(root).GetWindowsBugfixCatalogAsync(
+                TestContext.Current.CancellationToken);
+
+            var artifact = Assert.Single(catalog.Artifacts);
+            Assert.Equal("windows-activation-repair", artifact.Descriptor.ArtifactId);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)),
+                artifact.Descriptor.Sha256);
+            Assert.Equal("/api/files/windows/bugfix/windows-activation-repair",
+                artifact.Descriptor.DownloadPath);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task ExposesTheFixedHarmlessWindowsHelloSample()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var windows = Directory.CreateDirectory(Path.Combine(root, "Windows")).FullName;
+            var bytes = "@echo off\r\necho Hello\r\npause\r\n"u8.ToArray();
+            await File.WriteAllBytesAsync(Path.Combine(windows,
+                WindowsHelloSamplePaths.FileName), bytes,
+                TestContext.Current.CancellationToken);
+
+            var catalog = await CreateRepository(root).GetWindowsBugfixCatalogAsync(
+                TestContext.Current.CancellationToken);
+
+            var artifact = Assert.Single(catalog.Artifacts);
+            Assert.Equal(WindowsHelloSamplePaths.ArtifactId,
+                artifact.Descriptor.ArtifactId);
+            Assert.Equal(WindowsHelloSamplePaths.FileName,
+                artifact.Descriptor.FileName);
+            Assert.Equal(Convert.ToHexString(SHA256.HashData(bytes)),
+                artifact.Descriptor.Sha256);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     private static string CreateRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), $"EndpointAgents-tests-{Guid.NewGuid():N}");
@@ -187,7 +374,8 @@ public sealed class FileArtifactRepositoryTests
     }
 
     private static FileArtifactRepository CreateRepository(string root) => new(
-        Options.Create(new FileRepositoryOptions { RootPath = root }),
+        Options.Create(new FileRepositoryOptions
+            { RootPath = root, RequireProtectedAcl = false }),
         new TestHostEnvironment(root));
 
     private static OfficeArtifactManifestEntry Entry(string id, string fileName, string sha256) =>
@@ -209,6 +397,28 @@ public sealed class FileArtifactRepositoryTests
         await using var stream = File.Create(Path.Combine(officeRoot, "office-artifacts.json"));
         await JsonSerializer.SerializeAsync(stream,
             new OfficeArtifactManifest { Version = 1, Artifacts = [.. entries] },
+            cancellationToken: TestContext.Current.CancellationToken);
+    }
+
+    private static OfficeBugfixManifestEntry BugfixEntry(string id, string fileName,
+        string sha256, string minimum, string maximumExclusive) => new()
+        {
+            ArtifactId = id,
+            DisplayName = id,
+            Description = "Approved test Office repair",
+            FileName = fileName,
+            Sha256 = sha256,
+            MinOfficeVersion = minimum,
+            MaxOfficeVersionExclusive = maximumExclusive
+        };
+
+    private static async Task WriteBugfixManifestAsync(string root,
+        params OfficeBugfixManifestEntry[] entries)
+    {
+        await using var stream = File.Create(Path.Combine(root,
+            "office-bugfix-managers.json"));
+        await JsonSerializer.SerializeAsync(stream,
+            new OfficeBugfixManifest { Version = 1, Artifacts = [.. entries] },
             cancellationToken: TestContext.Current.CancellationToken);
     }
 

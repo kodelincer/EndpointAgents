@@ -6,6 +6,8 @@ public sealed class ChatOptions
         @"C:\ProgramData\EndpointAgents\ControlPlane\control-plane.db";
 
     public int RetentionDays { get; set; } = 30;
+
+    public int MaxVisibleItems { get; set; } = 30;
 }
 
 public sealed class AgentSecurityOptions
@@ -31,9 +33,9 @@ public sealed class HermesOptions
 
     public int MaxConcurrentRuns { get; set; } = 4;
 
-    public int RunTimeoutSeconds { get; set; } = 600;
+    public int RunTimeoutSeconds { get; set; } = 900;
 
     public int PollIntervalMilliseconds { get; set; } = 1_000;
 
-    public int MaxHistoryMessages { get; set; } = 30;
+    public int MaxHistoryMessages { get; set; } = 5;
 }

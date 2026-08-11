@@ -13,6 +13,7 @@ const EVENT_TYPES: Activity["type"][] =
 type ControlPlaneContextValue = {
   agents: Agent[]; activity: Activity[]; commands: CommandDefinition[]; supportRequests: SupportRequest[];
   connection: ConnectionState; loading: boolean; loadError?: string;
+  helpdeskVersion: number;
   refresh: () => Promise<void>;
 };
 
@@ -27,6 +28,7 @@ export function ControlPlaneProvider({ children }: { children: React.ReactNode }
   const [connection, setConnection] = useState<ConnectionState>("connecting");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>();
+  const [helpdeskVersion, setHelpdeskVersion] = useState(0);
   const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
@@ -63,6 +65,7 @@ export function ControlPlaneProvider({ children }: { children: React.ReactNode }
     EVENT_TYPES.forEach(type => hub.on(type, receive));
     hub.on("support.requested", (request: SupportRequest) =>
       setSupportRequests(current => mergeSupportRequests(current, [request])));
+    hub.on("helpdesk.changed", () => setHelpdeskVersion(current => current + 1));
     hub.onreconnecting(() => setConnection("reconnecting"));
     hub.onreconnected(() => { setConnection("live"); void refresh(); });
     hub.onclose(() => setConnection("offline"));
@@ -75,8 +78,9 @@ export function ControlPlaneProvider({ children }: { children: React.ReactNode }
     };
   }, [refresh]);
 
-  const value = useMemo(() => ({ agents, activity, commands, supportRequests, connection, loading, loadError, refresh }),
-    [agents, activity, commands, supportRequests, connection, loading, loadError, refresh]);
+  const value = useMemo(() => ({ agents, activity, commands, supportRequests, connection,
+    loading, loadError, helpdeskVersion, refresh }),
+    [agents, activity, commands, supportRequests, connection, loading, loadError, helpdeskVersion, refresh]);
   return <ControlPlaneContext.Provider value={value}>{children}</ControlPlaneContext.Provider>;
 }
 

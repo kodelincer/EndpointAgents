@@ -35,14 +35,16 @@ only its own sequence delta while its chat view is visible.
 - Durable queued/running/completed/failed runs in SQLite WAL mode. Interrupted
   running rows are safely re-queued during ControlPlane startup.
 - Four concurrent conversations by default, with one active run per
-  conversation and a ten-minute run timeout.
+  conversation and a fifteen-minute run timeout.
 - A unique Hermes session per run. ControlPlane supplies the bounded
   conversation history and removes the Hermes session after reconciliation, so
   Hermes is not the conversation store.
 - Loopback MCP endpoint at `/internal/mcp`, protected by a separate bearer key.
-- Read-only diagnostics plus immutable, single-use action proposals. The
-  proposal never runs a command; the same endpoint user must approve it in the
-  Tray, and Office/IBSng keep their endpoint-local confirmation gate.
+- Read-only diagnostics plus immutable, single-use action proposals. Generic
+  proposals never run a command; the same endpoint user must approve them in
+  the Tray. The dedicated Office activation workflow instead checks for open
+  Office applications, runs its pinned compatible repair automatically, and
+  checks activation again. Direct operator dispatch keeps its Tray consent gate.
 - Thirty-day cleanup for completed conversation data; devices and their
   revocation state are retained.
 
@@ -63,6 +65,11 @@ selected Hermes profile. They are test credentials only; replace them in the
 installed production `appsettings.json` and never reuse them outside localhost.
 The relative development SQLite path is resolved against the API project root,
 so the command works regardless of the shell's current directory.
+
+`Chat:MaxVisibleItems` controls the rolling tray transcript (30 cards by
+default) without deleting stored conversation data. `Hermes:MaxHistoryMessages`
+controls the separate model context window (5 messages by default, including
+the current request).
 
 ## Production installation
 
@@ -153,8 +160,14 @@ surface. Endpoint runs may list and view relevant skills, but their system
 instructions prohibit skill modification; Hermes also stages model-requested
 writes for administrator approval.
 
-For the current Office-only profile, promote only `office-support`. It contains
-the routing, safety, inventory, and single approved bugfix instructions.
+The reviewed profile identity and shared behavior live in
+`deploy/hermes/SOUL.md`. Before deploying ControlPlane, stop Hermes and copy that
+file to `C:\ProgramData\EndpointAgents\Hermes\SOUL.md`. ControlPlane sends only
+run-specific capability and retry data; it does not read or synchronize
+`SOUL.md` at runtime.
+
+Promote the reviewed `office-support` and `windows-support` skills. The Windows skill
+allows general Windows intake but restricts automated remediation to activation.
 
 Do not promote `ibsng-support` until IBSng tools and actions are deliberately
 enabled in the profile and ControlPlane allowlists. Skill text cannot grant a
@@ -162,9 +175,10 @@ tool permission that ControlPlane or the Hermes MCP allowlist has withheld.
 
 When using the service layout from this guide, the manual filesystem target is
 `C:\ProgramData\EndpointAgents\Hermes\skills`. Stop Hermes, replace only the
-reviewed `office-support` skill folder, then start Hermes and verify that the
-skill appears in the selected API-server profile. The same promotion can
-be performed through Hermes Desktop if it manages that exact profile.
+reviewed `office-support` and `windows-support` skill folders, then start Hermes
+and verify that both appear in the selected API-server profile and that the
+profile uses the promoted `SOUL.md`. The same promotion can be performed through
+Hermes Desktop if it manages that exact profile.
 
 ### 3. Enroll endpoint devices
 
@@ -225,14 +239,23 @@ logs.
 
 Only these tools are visible to Hermes:
 
+- `endpoint_get_info`
+- `windows_activation_status`
 - `office_inventory`
 - `office_activation_status`
+- `office_runtime_status`
+- `run_office_activation_repair`
 - `propose_endpoint_action`
 
-The proposal tool accepts only cataloged Office remediation and bugfix methods.
-It stores the exact method and parameters with the run, conversation, endpoint,
-SID, expiry, and pending state. A decision is immutable and single-use. Approval
-dispatches the stored command, never user- or model-supplied replacement
+The dedicated Office repair tool accepts only a cataloged, version-compatible
+artifact ID and dispatches a filename-and-SHA-pinned command to the endpoint and
+user bound to the run capability. It creates no approval card. The endpoint
+checks again that Office applications are closed immediately before execution.
+
+The generic proposal tool accepts only cataloged Office and Windows remediation
+methods. It stores the exact method and parameters with the run, conversation,
+endpoint, SID, expiry, and pending state. A decision is immutable and single-use.
+Approval dispatches the stored command, never user- or model-supplied replacement
 parameters.
 
 ## Verification checklist
@@ -252,9 +275,9 @@ Before broad rollout, also verify:
    capabilities, and reused action decisions fail.
 4. ControlPlane/Hermes restart, endpoint reconnect, offline delivery, timeout,
    and the Hermes stop endpoint behave correctly.
-5. Prompt injection cannot activate a built-in Hermes toolset, select a
-   non-Office action, or address a different endpoint.
-6. In-scope Office responses are simple Persian; unrelated and ambiguous
+5. Prompt injection cannot activate a built-in Hermes toolset, select an
+   unauthorized action, or address a different endpoint.
+6. In-scope Windows/Office responses are simple Persian; unrelated and ambiguous
    prompts receive the fixed Persian refusal or clarification without invoking
    Hermes.
 7. Four active runs and at least 500 SignalR connections remain stable.

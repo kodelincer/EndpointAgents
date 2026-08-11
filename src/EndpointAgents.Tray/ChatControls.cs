@@ -52,6 +52,21 @@ internal sealed class RoundedPanel : Panel
     }
 }
 
+internal sealed class ConversationPanel : Panel
+{
+    protected override Point ScrollToControl(Control activeControl)
+    {
+        if (IsHandleCreated && activeControl.IsHandleCreated)
+        {
+            var activeBounds = RectangleToClient(
+                activeControl.RectangleToScreen(activeControl.ClientRectangle));
+            if (ClientRectangle.IntersectsWith(activeBounds))
+                return AutoScrollPosition;
+        }
+        return base.ScrollToControl(activeControl);
+    }
+}
+
 internal sealed class RtlMessageBox : RichTextBox
 {
     private bool _applyingDirection;
@@ -119,6 +134,8 @@ internal sealed class ChatMessageView : Control
     private readonly bool _fromUser;
     private readonly RichTextBox _bodyView;
 
+    public event MouseEventHandler? ConversationMouseWheel;
+
     public ChatMessageView(string author, string body, bool fromUser, DateTime timestamp)
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint
@@ -140,6 +157,7 @@ internal sealed class ChatMessageView : Control
         var rtl = BidiText.IsRightToLeft(body);
         _bodyView = new RichTextBox
         {
+            Name = "ChatMessageBody",
             BackColor = fromUser ? UserBubble : AssistantBubble,
             BorderStyle = BorderStyle.None,
             Cursor = Cursors.IBeam,
@@ -154,8 +172,14 @@ internal sealed class ChatMessageView : Control
             Text = body,
             WordWrap = true
         };
+        _bodyView.MouseWheel += (_, e) => ConversationMouseWheel?.Invoke(this, e);
         Controls.Add(_bodyView);
         RecalculateHeight();
+    }
+
+    protected override void OnMouseWheel(MouseEventArgs e)
+    {
+        ConversationMouseWheel?.Invoke(this, e);
     }
 
     protected override void OnResize(EventArgs e)
@@ -249,13 +273,21 @@ internal sealed class ChatRunProgressView : Control
     private static readonly Color Line = Color.FromArgb(218, 222, 228);
     private static readonly Color Action = Color.FromArgb(37, 99, 178);
     private static readonly Color Success = Color.FromArgb(28, 125, 76);
+    private static readonly Color Warning = Color.FromArgb(142, 91, 16);
     private static readonly Color Danger = Color.FromArgb(178, 48, 48);
     private readonly List<ChatRunProgressEvent> _events = [];
     private bool _expanded = true;
     private bool _terminal;
 
+    public event EventHandler? ExpansionChanging;
+
     public ChatRunProgressView(string runId)
     {
+        SetStyle(ControlStyles.AllPaintingInWmPaint
+            | ControlStyles.OptimizedDoubleBuffer
+            | ControlStyles.ResizeRedraw
+            | ControlStyles.UserPaint
+            | ControlStyles.SupportsTransparentBackColor, true);
         Name = "ChatProgress";
         Tag = runId;
         BackColor = Color.Transparent;
@@ -263,11 +295,6 @@ internal sealed class ChatRunProgressView : Control
         Margin = new Padding(0, 0, 0, 10);
         TabStop = false;
         AccessibleRole = AccessibleRole.StaticText;
-        SetStyle(ControlStyles.AllPaintingInWmPaint
-            | ControlStyles.OptimizedDoubleBuffer
-            | ControlStyles.ResizeRedraw
-            | ControlStyles.UserPaint
-            | ControlStyles.SupportsTransparentBackColor, true);
         UpdateHeight();
     }
 
@@ -275,13 +302,22 @@ internal sealed class ChatRunProgressView : Control
     {
         _events.Add(progress);
         _events.Sort(static (left, right) => left.Sequence.CompareTo(right.Sequence));
-        _terminal = progress.Stage is ChatProgressStage.Completed or ChatProgressStage.Failed;
+        _terminal = progress.Stage is ChatProgressStage.Completed
+            or ChatProgressStage.Failed or ChatProgressStage.ActionCompleted
+            or ChatProgressStage.ActionRejected;
         if (_terminal)
         {
             _expanded = false;
             TabStop = true;
             Cursor = Cursors.Hand;
             AccessibleRole = AccessibleRole.PushButton;
+        }
+        else
+        {
+            _expanded = true;
+            TabStop = false;
+            Cursor = Cursors.Default;
+            AccessibleRole = AccessibleRole.StaticText;
         }
         AccessibleName = CurrentLabel();
         AccessibleDescription = string.Join("، ", _events.Select(EventLabel));
@@ -291,16 +327,15 @@ internal sealed class ChatRunProgressView : Control
 
     public void RefreshElapsed() => Invalidate();
 
-    protected override void OnMouseDown(MouseEventArgs e)
-    {
-        base.OnMouseDown(e);
-        if (_terminal && PanelBounds().Contains(e.Location)) Focus();
-    }
+    public bool IsTerminal => _terminal;
+
+    public string Summary => CurrentLabel();
 
     protected override void OnClick(EventArgs e)
     {
         base.OnClick(e);
         if (!_terminal) return;
+        ExpansionChanging?.Invoke(this, EventArgs.Empty);
         _expanded = !_expanded;
         UpdateHeight();
         Invalidate();
@@ -386,10 +421,12 @@ internal sealed class ChatRunProgressView : Control
     {
         var failed = progress.Stage == ChatProgressStage.Failed
             || progress.Outcome == ChatProgressOutcome.Failure;
+        var rejected = progress.Stage == ChatProgressStage.ActionRejected;
         var complete = progress.Stage == ChatProgressStage.Completed
+            || progress.Stage == ChatProgressStage.ActionCompleted
             || progress.Outcome == ChatProgressOutcome.Success || !current;
-        var color = failed ? Danger : complete ? Success : Action;
-        var glyph = failed ? "!" : complete ? "✓" : "…";
+        var color = failed ? Danger : rejected ? Warning : complete ? Success : Action;
+        var glyph = failed ? "!" : rejected ? "×" : complete ? "✓" : "…";
         using var brush = new SolidBrush(color);
         using var glyphFont = new Font("Segoe UI", bounds.Width <= 14 ? 7F : 9F,
             FontStyle.Bold);
@@ -440,6 +477,19 @@ internal sealed class ChatRunProgressView : Control
         ChatProgressStage.Retrying => "ارتباط با دستیار برقرار نشد؛ تلاش دوباره",
         ChatProgressStage.Completed => "پاسخ آماده شد",
         ChatProgressStage.Failed => "بررسی درخواست کامل نشد",
+        ChatProgressStage.AwaitingApproval => "در انتظار تأیید شما برای اقدام پیشنهادی",
+        ChatProgressStage.ActionStarted => progress.Activity
+            == ChatProgressActivity.OfficeActivationRepair
+                ? "تعمیر فعال‌سازی آفیس در حال اجرا است"
+                : "اقدام تأییدشده در حال اجرا است",
+        ChatProgressStage.ActionCompleted => progress.Outcome == ChatProgressOutcome.Failure
+            ? progress.Activity == ChatProgressActivity.OfficeActivationRepair
+                ? "تعمیر فعال‌سازی آفیس ناموفق بود"
+                : "اجرای اقدام تأییدشده ناموفق بود"
+            : progress.Activity == ChatProgressActivity.OfficeActivationRepair
+                ? "تعمیر فعال‌سازی آفیس انجام شد"
+                : "اقدام تأییدشده انجام شد",
+        ChatProgressStage.ActionRejected => "اقدام پیشنهادی با انتخاب شما اجرا نشد",
         _ => "در حال بررسی درخواست"
     };
 
@@ -449,6 +499,10 @@ internal sealed class ChatRunProgressView : Control
             "درخواست بررسی نصب و نسخه آفیس به عامل ارسال شد",
         ChatProgressActivity.OfficeActivationStatus =>
             "درخواست بررسی فعال‌سازی آفیس به عامل ارسال شد",
+        ChatProgressActivity.OfficeRuntimeStatus =>
+            "در حال بررسی برنامه‌های باز آفیس",
+        ChatProgressActivity.WindowsActivationStatus =>
+            "درخواست بررسی فعال‌سازی ویندوز به عامل ارسال شد",
         ChatProgressActivity.ProposedAction => "در حال آماده‌سازی اقدام پیشنهادی",
         _ => "درخواست بررسی به عامل ارسال شد"
     };
@@ -465,6 +519,12 @@ internal sealed class ChatRunProgressView : Control
             ChatProgressActivity.OfficeActivationStatus => failed
                 ? "بررسی فعال‌سازی آفیس ناموفق بود"
                 : "بررسی فعال‌سازی آفیس کامل شد",
+            ChatProgressActivity.OfficeRuntimeStatus => failed
+                ? "بررسی برنامه‌های باز آفیس ناموفق بود"
+                : "بررسی برنامه‌های باز آفیس کامل شد",
+            ChatProgressActivity.WindowsActivationStatus => failed
+                ? "بررسی فعال‌سازی ویندوز ناموفق بود"
+                : "بررسی فعال‌سازی ویندوز کامل شد",
             ChatProgressActivity.ProposedAction => failed
                 ? "آماده‌سازی اقدام پیشنهادی ناموفق بود"
                 : "اقدام پیشنهادی آماده شد",

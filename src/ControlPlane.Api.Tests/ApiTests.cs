@@ -2,6 +2,7 @@ using ControlPlane.Api.System;
 using EndpointAgents.Shared.Rpc;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Security.Cryptography;
@@ -65,12 +66,16 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
         Assert.Contains(commands!, command => command.Method == "endpoint.get_info");
         Assert.Contains(commands!, command => command.Method == "software.office_inventory");
         Assert.Contains(commands!, command => command.Method == "software.office_activation_status");
+        Assert.Contains(commands!, command => command.Method == "system.windows_activation_status");
+        Assert.Contains(commands!, command => command.Method == "system.windows_activation_bugfix_run");
+        Assert.Contains(commands!, command => command.Method == "system.windows_hello_sample_run");
         Assert.Contains(commands!, command => command.Method == "software.office_remediation_run");
         Assert.Contains(commands!, command => command.Method == "network.ibsng_diagnose");
         Assert.Contains(commands!, command => command.Method == "network.ibsng_ensure_dialer");
         Assert.Contains(commands!, command => command.Method == "network.ibsng_launch");
         Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync("/api/activity?limit=10", TestCancellation)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync("/api/support-requests?limit=10", TestCancellation)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync("/api/helpdesk/conversations?limit=10", TestCancellation)).StatusCode);
     }
 
     [Fact]
@@ -83,6 +88,16 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
         Assert.Equal("IBSngDialer-pap(1).exe", inventory!.Repository.ExpectedPattern);
         Assert.EndsWith("office-artifacts.json", inventory.Repository.OfficeManifestPath,
             StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith("office-bugfix-managers.json",
+            inventory.Repository.OfficeBugfixManifestPath,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith("windowsbugfixer.bat",
+            inventory.Repository.WindowsBugfixFilePath,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith("windows-hello-sample.bat",
+            inventory.Repository.WindowsHelloSampleFilePath,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.False(inventory.Repository.ProtectedAclRequired);
         Assert.Equal("GET", inventory.Repository.DownloadMethod);
     }
 
@@ -107,6 +122,23 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
         var events = await _client.GetFromJsonAsync<Event[]>(
             "/api/activity?agentId=sensitive-missing&limit=10", TestCancellation);
         Assert.DoesNotContain(events!, item => item.Type == "command.completed");
+    }
+
+    [Theory]
+    [InlineData("_chatApprovalId")]
+    [InlineData("_controlPlaneAuthorizationId")]
+    public async Task PublicCommandApiRejectsReservedAuthorizationMarker(string marker)
+    {
+        var parameters = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+        {
+            ["artifactId"] = "windows-hello-sample",
+            [marker] = Guid.NewGuid().ToString("N")
+        });
+        var response = await _client.PostAsJsonAsync("/api/agents/missing/commands",
+            RpcRequest.Create("forged-chat-approval",
+                "system.windows_hello_sample_run", parameters), TestCancellation);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
@@ -176,6 +208,8 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
         Assert.Equal(HttpStatusCode.Forbidden,
             (await remote.GetAsync("/api/support-requests", TestCancellation)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
+            (await remote.GetAsync("/api/helpdesk/conversations", TestCancellation)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden,
             (await remote.PostAsync("/dashboard-hub/negotiate?negotiateVersion=1",
                 content: null, TestCancellation)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
@@ -198,6 +232,57 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
     }
 
     [Fact]
+    public async Task InternalMcpPublishesTypedEndpointActionParameters()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/internal/mcp")
+        {
+            Content = JsonContent.Create(new
+            {
+                jsonrpc = "2.0",
+                id = 1,
+                method = "tools/list",
+                @params = new { }
+            })
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer",
+            "test-controlplane-mcp-0123456789abcdef");
+        request.Headers.Accept.ParseAdd("application/json");
+        request.Headers.Accept.ParseAdd("text/event-stream");
+        request.Headers.Add("MCP-Protocol-Version", "2025-06-18");
+
+        using var response = await _client.SendAsync(request, TestCancellation);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync(TestCancellation);
+        var json = body.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .FirstOrDefault(line => line.StartsWith("data: ",
+                StringComparison.Ordinal))?["data: ".Length..] ?? body;
+        using var document = JsonDocument.Parse(json);
+        var tools = document.RootElement.GetProperty("result").GetProperty("tools");
+        var proposal = tools.EnumerateArray().Single(tool =>
+            tool.GetProperty("name").GetString() == "propose_endpoint_action");
+        var schema = proposal.GetProperty("inputSchema");
+        Assert.Contains("parameters", schema.GetProperty("required")
+            .EnumerateArray().Select(item => item.GetString()));
+        var parameters = schema.GetProperty("properties")
+            .GetProperty("parameters");
+        Assert.Equal("object", parameters.GetProperty("type").GetString());
+        Assert.Contains("artifactId", parameters.GetProperty("required")
+            .EnumerateArray().Select(item => item.GetString()));
+        Assert.Equal("string", parameters.GetProperty("properties")
+            .GetProperty("artifactId").GetProperty("type").GetString());
+
+        Assert.Contains(tools.EnumerateArray(), tool =>
+            tool.GetProperty("name").GetString() == "office_runtime_status");
+        var officeRepair = tools.EnumerateArray().Single(tool =>
+            tool.GetProperty("name").GetString() == "run_office_activation_repair");
+        var repairRequired = officeRepair.GetProperty("inputSchema")
+            .GetProperty("required").EnumerateArray()
+            .Select(item => item.GetString()).ToArray();
+        Assert.Contains("runCapability", repairRequired);
+        Assert.Contains("artifactId", repairRequired);
+    }
+
+    [Fact]
     public async Task RemotePeerCanReachAgentHealthAndArtifactSurfaces()
     {
         using var remote = _factory.CreateRemoteClient();
@@ -209,9 +294,9 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
                 content: null, TestCancellation)).StatusCode);
         Assert.NotEqual(HttpStatusCode.Forbidden,
             (await remote.GetAsync("/api/files/ibsng-dialer", TestCancellation)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK,
+        Assert.Equal(HttpStatusCode.Unauthorized,
             (await remote.GetAsync("/api/files/office/catalog", TestCancellation)).StatusCode);
-        Assert.Equal(HttpStatusCode.OK,
+        Assert.Equal(HttpStatusCode.Unauthorized,
             (await remote.GetAsync("/api/files/office/bugfix/catalog",
                 TestCancellation)).StatusCode);
     }
@@ -280,6 +365,13 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
             }), TestCancellation);
 
         using var remote = _factory.CreateRemoteClient();
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await remote.GetAsync("/api/files/office/approved-office-fix",
+                TestCancellation)).StatusCode);
+        var credential = await EnrollRemoteAsync(remote, "office-artifact-test");
+        remote.DefaultRequestHeaders.Authorization =
+            new global::System.Net.Http.Headers.AuthenticationHeaderValue(
+                "Bearer", credential.DeviceToken);
         var approved = await remote.GetAsync("/api/files/office/approved-office-fix",
             TestCancellation);
         var unknown = await remote.GetAsync("/api/files/office/not-catalogued",
@@ -289,6 +381,9 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
         Assert.Equal(hash, approved.Headers.GetValues("X-Artifact-Sha256").Single());
         Assert.Equal(bytes, await approved.Content.ReadAsByteArrayAsync(TestCancellation));
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+
+        await _factory.Services.GetRequiredService<ChatStore>()
+            .RevokeDeviceAsync(credential.AgentId, TestCancellation);
     }
 
     [Fact]
@@ -300,8 +395,35 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
         await File.WriteAllBytesAsync(
             Path.Combine(_factory.FileRepositoryRoot, fileName), bytes,
             TestCancellation);
+        await File.WriteAllTextAsync(Path.Combine(_factory.FileRepositoryRoot,
+            "office-bugfix-managers.json"), JsonSerializer.Serialize(
+            new OfficeBugfixManifest
+            {
+                Version = 1,
+                Artifacts =
+                [
+                    new OfficeBugfixManifestEntry
+                    {
+                        ArtifactId = "office-activation-repair",
+                        DisplayName = "Office activation repair",
+                        Description = "Integration test Office BAT",
+                        FileName = fileName,
+                        Sha256 = hash,
+                        MinOfficeVersion = "16.0",
+                        MaxOfficeVersionExclusive = "17.0"
+                    }
+                ]
+            }), TestCancellation);
 
         using var remote = _factory.CreateRemoteClient();
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await remote.GetAsync(
+                "/api/files/office/bugfix/office-activation-repair",
+                TestCancellation)).StatusCode);
+        var credential = await EnrollRemoteAsync(remote, "office-bugfix-test");
+        remote.DefaultRequestHeaders.Authorization =
+            new global::System.Net.Http.Headers.AuthenticationHeaderValue(
+                "Bearer", credential.DeviceToken);
         var approved = await remote.GetAsync(
             "/api/files/office/bugfix/office-activation-repair", TestCancellation);
         var unknown = await remote.GetAsync(
@@ -311,9 +433,67 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
         Assert.Equal(hash, approved.Headers.GetValues("X-Artifact-Sha256").Single());
         Assert.Equal(bytes, await approved.Content.ReadAsByteArrayAsync(TestCancellation));
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+
+        var store = _factory.Services.GetRequiredService<ChatStore>();
+        await store.RevokeDeviceAsync(credential.AgentId, TestCancellation);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await remote.GetAsync(
+                "/api/files/office/bugfix/office-activation-repair",
+                TestCancellation)).StatusCode);
+    }
+
+    [Fact]
+    public async Task WindowsBugfixDownloadRequiresEnrolledDeviceToken()
+    {
+        var windows = Directory.CreateDirectory(
+            Path.Combine(_factory.FileRepositoryRoot, "Windows")).FullName;
+        var bytes = "@echo off\r\nexit /b 0\r\n"u8.ToArray();
+        var hash = Convert.ToHexString(SHA256.HashData(bytes));
+        await File.WriteAllBytesAsync(Path.Combine(windows, "windowsbugfixer.bat"),
+            bytes, TestCancellation);
+
+        using var remote = _factory.CreateRemoteClient();
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await remote.GetAsync(
+                "/api/files/windows/bugfix/windows-activation-repair",
+                TestCancellation)).StatusCode);
+
+        var redemption = await EnrollRemoteAsync(remote, "windows-test");
+        remote.DefaultRequestHeaders.Authorization =
+            new global::System.Net.Http.Headers.AuthenticationHeaderValue(
+                "Bearer", redemption.DeviceToken);
+
+        var response = await remote.GetAsync(
+            "/api/files/windows/bugfix/windows-activation-repair", TestCancellation);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(hash, response.Headers.GetValues("X-Artifact-Sha256").Single());
+        Assert.Equal(bytes, await response.Content.ReadAsByteArrayAsync(TestCancellation));
+
+        var store = _factory.Services.GetRequiredService<ChatStore>();
+        await store.RevokeDeviceAsync(redemption.AgentId, TestCancellation);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await remote.GetAsync(
+                "/api/files/windows/bugfix/windows-activation-repair",
+                TestCancellation)).StatusCode);
     }
 
     private sealed record Command(string Method);
+
+    private async Task<EnrollmentRedemption> EnrollRemoteAsync(HttpClient remote,
+        string machineName)
+    {
+        var issue = await (await _client.PostAsync("/api/agent-enrollments",
+            content: null, TestCancellation)).Content.ReadFromJsonAsync<EnrollmentIssue>(
+            TestCancellation);
+        var response = await remote.PostAsJsonAsync("/api/agent-enrollments/redeem",
+            new EnrollmentRequest(issue!.EnrollmentCode, Guid.NewGuid().ToString("D"),
+                machineName), TestCancellation);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<EnrollmentRedemption>(
+            TestCancellation))!;
+    }
+
     private sealed record ServiceIdentity(string Service, string Status);
     private sealed record Event(string Type, string Status);
     private sealed record SystemStatus(bool MaintenanceMode, long UptimeSeconds);
@@ -321,5 +501,7 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
     private sealed record FileInventory(FileItem[] Files, FileRepository Repository);
     private sealed record FileItem(string ArtifactId, string FileName, string DownloadPath);
     private sealed record FileRepository(string ExpectedPattern, string OfficeManifestPath,
+        string OfficeBugfixManifestPath, string WindowsBugfixFilePath,
+        string WindowsHelloSampleFilePath, bool ProtectedAclRequired,
         string DownloadMethod);
 }

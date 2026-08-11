@@ -1,13 +1,17 @@
+using EndpointAgents.Platform.Windows;
+using EndpointAgents.Shared.Security;
 using Microsoft.Extensions.Options;
 using System.Net;
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 
 namespace EndpointAgents.Platform.Windows.Office;
 
 /// <summary>Stages one catalog-approved Office executable with atomic hash verification.</summary>
+[SupportedOSPlatform("windows")]
 public sealed class OfficeArtifactDownloader(
     IOptions<OfficeRemediationOptions> options,
-    Uri hubUri)
+    EndpointArtifactTransport transport)
 {
     private readonly OfficeRemediationOptions _options = options.Value;
 
@@ -17,31 +21,49 @@ public sealed class OfficeArtifactDownloader(
     {
         if (Path.GetFileName(fileName) != fileName)
             throw new InvalidDataException("The Office artifact filename is invalid.");
-        if (!downloadPath.StartsWith("/api/files/office/",
-                StringComparison.OrdinalIgnoreCase)
-            || downloadPath.Contains("://", StringComparison.Ordinal))
+        if (sha256.Length != 64 || !sha256.All(Uri.IsHexDigit))
+            throw new InvalidDataException("The Office artifact SHA-256 is invalid.");
+        if (string.IsNullOrWhiteSpace(downloadPath)
+            || (downloadPath != $"/api/files/office/{artifactId}"
+                && downloadPath != $"/api/files/office/bugfix/{artifactId}"))
             throw new InvalidDataException("The Office artifact download path is invalid.");
 
-        var stagingRoot = Path.GetFullPath(_options.StagingRoot)
+        var rootPath = Path.GetFullPath(_options.StagingRoot);
+        ProtectedWindowsPath.EnsureDirectory(rootPath, requireProtectedAcl: true);
+        var stagingRoot = rootPath
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
         var artifactDirectory = Path.GetFullPath(
             Path.Combine(_options.StagingRoot, artifactId));
         if (!artifactDirectory.StartsWith(stagingRoot, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The Office artifact staging path is invalid.");
+        var revisionDirectory = Path.GetFullPath(Path.Combine(artifactDirectory,
+            sha256.ToUpperInvariant()));
+        var artifactRoot = artifactDirectory
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (!revisionDirectory.StartsWith(artifactRoot,
+                StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("The Office artifact revision path is invalid.");
 
-        Directory.CreateDirectory(artifactDirectory);
-        var destination = Path.Combine(artifactDirectory, fileName);
+        Directory.CreateDirectory(revisionDirectory);
+        ProtectedWindowsPath.EnsureDirectory(rootPath, requireProtectedAcl: true);
+        ProtectedWindowsPath.EnsureDirectory(artifactDirectory,
+            requireProtectedAcl: false);
+        ProtectedWindowsPath.EnsureDirectory(revisionDirectory,
+            requireProtectedAcl: false);
+        var destination = Path.Combine(revisionDirectory, fileName);
+        if (File.Exists(destination))
+            ProtectedWindowsPath.EnsureFile(destination);
         if (await IsApprovedLocalFileAsync(destination, sha256, cancellationToken,
                 requirePortableExecutable))
             return new OfficeArtifactDownload(destination, false);
 
-        var artifactUri = new Uri(hubUri, downloadPath);
-        using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false })
-        {
-            Timeout = TimeSpan.FromMinutes(5)
-        };
-        using var response = await client.GetAsync(artifactUri,
+        using var client = transport.CreateClient();
+        client.Timeout = TimeSpan.FromMinutes(5);
+        using var request = await transport.CreateGetRequestAsync(downloadPath,
+            cancellationToken);
+        using var response = await client.SendAsync(request,
             HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (response.StatusCode != HttpStatusCode.OK)
             throw new HttpRequestException(
@@ -78,7 +100,9 @@ public sealed class OfficeArtifactDownloader(
                     requirePortableExecutable))
                 throw new InvalidDataException(
                     "The downloaded Office artifact does not match its approved executable hash.");
+            ProtectedWindowsPath.EnsureFile(partial);
             File.Move(partial, destination, overwrite: true);
+            ProtectedWindowsPath.EnsureFile(destination);
             return new OfficeArtifactDownload(destination, true);
         }
         finally

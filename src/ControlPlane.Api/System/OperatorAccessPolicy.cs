@@ -11,5 +11,6 @@ public static class OperatorAccessPolicy
         || path.StartsWithSegments("/health")
         || path.StartsWithSegments("/api/agent-enrollments/redeem")
         || path.StartsWithSegments("/api/files/ibsng-dialer")
-        || path.StartsWithSegments("/api/files/office");
+        || path.StartsWithSegments("/api/files/office")
+        || path.StartsWithSegments("/api/files/windows");
 }

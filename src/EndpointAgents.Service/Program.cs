@@ -1,8 +1,10 @@
 using EndpointAgents.Core.Commands;
 using EndpointAgents.Platform.Windows.EndpointInfo;
+using EndpointAgents.Platform.Windows;
 using EndpointAgents.Platform.Windows.Ibsng;
 using EndpointAgents.Platform.Windows.Office;
 using EndpointAgents.Platform.Windows.UserSessions;
+using EndpointAgents.Platform.Windows.Windows;
 using EndpointAgents.Shared.Office;
 using EndpointAgents.Service;
 using Microsoft.Extensions.Options;
@@ -15,6 +17,7 @@ using System.Runtime.Versioning;
 // Use the generic host so the process can run interactively during development
 // and as a Windows Service in production.
 var builder = Host.CreateApplicationBuilder(args);
+builder.Logging.AddProvider(new EndpointActivityLoggerProvider());
 
 // Registers Windows Service lifetime integration; host.Run() starts the service
 // after all hosted services have been built.
@@ -109,12 +112,19 @@ builder.Services.AddSingleton<IbsngDiagnosticService>();
 builder.Services.AddSingleton<IOfficeInstallationSource, WindowsOfficeInstallationSource>();
 builder.Services.AddSingleton<OfficeInventoryCollector>();
 builder.Services.AddSingleton<IOfficeUserSessionSource, OfficeUserSessionSource>();
+builder.Services.AddSingleton<OfficeRuntimeInspector>();
 builder.Services.AddSingleton<IOfficeVolumeActivationProbe, OfficeVolumeActivationProbe>();
 builder.Services.AddSingleton<IOfficeActivationCatalogClient, OfficeActivationCatalogClient>();
 builder.Services.AddSingleton<IOfficeBugfixCatalogClient, OfficeBugfixCatalogClient>();
 builder.Services.AddSingleton<OfficeActivationService>();
 builder.Services.AddSingleton<OfficeArtifactDownloader>();
 builder.Services.AddSingleton<OfficeBugfixRunner>();
+builder.Services.AddSingleton<IWindowsActivationProbe, WindowsActivationProbe>();
+builder.Services.AddSingleton<IEndpointArtifactAuthorizationProvider,
+    WindowsArtifactAuthorizationProvider>();
+builder.Services.AddSingleton<EndpointArtifactTransport>();
+builder.Services.AddSingleton<WindowsArtifactClient>();
+builder.Services.AddSingleton<WindowsBugfixRunner>();
 builder.Services.AddSingleton<ITrayCommandClient, TrayCommandClient>();
 builder.Services.AddSingleton(provider => new Uri(
     provider.GetRequiredService<IOptions<ControlPlaneOptions>>().Value.HubUrl));
@@ -126,8 +136,12 @@ builder.Services.AddSingleton<IEndpointCommandHandler, IbsngEnsureDialerCommandH
 builder.Services.AddSingleton<IEndpointCommandHandler, IbsngLaunchCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, OfficeInventoryCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, OfficeActivationStatusCommandHandler>();
+builder.Services.AddSingleton<IEndpointCommandHandler, OfficeRuntimeStatusCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, OfficeRemediationCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, OfficeBugfixCommandHandler>();
+builder.Services.AddSingleton<IEndpointCommandHandler, WindowsActivationStatusCommandHandler>();
+builder.Services.AddSingleton<IEndpointCommandHandler, WindowsActivationBugfixCommandHandler>();
+builder.Services.AddSingleton<IEndpointCommandHandler, WindowsHelloSampleCommandHandler>();
 
 // AgentWorker owns the SignalR connection. Register the concrete singleton so
 // the local IPC bridge can submit helpdesk requests through the same connection.

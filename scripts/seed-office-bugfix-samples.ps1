@@ -7,8 +7,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$source = Join-Path $repoRoot "deploy\control-plane\FileRepository\office-activation-repair.bat"
-$destination = Join-Path $RepositoryRoot "office-activation-repair.bat"
+$artifactId = "office-activation-repair"
+$fileName = "$artifactId.bat"
+$source = Join-Path $repoRoot "deploy\control-plane\FileRepository\$fileName"
+$destination = Join-Path $RepositoryRoot $fileName
+$manifestPath = Join-Path $RepositoryRoot "office-bugfix-managers.json"
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -20,12 +23,48 @@ function Assert-Administrator {
 }
 
 Assert-Administrator
-if ((Test-Path -LiteralPath $destination) -and -not $Force) {
-    throw "office-activation-repair.bat already exists. Use -Force only to replace it with the sample."
+if (((Test-Path -LiteralPath $destination) `
+        -or (Test-Path -LiteralPath $manifestPath)) -and -not $Force) {
+    throw "The Office test artifact or manifest already exists. Use -Force to back up and replace the manifest with the harmless 16.x sample."
 }
 
 New-Item -ItemType Directory -Path $RepositoryRoot -Force | Out-Null
+if (Test-Path -LiteralPath $manifestPath) {
+    $timestamp = Get-Date -Format "yyyyMMddHHmmssfff"
+    $backupPath = "$manifestPath.$timestamp.bak"
+    Copy-Item -LiteralPath $manifestPath -Destination $backupPath
+    Write-Host "Backed up existing manifest: $backupPath"
+}
+
 Copy-Item -LiteralPath $source -Destination $destination -Force
 $hash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
-Write-Host "Seeded harmless sample: $destination"
+$manifest = [ordered]@{
+    version = 1
+    artifacts = @(
+        [ordered]@{
+            artifactId = $artifactId
+            displayName = "Office activation repair test"
+            description = "Harmless test BAT for the automatic Office activation repair flow."
+            fileName = $fileName
+            sha256 = $hash
+            minOfficeVersion = "16.0"
+            maxOfficeVersionExclusive = "17.0"
+        }
+    )
+}
+$temporaryManifestPath = "$manifestPath.$([Guid]::NewGuid().ToString('N')).tmp"
+try {
+    $json = ($manifest | ConvertTo-Json -Depth 10) + [Environment]::NewLine
+    [IO.File]::WriteAllText($temporaryManifestPath, $json,
+        [Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $temporaryManifestPath -Destination $manifestPath -Force
+}
+finally {
+    if (Test-Path -LiteralPath $temporaryManifestPath) {
+        Remove-Item -LiteralPath $temporaryManifestPath -Force
+    }
+}
+
+Write-Host "Seeded harmless Office 16.x sample: $destination"
+Write-Host "Manifest: $manifestPath"
 Write-Host "SHA-256: $hash"

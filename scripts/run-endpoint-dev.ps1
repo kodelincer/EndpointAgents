@@ -11,7 +11,7 @@ $trayProject = Join-Path $repoRoot "src\EndpointAgents.Tray\EndpointAgents.Tray.
 $serviceExe = Join-Path $repoRoot `
     "src\EndpointAgents.Service\bin\$Configuration\net10.0\EndpointAgents.Service.exe"
 $trayExe = Join-Path $repoRoot `
-    "src\EndpointAgents.Tray\bin\$Configuration\net10.0-windows\EndpointAgents.Tray.exe"
+    "src\EndpointAgents.Tray\bin\$Configuration\net10.0-windows10.0.17763.0\win-x64\EndpointAgents.Tray.exe"
 $serviceProcess = $null
 $trayProcess = $null
 

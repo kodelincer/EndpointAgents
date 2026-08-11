@@ -76,6 +76,28 @@ public sealed class OfficeInventoryTests
         Assert.Equal(3, snapshot.Issues.Count);
     }
 
+    [Fact]
+    public void CollectorDisablesRepairSelectionForMultipleOfficeVersionLines()
+    {
+        var source = new FakeOfficeInstallationSource
+        {
+            Products =
+            [
+                new OfficeInstalledProduct("Microsoft Office 2013", "15.0",
+                    "Microsoft Corporation", null, "Registry64"),
+                new OfficeInstalledProduct("Microsoft 365 Apps", "16.0",
+                    "Microsoft Corporation", null, "Registry64")
+            ]
+        };
+
+        var snapshot = new OfficeInventoryCollector(source)
+            .Collect(TestContext.Current.CancellationToken);
+
+        Assert.Null(snapshot.Inventory.Version);
+        Assert.Contains(snapshot.Issues,
+            issue => issue.Exception == "AmbiguousOfficeVersion");
+    }
+
     [Theory]
     [InlineData("Microsoft 365 Apps for enterprise", "Microsoft Corporation", true)]
     [InlineData("Microsoft Office Professional Plus 2021", "Microsoft Corporation", true)]

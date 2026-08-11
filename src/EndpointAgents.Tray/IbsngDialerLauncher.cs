@@ -4,6 +4,8 @@ using System.IO.Enumeration;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 
+using System.Windows.Forms;
+
 namespace EndpointAgents.Tray;
 
 public sealed class IbsngDialerLauncher

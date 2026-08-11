@@ -22,7 +22,9 @@ export type FileInventory = {
   issues: { source: string; message: string }[];
   repository: {
     expectedPattern: string; officeManifestPath: string;
-    officeBugfixFilePath: string; downloadMethod: string;
+    officeBugfixManifestPath: string; windowsBugfixFilePath: string;
+    windowsHelloSampleFilePath: string; protectedAclRequired: boolean;
+    downloadMethod: string;
   };
 };
 
@@ -54,4 +56,26 @@ export type SupportRequest = {
   messageText: string; textDirection: "auto" | "ltr" | "rtl"; agentId: string;
   machineName: string; userName: string; sessionId: number; runtime: AgentRuntimeSnapshot;
   logExcerpts: EndpointLogExcerpt[]; ibsngDiagnostics?: IbsngSupportEvidence | null;
+};
+
+export type HelpdeskConversationSummary = {
+  conversationId: string; agentId: string; userName: string; sessionId: number;
+  createdAtUtc: string; updatedAtUtc: string; lastSequence: number;
+  status: "New" | "Open" | "Resolved"; responderMode: "Hermes" | "Operator";
+  unreadCount: number; preview: string; textDirection: "auto" | "ltr" | "rtl";
+  machineName: string; version: string; isOnline: boolean;
+};
+export type ChatMessage = {
+  messageId: string; conversationId: string; sequence: number; role: 0 | 1 | 2 | 3;
+  body: string; textDirection: "auto" | "ltr" | "rtl"; state: number;
+  createdAtUtc: string; runId?: string | null;
+};
+export type HelpdeskTraceEvent = {
+  eventId: string; conversationId: string; sequence?: number | null;
+  timestampUtc: string; direction: "AgentToControlPlane" | "ControlPlaneToAgent";
+  eventType: string; outcome: string; payload: unknown;
+};
+export type HelpdeskConversationDetail = {
+  conversation: HelpdeskConversationSummary; messages: ChatMessage[];
+  actions: unknown[]; progressEvents: unknown[]; trace: HelpdeskTraceEvent[];
 };

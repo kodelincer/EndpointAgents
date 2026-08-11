@@ -10,8 +10,10 @@ public static class ServiceIpcProtocol
     public const string ResumeMethod = "agent.resume";
     public const string SubmitSupportMethod = "support.submit";
     public const string OpenChatMethod = "chat.open";
+    public const string ListChatsMethod = "chat.list";
     public const string SendChatMessageMethod = "chat.send";
     public const string GetChatDeltaMethod = "chat.sync";
+    public const string CloseChatMethod = "chat.close";
     public const string RespondToChatActionMethod = "chat.action.respond";
     public const string DiagnoseIbsngMethod = "ibsng.diagnose";
     public const string OpenIbsngMethod = "ibsng.open";

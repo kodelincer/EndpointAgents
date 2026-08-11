@@ -12,7 +12,8 @@ public sealed class OfficeActivationService(
     IOfficeUserSessionSource sessionSource,
     ITrayCommandClient trayClient,
     IOfficeVolumeActivationProbe volumeProbe,
-    IOfficeActivationCatalogClient catalogClient)
+    IOfficeActivationCatalogClient catalogClient,
+    IOfficeBugfixCatalogClient bugfixCatalogClient)
 {
     public async Task<OfficeActivationStatusSnapshot> GetStatusAsync(string requestId,
         CancellationToken cancellationToken, string? userSid = null)
@@ -57,14 +58,39 @@ public sealed class OfficeActivationService(
                 ex.GetType().Name));
         }
 
+        IReadOnlyList<OfficeBugfixArtifactDescriptor> bugfixes = [];
+        try
+        {
+            bugfixes = await bugfixCatalogClient.GetArtifactsAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            issues.Add(new OfficeInventoryIssue("office.bugfix_catalog",
+                "The approved Office repair catalog could not be read.",
+                ex.GetType().Name));
+        }
+
         var recommendation = OfficeActivationRecommendation.Evaluate(overallState,
             inventory.Version, families, products, artifacts);
+        var compatibleBugfixIds = Version.TryParse(inventory.Version,
+                out var officeVersion)
+            ? bugfixes.Where(item => OfficeBugfixCommandHandler.IsCompatible(
+                    item, officeVersion))
+                .Select(item => item.ArtifactId)
+                .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
+                .ToArray()
+            : [];
         var mechanisms = products.Select(product => product.Source)
             .Concat(probes.Where(probe => probe.ToolAvailable).Select(probe => probe.Mechanism))
             .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         var report = new OfficeActivationReport(inventory.Installed, inventory.Version,
             inventory.Architecture, families, mechanisms, overallState, products, probes,
             recommendation.Action, recommendation.ArtifactIds,
+            compatibleBugfixIds,
             recommendation.RequiresUserInteraction);
         return new OfficeActivationStatusSnapshot(report, issues, artifacts);
     }

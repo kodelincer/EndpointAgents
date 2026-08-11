@@ -18,7 +18,10 @@ public sealed class OfficeActivationStatusCommandHandler(
     public async Task<RpcResponse> HandleAsync(RpcRequest request,
         CommandExecutionContext context, CancellationToken cancellationToken)
     {
-        var userSid = OfficeRemediationCommandHandler.ParseUserSid(request.Params);
+        if (!OfficeRemediationCommandHandler.TryParseUserSid(
+                request.Params, out var userSid))
+            return RpcResponse.Failure(request.Id, 400,
+                "params.userSid is invalid.");
         var snapshot = await activation.GetStatusAsync(
             request.Id, cancellationToken, userSid);
         foreach (var issue in snapshot.Issues)

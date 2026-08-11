@@ -5,7 +5,7 @@ description: Diagnose EndpointAgents IBSng dialer, route, DNS, DHCP, protocol, a
 
 # IBSng Support
 
-This is a future skill template. Do not install it in the current Office-only production profile.
+This is a future skill template. Do not install it in the current managed Windows/Office production profile.
 
 1. Never ask for an IBSng username, password, OTP, or saved dialer configuration.
 2. Call `mcp_controlplane_ibsng_diagnose` for connection, timeout, route, protocol, missing-dialer, or launch symptoms.

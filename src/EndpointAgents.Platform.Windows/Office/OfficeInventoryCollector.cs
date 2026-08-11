@@ -68,10 +68,25 @@ public sealed class OfficeInventoryCollector(IOfficeInstallationSource source)
         if (uniqueApplications.Length > 0)
             discoverySources.Add("ApplicationPaths");
 
-        var version = uniqueClickToRun.Select(item => item.Version)
-            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
-            ?? uniqueProducts.Select(item => item.DisplayVersion)
-                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        var versionCandidates = uniqueClickToRun.Select(item => item.Version)
+            .Concat(uniqueProducts.Select(item => item.DisplayVersion))
+            .Where(value => Version.TryParse(value, out _))
+            .Cast<string>()
+            .ToArray();
+        var installedLines = versionCandidates.Select(Version.Parse)
+            .Select(value => $"{value.Major}.{value.Minor}")
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var version = installedLines.Length > 1
+            ? null
+            : uniqueClickToRun.Select(item => item.Version)
+                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))
+              ?? uniqueProducts.Select(item => item.DisplayVersion)
+                  .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+        if (installedLines.Length > 1)
+            issues.Add(new OfficeInventoryIssue("office.version",
+                "Multiple Office version lines are installed; automatic repair selection was disabled.",
+                "AmbiguousOfficeVersion"));
         var architecture = uniqueClickToRun.Select(item => item.Platform)
             .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 

@@ -6,7 +6,8 @@ public enum ChatMessageRole
 {
     User,
     Assistant,
-    System
+    System,
+    Operator
 }
 
 public enum ChatMessageState
@@ -36,7 +37,11 @@ public enum ChatProgressStage
     EndpointCheckCompleted,
     Retrying,
     Completed,
-    Failed
+    Failed,
+    AwaitingApproval,
+    ActionStarted,
+    ActionCompleted,
+    ActionRejected
 }
 
 public enum ChatProgressActivity
@@ -44,6 +49,9 @@ public enum ChatProgressActivity
     None,
     OfficeInventory,
     OfficeActivationStatus,
+    OfficeRuntimeStatus,
+    OfficeActivationRepair,
+    WindowsActivationStatus,
     ProposedAction,
     EndpointCheck
 }
@@ -53,6 +61,16 @@ public enum ChatProgressOutcome
     None,
     Success,
     Failure
+}
+
+public enum ChatConversationState
+{
+    Open,
+    Working,
+    AwaitingApproval,
+    Answered,
+    Resolved,
+    Closed
 }
 
 public sealed record ChatIdentity(string UserSid, string UserName, int SessionId);
@@ -66,6 +84,24 @@ public sealed record ChatConversation(
     DateTimeOffset CreatedAtUtc,
     DateTimeOffset UpdatedAtUtc,
     long LastSequence);
+
+public sealed record ChatConversationListRequest(
+    ChatIdentity Identity,
+    int Limit = 50);
+
+public sealed record ChatConversationSummary(
+    string ConversationId,
+    string Title,
+    string Preview,
+    string TextDirection,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc,
+    long LastSequence,
+    ChatConversationState State,
+    bool IsActive)
+{
+    public bool IsReadOnly => !IsActive;
+}
 
 public sealed record ChatMessage(
     string MessageId,
@@ -92,6 +128,14 @@ public sealed record ChatMessageReceipt(
     bool Accepted,
     string Message);
 
+public sealed record ChatConversationCloseRequest(
+    string ConversationId,
+    ChatIdentity Identity);
+
+public sealed record ChatConversationCloseReceipt(
+    bool Accepted,
+    string Message);
+
 public sealed record ChatDeltaRequest(
     string ConversationId,
     long AfterSequence,
@@ -113,12 +157,14 @@ public sealed record ChatActionDecision(
     string ConversationId,
     string ActionId,
     bool Approved,
-    ChatIdentity Identity);
+    ChatIdentity Identity,
+    string? ResponseText = null);
 
 public sealed record ChatActionDecisionReceipt(
     bool Accepted,
     ChatActionProposal? Proposal,
-    string Message);
+    string Message,
+    ChatMessage? DecisionMessage = null);
 
 public sealed record ChatRunProgressEvent(
     string EventId,
@@ -134,4 +180,7 @@ public sealed record ChatDelta(
     ChatConversation Conversation,
     IReadOnlyList<ChatMessage> Messages,
     IReadOnlyList<ChatActionProposal> Actions,
-    IReadOnlyList<ChatRunProgressEvent>? ProgressEvents = null);
+    IReadOnlyList<ChatRunProgressEvent>? ProgressEvents = null)
+{
+    public int VisibleItemLimit { get; init; } = 30;
+}

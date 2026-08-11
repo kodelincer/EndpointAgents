@@ -1,0 +1,17 @@
+{
+  "approved": true,
+  "mode": "Operate",
+  "selection": "Explicitly selected by the user as the multi-conversation helpdesk model.",
+  "commitments": [
+    "Right-side 280px conversation rail with responsive SplitView overlay behavior",
+    "One retained conversation per support issue, created by its first message",
+    "Grouped recent history with status text, icons, preview, and update time",
+    "Selected transcript owns the main workspace with independent scroll restoration",
+    "Closed conversations remain readable and replace the composer with a New Conversation action"
+  ],
+  "doNotLiteralize": [
+    "Attachment and settings controls without product contracts",
+    "Invented diagnostic controls or generated service indicators",
+    "Generated copy; production uses the existing Persian product language"
+  ]
+}

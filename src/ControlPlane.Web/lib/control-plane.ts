@@ -1,5 +1,6 @@
 import type { Activity, Agent, ApiSystemStatus, CommandDefinition, FileInventory,
   MaintenanceModeResult, RpcRequest, RpcResponse, SupportRequest } from "./types";
+import type { HelpdeskConversationDetail, HelpdeskConversationSummary } from "./types";
 
 export const CONTROL_PLANE_URL = process.env.NEXT_PUBLIC_CONTROL_PLANE_URL ?? "http://localhost:5052";
 
@@ -45,4 +46,42 @@ export async function setMaintenanceMode(enabled: boolean): Promise<MaintenanceM
   });
   if (!response.ok) throw new Error(`Maintenance update failed with status ${response.status}.`);
   return response.json() as Promise<MaintenanceModeResult>;
+}
+
+async function write<T>(path: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
+  const response = await fetch(`${CONTROL_PLANE_URL}${path}`, {
+    method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({})) as { message?: string };
+    throw new Error(error.message ?? `Control plane returned ${response.status}.`);
+  }
+  return response.status === 204 ? undefined as T : response.json() as Promise<T>;
+}
+
+export function getHelpdeskConversations(): Promise<HelpdeskConversationSummary[]> {
+  return read<HelpdeskConversationSummary[]>("/api/helpdesk/conversations?limit=200");
+}
+
+export function getHelpdeskConversation(conversationId: string): Promise<HelpdeskConversationDetail> {
+  return read<HelpdeskConversationDetail>(`/api/helpdesk/conversations/${encodeURIComponent(conversationId)}`);
+}
+
+export function patchHelpdeskConversation(conversationId: string,
+  patch: { status?: string; operatorTakeover?: boolean; readThroughSequence?: number }): Promise<void> {
+  return write(`/api/helpdesk/conversations/${encodeURIComponent(conversationId)}`, "PATCH", patch);
+}
+
+export function sendHelpdeskReply(conversationId: string, messageText: string,
+  textDirection: "ltr" | "rtl"): Promise<unknown> {
+  return write(`/api/helpdesk/conversations/${encodeURIComponent(conversationId)}/messages`, "POST", {
+    clientMessageId: crypto.randomUUID().replaceAll("-", ""), messageText, textDirection
+  });
+}
+
+export function runHelpdeskDiagnostic(conversationId: string, method: string): Promise<RpcResponse> {
+  const parameters = method === "network.ibsng_diagnose"
+    ? { serverHost: "", protocol: "Auto", includeDialerLog: true } : null;
+  return write(`/api/helpdesk/conversations/${encodeURIComponent(conversationId)}/diagnostics`,
+    "POST", { method, parameters });
 }

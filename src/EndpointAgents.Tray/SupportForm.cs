@@ -2,6 +2,7 @@ using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Support;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 
 namespace EndpointAgents.Tray;
 
@@ -14,7 +15,7 @@ public enum SupportFormTab
 
 public sealed class SupportForm : Form
 {
-    private const int MessageCharacterLimit = 1_000;
+    private const int MessageCharacterLimit = ChatLimits.MessageCharacters;
     private static readonly Color Canvas = Color.FromArgb(247, 248, 250);
     private static readonly Color Surface = Color.White;
     private static readonly Color Ink = Color.FromArgb(37, 43, 52);
@@ -32,7 +33,7 @@ public sealed class SupportForm : Form
     private readonly PictureBox _statusIcon = new();
     private readonly Label _statusLabel = new();
     private readonly Label _statusDetail = new();
-    private readonly Panel _conversation = new();
+    private readonly ConversationPanel _conversation = new();
     private readonly Label _chatConnectionState = new();
     private readonly RtlMessageBox _message = new();
     private readonly Label _characterCount = new();
@@ -51,12 +52,13 @@ public sealed class SupportForm : Form
     private readonly RichTextBox _logDetail = new();
     private readonly Label _logState = new();
     private readonly System.Windows.Forms.Timer _searchTimer = new() { Interval = 450 };
-    private readonly System.Windows.Forms.Timer _chatTimer = new() { Interval = 2_000 };
+    private readonly System.Windows.Forms.Timer _chatTimer = new() { Interval = 1_000 };
     private readonly System.Windows.Forms.Timer _reportTimer = new() { Interval = 5_000 };
     private readonly HashSet<string> _renderedMessageIds = [];
     private readonly HashSet<string> _seenActionIds = [];
     private readonly HashSet<string> _seenProgressEventIds = [];
     private readonly Dictionary<string, ChatRunProgressView> _progressViews = [];
+    private readonly List<Control> _conversationItems = [];
     private IReadOnlyList<EndpointEventLogEntry> _logs = [];
     private TrayStatus _currentStatus = new(TrayHealthState.Checking,
         EndpointServiceState.Unknown, null, "در حال بررسی عامل", "وضعیت فعلی در حال دریافت است.");
@@ -65,8 +67,12 @@ public sealed class SupportForm : Form
     private bool _submittingSupport;
     private bool _layingOutConversation;
     private bool _syncingChat;
+    private bool _scrollToEndAfterSync;
     private string? _conversationId;
+    private ChatActionProposal? _pendingAction;
+    private string? _activeProgressLabel;
     private long _lastChatSequence;
+    private int _visibleConversationItemLimit = 30;
 
     public SupportForm(Func<Task> refreshStatus)
     {
@@ -95,7 +101,11 @@ public sealed class SupportForm : Form
             if (_tabs.SelectedTab == _logsTab) await RefreshLogsAsync();
             UpdateChatPolling();
             UpdateReportPolling();
-            if (_tabs.SelectedTab == _helpdeskTab) await SyncChatAsync();
+            if (_tabs.SelectedTab == _helpdeskTab)
+            {
+                RequestConversationEnd();
+                await SyncChatAsync();
+            }
         };
         _searchTimer.Tick += async (_, _) =>
         {
@@ -107,7 +117,11 @@ public sealed class SupportForm : Form
             await _refreshStatus();
             UpdateChatPolling();
             UpdateReportPolling();
-            if (_tabs.SelectedTab == _helpdeskTab) await SyncChatAsync();
+            if (_tabs.SelectedTab == _helpdeskTab)
+            {
+                RequestConversationEnd();
+                await SyncChatAsync();
+            }
         };
         VisibleChanged += (_, _) =>
         {
@@ -132,7 +146,11 @@ public sealed class SupportForm : Form
         BringToFront();
         UpdateChatPolling();
         UpdateReportPolling();
-        if (tab == SupportFormTab.Helpdesk) _ = SyncChatAsync();
+        if (tab == SupportFormTab.Helpdesk)
+        {
+            RequestConversationEnd();
+            _ = SyncChatAsync();
+        }
     }
 
     public void UpdateStatus(TrayStatus status, Icon icon)
@@ -303,10 +321,12 @@ public sealed class SupportForm : Form
         _chatConnectionState.ForeColor = Muted;
         _chatConnectionState.TextAlign = ContentAlignment.MiddleRight;
         _chatConnectionState.RightToLeft = RightToLeft.Yes;
+        _chatConnectionState.AccessibleRole = AccessibleRole.StatusBar;
         chatHeader.Controls.Add(_chatConnectionState, 0, 0);
         chatHeader.Controls.Add(titleBlock, 1, 0);
 
         _conversation.Dock = DockStyle.Fill;
+        _conversation.Name = "ConversationTimeline";
         _conversation.AutoScroll = true;
         _conversation.BackColor = Canvas;
         _conversation.Padding = new Padding(24, 18, 24, 10);
@@ -372,7 +392,7 @@ public sealed class SupportForm : Form
         _message.TextChanged += (_, _) =>
         {
             messagePlaceholder.Visible = string.IsNullOrEmpty(_message.Text) && !_message.Focused;
-            _characterCount.Text = $"{_message.TextLength:N0} از ۱٬۰۰۰";
+            _characterCount.Text = $"{_message.TextLength:N0} از {MessageCharacterLimit:N0}";
             UpdateSubmitState();
         };
         _message.KeyDown += (_, e) =>
@@ -397,7 +417,7 @@ public sealed class SupportForm : Form
         _characterCount.Dock = DockStyle.None;
         _characterCount.TextAlign = ContentAlignment.MiddleCenter;
         _characterCount.ForeColor = Muted;
-        _characterCount.Text = "۰ از ۱٬۰۰۰";
+        _characterCount.Text = $"۰ از {MessageCharacterLimit:N0}";
         _characterCount.RightToLeft = RightToLeft.Yes;
         _characterCount.Margin = Padding.Empty;
         _characterCount.Anchor = AnchorStyles.Top | AnchorStyles.Left;
@@ -612,6 +632,18 @@ public sealed class SupportForm : Form
     private async Task SubmitSupportAsync()
     {
         if (!_submitButton.Enabled || _submittingSupport) return;
+        var messageText = GetSafeMessageText();
+        bool? actionApproval = null;
+        if (_pendingAction is not null)
+        {
+            if (!ChatActionReply.TryParse(messageText, out var approved))
+            {
+                _submitResult.ForeColor = Color.FromArgb(178, 48, 48);
+                _submitResult.Text = "برای پاسخ به اقدام پیشنهادی فقط بله/yes یا نه/no بنویسید.";
+                return;
+            }
+            actionApproval = approved;
+        }
         _submittingSupport = true;
         _message.ReadOnly = true;
         _submitButton.Enabled = false;
@@ -620,7 +652,39 @@ public sealed class SupportForm : Form
         _submitResult.Text = "پیام در حال ارسال به دستیار پشتیبانی است…";
         try
         {
-            var messageText = GetSafeMessageText();
+            if (_pendingAction is { } pending && actionApproval is { } approved)
+            {
+                _activeProgressLabel = approved
+                    ? "در حال آغاز اقدام تأییدشده"
+                    : "در حال ثبت تصمیم شما";
+                UpdateChatConnectionState();
+                _submitResult.Text = approved
+                    ? "اقدام تأیید شد و در حال اجرا است…"
+                    : "در حال ثبت رد اقدام…";
+                var decision = new ChatActionDecision(pending.ConversationId,
+                    pending.ActionId, approved, LocalChatIdentity(), messageText);
+                var actionReceipt = await _serviceClient.RespondToChatActionAsync(
+                    decision, _lifetime.Token);
+                if (actionReceipt.DecisionMessage is { } decisionMessage)
+                {
+                    _renderedMessageIds.Add(decisionMessage.MessageId);
+                    AddChatMessage(true, decisionMessage.Body);
+                }
+                if (actionReceipt.Proposal is not { State: ChatActionState.Pending })
+                {
+                    _pendingAction = null;
+                    _message.Clear();
+                }
+                AddChatMessage(false, actionReceipt.Message, "اقدام پیشنهادی");
+                _submitResult.ForeColor = actionReceipt.Accepted
+                    ? Color.FromArgb(28, 125, 76) : Color.FromArgb(178, 48, 48);
+                _submitResult.Text = actionReceipt.Message;
+                await SyncChatAsync();
+                return;
+            }
+
+            _activeProgressLabel = "در حال ثبت درخواست";
+            UpdateChatConnectionState();
             var isRightToLeft = BidiText.IsRightToLeft(messageText);
             await EnsureChatOpenedAsync();
             var submission = new ChatMessageSubmission(Guid.NewGuid().ToString("N"),
@@ -635,9 +699,12 @@ public sealed class SupportForm : Form
             _message.Clear();
             _submitResult.Text = receipt.Message;
             TrayEventLogger.Information($"درخواست پشتیبانی {receipt.MessageId} ارسال شد.");
+            await SyncChatAsync();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            _activeProgressLabel = null;
+            UpdateChatConnectionState();
             _submitResult.ForeColor = Color.FromArgb(178, 48, 48);
             _submitResult.Text = ex.Message;
             TrayEventLogger.Warning($"ارسال درخواست پشتیبانی ناموفق بود: {ex.GetType().Name}: {ex.Message}");
@@ -674,7 +741,7 @@ public sealed class SupportForm : Form
     {
         if (_loadingLogs || IsDisposed) return;
         _loadingLogs = true;
-        _logState.Text = "در حال خواندن گزارش رویدادهای ویندوز…";
+        _logState.Text = "در حال خواندن گزارش فعالیت عامل…";
         try
         {
             _logs = await _logReader.ReadAsync(GetSelectedAge(),
@@ -690,7 +757,7 @@ public sealed class SupportForm : Form
                 var row = new ListViewItem(item.TimestampUtc.LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss"));
                 row.SubItems.Add(PersianLevel(item.Level));
                 row.SubItems.Add(item.Source);
-                row.SubItems.Add(item.EventId.ToString());
+                row.SubItems.Add(item.EventId == 0 ? "—" : item.EventId.ToString());
                 row.SubItems.Add(summary);
                 row.Tag = item;
                 if (item.Level == "Error") row.ForeColor = Color.FromArgb(168, 45, 45);
@@ -714,7 +781,8 @@ public sealed class SupportForm : Form
         if (_logList.SelectedItems.Count == 0
             || _logList.SelectedItems[0].Tag is not EndpointEventLogEntry item) return;
         _logDetail.Text = $"زمان: {item.TimestampUtc.LocalDateTime:yyyy-MM-dd HH:mm:ss zzz}\r\n" +
-            $"سطح: {PersianLevel(item.Level)}\r\nمنبع: {item.Source}\r\nرویداد: {item.EventId}\r\n\r\n{item.Message}";
+            $"سطح: {PersianLevel(item.Level)}\r\nمنبع: {item.Source}\r\nرویداد: " +
+            $"{(item.EventId == 0 ? "—" : item.EventId)}\r\n\r\n{item.Message}";
     }
 
     private async Task CopyLogAsync()
@@ -789,6 +857,7 @@ public sealed class SupportForm : Form
             var request = new ChatDeltaRequest(_conversationId!, _lastChatSequence,
                 LocalChatIdentity());
             var delta = await _serviceClient.GetChatDeltaAsync(request, _lifetime.Token);
+            ApplyVisibleConversationItemLimit(delta.VisibleItemLimit);
             var entries = new List<(long Sequence, ChatMessage? Message,
                 ChatActionProposal? Action, ChatRunProgressEvent? Progress)>();
             foreach (var message in delta.Messages)
@@ -805,7 +874,12 @@ public sealed class SupportForm : Form
                     {
                         var fromUser = message.Role == ChatMessageRole.User;
                         AddChatMessage(fromUser, message.Body,
-                            message.Role == ChatMessageRole.System ? "سیستم" : null);
+                            message.Role switch
+                            {
+                                ChatMessageRole.System => "سیستم",
+                                ChatMessageRole.Operator => "کارشناس پشتیبانی",
+                                _ => null
+                            });
                     }
                     UpdateChatMessageState(message);
                 }
@@ -826,6 +900,11 @@ public sealed class SupportForm : Form
             _conversationId = delta.Conversation.ConversationId;
             _lastChatSequence = Math.Max(_lastChatSequence,
                 delta.Conversation.LastSequence);
+            if (_scrollToEndAfterSync)
+            {
+                _scrollToEndAfterSync = false;
+                ScrollConversationToEnd();
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -837,6 +916,7 @@ public sealed class SupportForm : Form
         finally
         {
             _syncingChat = false;
+            UpdateSubmitState();
         }
     }
 
@@ -850,20 +930,26 @@ public sealed class SupportForm : Form
             return;
         }
 
-        var rtl = BidiText.IsRightToLeft(proposal.Description);
-        var options = rtl
-            ? MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign
-            : 0;
-        var approved = MessageBox.Show(this,
-            $"{proposal.DisplayName}\r\n\r\n{proposal.Description}\r\n\r\n" +
-            "آیا اجرای دقیق این اقدام را تأیید می‌کنید؟",
-            "تأیید اقدام پشتیبانی", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
-            MessageBoxDefaultButton.Button2, options) == DialogResult.Yes;
-        var decision = new ChatActionDecision(proposal.ConversationId,
-            proposal.ActionId, approved, LocalChatIdentity());
-        var receipt = await _serviceClient.RespondToChatActionAsync(
-            decision, _lifetime.Token);
-        AddChatMessage(false, receipt.Message, "اقدام پیشنهادی");
+        _pendingAction = proposal;
+        var artifactDetails = FormatApprovedArtifact(proposal.Parameters);
+        AddChatMessage(false,
+            $"{proposal.DisplayName}\r\n{proposal.Description}{artifactDetails}\r\n\r\n" +
+            "آیا انجامش دهم؟ بله/yes یا نه/no بنویسید.",
+            "اقدام پیشنهادی");
+        await Task.CompletedTask;
+    }
+
+    private static string FormatApprovedArtifact(JsonElement? parameters)
+    {
+        if (parameters is not { ValueKind: JsonValueKind.Object } value
+            || !value.TryGetProperty(
+                ChatActionApproval.ArtifactFileNameParameterName, out var fileName)
+            || fileName.ValueKind != JsonValueKind.String
+            || !value.TryGetProperty(
+                ChatActionApproval.ArtifactSha256ParameterName, out var sha256)
+            || sha256.ValueKind != JsonValueKind.String)
+            return string.Empty;
+        return $"\r\n\r\nFile: {fileName.GetString()}\r\nSHA-256: {sha256.GetString()}";
     }
 
     private string GetSafeMessageText() => _message.Text.Trim();
@@ -900,32 +986,89 @@ public sealed class SupportForm : Form
     {
         var message = new ChatMessageView(author ?? (fromUser ? "شما" : "دستیار پشتیبانی"),
             body, fromUser, DateTime.Now);
-        _conversation.Controls.Add(message);
-        LayoutConversationMessages();
-        _conversation.ScrollControlIntoView(message);
+        message.ConversationMouseWheel += (_, e) => ScrollConversationByWheel(e.Delta);
+        AddConversationItem(message);
     }
 
     private void AddProgressEvent(ChatRunProgressEvent progress)
     {
-        var added = false;
         if (!_progressViews.TryGetValue(progress.RunId, out var view))
         {
             view = new ChatRunProgressView(progress.RunId);
-            view.SizeChanged += (_, _) => LayoutConversationMessages();
+            view.AddEvent(progress);
+            int? expansionViewportTop = null;
+            view.ExpansionChanging += (_, _) =>
+                expansionViewportTop = view.PointToScreen(Point.Empty).Y;
+            view.SizeChanged += (_, _) =>
+            {
+                var anchor = expansionViewportTop;
+                expansionViewportTop = null;
+                var previousScroll = ConversationScrollOffset();
+                LayoutConversationMessages(previousScroll);
+                if (anchor is not { } viewportTop || view.IsDisposed) return;
+                var movement = view.PointToScreen(Point.Empty).Y - viewportTop;
+                SetConversationScroll(ConversationScrollOffset() + movement);
+            };
             _progressViews.Add(progress.RunId, view);
-            _conversation.Controls.Add(view);
-            added = true;
+            AddConversationItem(view);
         }
-        view.AddEvent(progress);
-        LayoutConversationMessages();
-        if (added) _conversation.ScrollControlIntoView(view);
+        else
+        {
+            var followNewContent = IsConversationNearEnd();
+            view.AddEvent(progress);
+            LayoutConversationMessages();
+            if (followNewContent) ScrollConversationToEnd();
+        }
+        _activeProgressLabel = view.IsTerminal ? null : view.Summary;
+        UpdateChatConnectionState();
+        TrayEventLogger.Activity(progress.CreatedAtUtc,
+            $"روند درخواست {progress.RunId}: {view.Summary}.");
     }
 
-    private void LayoutConversationMessages()
+    private void AddConversationItem(Control item)
+    {
+        var followNewContent = IsConversationNearEnd();
+        var previousScroll = ConversationScrollOffset();
+        _conversationItems.Add(item);
+        _conversation.Controls.Add(item);
+        var removedHeight = TrimConversationItems();
+        LayoutConversationMessages(Math.Max(0, previousScroll - removedHeight));
+        if (followNewContent) ScrollConversationToEnd();
+    }
+
+    private int TrimConversationItems()
+    {
+        var removedHeight = 0;
+        while (_conversationItems.Count > _visibleConversationItemLimit)
+        {
+            var oldest = _conversationItems[0];
+            _conversationItems.RemoveAt(0);
+            removedHeight += oldest.Height + 10;
+            if (oldest is ChatRunProgressView && oldest.Tag is string runId)
+                _progressViews.Remove(runId);
+            _conversation.Controls.Remove(oldest);
+            oldest.Dispose();
+        }
+        return removedHeight;
+    }
+
+    private void ApplyVisibleConversationItemLimit(int limit)
+    {
+        var normalized = Math.Clamp(limit, 1, 200);
+        if (_visibleConversationItemLimit == normalized) return;
+        var followNewContent = IsConversationNearEnd();
+        var previousScroll = ConversationScrollOffset();
+        _visibleConversationItemLimit = normalized;
+        var removedHeight = TrimConversationItems();
+        LayoutConversationMessages(Math.Max(0, previousScroll - removedHeight));
+        if (followNewContent) ScrollConversationToEnd();
+    }
+
+    private void LayoutConversationMessages(int? requestedScroll = null)
     {
         if (_layingOutConversation) return;
         _layingOutConversation = true;
-        var previousScroll = -_conversation.AutoScrollPosition.Y;
+        var previousScroll = requestedScroll ?? ConversationScrollOffset();
         try
         {
             _conversation.SuspendLayout();
@@ -935,7 +1078,7 @@ public sealed class SupportForm : Form
                 _conversation.AutoScrollMinSize = Size.Empty;
                 var width = GetConversationMessageWidth();
                 var top = _conversation.Padding.Top;
-                foreach (Control control in _conversation.Controls)
+                foreach (var control in _conversationItems)
                 {
                     control.Width = width;
                     control.Location = new Point(_conversation.Padding.Left, top);
@@ -961,6 +1104,43 @@ public sealed class SupportForm : Form
     {
         return Math.Max(300, _conversation.ClientSize.Width
             - _conversation.Padding.Horizontal - SystemInformation.VerticalScrollBarWidth - 2);
+    }
+
+    private void RequestConversationEnd()
+    {
+        _scrollToEndAfterSync = true;
+        if (IsHandleCreated && !IsDisposed)
+            BeginInvoke((Action)ScrollConversationToEnd);
+    }
+
+    private bool IsConversationNearEnd() => _conversationItems.Count == 0
+        || !_conversation.VerticalScroll.Visible
+        || ConversationMaxScroll() - ConversationScrollOffset() <= 48;
+
+    private int ConversationScrollOffset() => -_conversation.AutoScrollPosition.Y;
+
+    private int ConversationMaxScroll() => !_conversation.VerticalScroll.Visible
+        ? 0
+        : Math.Max(0, _conversation.VerticalScroll.Maximum
+            - _conversation.VerticalScroll.LargeChange + 1);
+
+    private void ScrollConversationToEnd() => SetConversationScroll(ConversationMaxScroll());
+
+    private void ScrollConversationByWheel(int delta)
+    {
+        var lines = SystemInformation.MouseWheelScrollLines;
+        var distance = lines < 0
+            ? Math.Max(1, _conversation.ClientSize.Height)
+            : Math.Max(1, lines) * Math.Max(1, _conversation.Font.Height);
+        var change = (int)Math.Round((double)delta
+            / SystemInformation.MouseWheelScrollDelta * distance);
+        SetConversationScroll(ConversationScrollOffset() - change);
+    }
+
+    private void SetConversationScroll(int offset)
+    {
+        _conversation.AutoScrollPosition = new Point(0,
+            Math.Clamp(offset, 0, ConversationMaxScroll()));
     }
 
     private static string BuildAutomaticSubject(string message)
@@ -1001,14 +1181,35 @@ public sealed class SupportForm : Form
     private void UpdateSubmitState()
     {
         var connected = _currentStatus.Runtime?.ConnectionStatus == AgentConnectionStatus.Connected;
-        _chatConnectionState.Text = connected ? "● متصل به پشتیبانی" : "○ در انتظار اتصال";
-        _chatConnectionState.ForeColor = connected ? Color.FromArgb(28, 125, 76) : Muted;
-        _submitButton.Enabled = !_submittingSupport && connected && !string.IsNullOrWhiteSpace(_message.Text)
+        UpdateChatConnectionState();
+        _submitButton.Enabled = !_submittingSupport && connected
+            && !string.IsNullOrWhiteSpace(_message.Text)
             && _message.TextLength <= MessageCharacterLimit;
         if (!connected && string.IsNullOrWhiteSpace(_submitResult.Text))
             _submitResult.Text = "برای ارسال درخواست، عامل نقطه پایانی باید به سرور متصل باشد.";
         else if (connected && _submitResult.Text == "برای ارسال درخواست، عامل نقطه پایانی باید به سرور متصل باشد.")
             _submitResult.Text = string.Empty;
+    }
+
+    private void UpdateChatConnectionState()
+    {
+        var connected = _currentStatus.Runtime?.ConnectionStatus == AgentConnectionStatus.Connected;
+        if (!connected)
+        {
+            _chatConnectionState.Text = "○ در انتظار اتصال";
+            _chatConnectionState.ForeColor = Muted;
+        }
+        else if (!string.IsNullOrWhiteSpace(_activeProgressLabel))
+        {
+            _chatConnectionState.Text = "● " + _activeProgressLabel;
+            _chatConnectionState.ForeColor = Action;
+        }
+        else
+        {
+            _chatConnectionState.Text = "● متصل به پشتیبانی";
+            _chatConnectionState.ForeColor = Color.FromArgb(28, 125, 76);
+        }
+        _chatConnectionState.AccessibleName = _chatConnectionState.Text;
     }
 
     private void SetStatusValue(string name, string value)
@@ -1076,7 +1277,7 @@ public sealed class SupportForm : Form
 
     private static string FormatLog(EndpointEventLogEntry item) =>
         $"[{item.TimestampUtc.LocalDateTime:yyyy-MM-dd HH:mm:ss}] {PersianLevel(item.Level)} · " +
-        $"{item.Source} · {item.EventId}\r\n{item.Message}";
+        $"{item.Source} · {(item.EventId == 0 ? "—" : item.EventId)}\r\n{item.Message}";
 
     private static Button SecondaryButton(string text)
     {

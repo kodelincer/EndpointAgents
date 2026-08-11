@@ -270,6 +270,11 @@ public sealed class AgentWorker : BackgroundService
         GetConnectedConnection().InvokeAsync<ChatConversation>(
             "OpenChat", identity, cancellationToken);
 
+    public Task<IReadOnlyList<ChatConversationSummary>> ListChatsAsync(
+        ChatConversationListRequest request, CancellationToken cancellationToken) =>
+        GetConnectedConnection().InvokeAsync<IReadOnlyList<ChatConversationSummary>>(
+            "ListChats", request, cancellationToken);
+
     public Task<ChatMessageReceipt> SendChatMessageAsync(ChatMessageSubmission submission,
         CancellationToken cancellationToken) =>
         GetConnectedConnection().InvokeAsync<ChatMessageReceipt>(
@@ -279,6 +284,11 @@ public sealed class AgentWorker : BackgroundService
         CancellationToken cancellationToken) =>
         GetConnectedConnection().InvokeAsync<ChatDelta>(
             "GetChatDelta", request, cancellationToken);
+
+    public Task<ChatConversationCloseReceipt> CloseChatAsync(
+        ChatConversationCloseRequest request, CancellationToken cancellationToken) =>
+        GetConnectedConnection().InvokeAsync<ChatConversationCloseReceipt>(
+            "CloseChat", request, cancellationToken);
 
     public Task<ChatActionDecisionReceipt> RespondToChatActionAsync(
         ChatActionDecision decision, CancellationToken cancellationToken) =>

@@ -115,7 +115,8 @@ public sealed record OfficeRemediationLaunchRequest(
     string Description,
     string FilePath,
     string ExpectedSha256,
-    string TrustPolicy = OfficeArtifactTrustPolicies.MicrosoftSigned);
+    string TrustPolicy = OfficeArtifactTrustPolicies.MicrosoftSigned,
+    bool ChatApproved = false);
 
 public sealed record OfficeBugfixConsentRequest(
     string ArtifactId,
@@ -134,4 +135,11 @@ public sealed record OfficeActivationReport(
     IReadOnlyList<OfficeActivationProbeResult> Probes,
     string RecommendedAction,
     IReadOnlyList<string> CompatibleArtifactIds,
+    IReadOnlyList<string> CompatibleBugfixArtifactIds,
     bool RequiresUserInteraction);
+
+/// <summary>Sanitized Office application state for the bound interactive user.</summary>
+public sealed record OfficeRuntimeStatus(
+    bool InspectionSucceeded,
+    bool OfficeApplicationsOpen,
+    IReadOnlyList<string> RunningApplications);

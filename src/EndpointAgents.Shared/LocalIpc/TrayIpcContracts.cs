@@ -1,5 +1,6 @@
 using EndpointAgents.Shared.Ibsng;
 using EndpointAgents.Shared.Office;
+using EndpointAgents.Shared.Windows;
 
 namespace EndpointAgents.Shared.LocalIpc;
 
@@ -14,6 +15,8 @@ public static class TrayIpcProtocol
     public const string OfficeActivationStatusMethod = "office.activation_status";
     public const string OfficeRemediationLaunchMethod = "office.remediation_launch";
     public const string OfficeBugfixConsentMethod = "office.bugfix_consent";
+    public const string WindowsBugfixConsentMethod = "windows.bugfix_consent";
+    public const string WindowsHelloLaunchMethod = "windows.hello_sample_launch";
     public const int MaxMessageCharacters = 16 * 1024;
 
     public static string GetPipeName(string prefix, int sessionId) =>
@@ -28,7 +31,9 @@ public sealed record TrayIpcRequest(
     string? ServerHost,
     string DialerSearchPattern = "IBSngDialer*.exe",
     OfficeRemediationLaunchRequest? OfficeRemediation = null,
-    OfficeBugfixConsentRequest? OfficeBugfixConsent = null);
+    OfficeBugfixConsentRequest? OfficeBugfixConsent = null,
+    WindowsBugfixConsentRequest? WindowsBugfixConsent = null,
+    WindowsHelloLaunchRequest? WindowsHello = null);
 
 public sealed record TrayIpcResponse(
     string Id,

@@ -1,6 +1,7 @@
 using ControlPlane.Api.Agents;
 using ControlPlane.Api.Chat;
 using ControlPlane.Api.Commands;
+using ControlPlane.Api.Dashboard;
 using ControlPlane.Api.Security;
 using EndpointAgents.Shared.Agents;
 using EndpointAgents.Shared.Chat;
@@ -17,13 +18,16 @@ namespace ControlPlane.Api.Hubs;
 /// <summary>SignalR endpoint used exclusively by installed endpoint agents.</summary>
 public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher support,
     ChatStore chatStore, CommandCatalog commandCatalog,
-    IOptions<AgentSecurityOptions> security, ILogger<AgentHub> logger) : Hub
+    DashboardPublisher dashboard, IOptions<AgentSecurityOptions> security,
+    ILogger<AgentHub> logger) : Hub
 {
-    private static readonly HashSet<string> OfficeChatActions =
+    private static readonly HashSet<string> ChatActions =
         new(StringComparer.Ordinal)
         {
             "software.office_remediation_run",
-            "software.office_bugfix_run"
+            "software.office_bugfix_run",
+            "system.windows_activation_bugfix_run",
+            "system.windows_hello_sample_run"
         };
 
     /// <summary>Associates the current SignalR connection with a durable agent identity.</summary>
@@ -54,20 +58,35 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
             Context.ConnectionAborted);
     }
 
-    public Task<ChatMessageReceipt> SendChatMessage(ChatMessageSubmission submission)
+    public Task<IReadOnlyList<ChatConversationSummary>> ListChats(
+        ChatConversationListRequest request)
+    {
+        var agentId = GetAuthenticatedAgentId();
+        EnsureRegisteredAgent(agentId);
+        return chatStore.ListConversationsAsync(agentId,
+            request with { Identity = Normalize(request.Identity) },
+            Context.ConnectionAborted);
+    }
+
+    public async Task<ChatMessageReceipt> SendChatMessage(ChatMessageSubmission submission)
     {
         var agentId = GetAuthenticatedAgentId();
         EnsureRegisteredAgent(agentId);
         var normalized = submission with
         {
             ClientMessageId = Normalize(submission.ClientMessageId, 100),
-            MessageText = Normalize(submission.MessageText, 8_000),
+            MessageText = Normalize(submission.MessageText, ChatLimits.MessageCharacters + 1),
             TextDirection = submission.TextDirection is "rtl" or "ltr"
                 ? submission.TextDirection
                 : "auto",
             Identity = Normalize(submission.Identity)
         };
-        return chatStore.SubmitMessageAsync(agentId, normalized, Context.ConnectionAborted);
+        var receipt = await chatStore.SubmitMessageAsync(agentId, normalized,
+            Context.ConnectionAborted);
+        if (receipt.Accepted)
+            await dashboard.PublishHelpdeskAsync(new HelpdeskChange(
+                receipt.ConversationId, "message", receipt.Sequence), Context.ConnectionAborted);
+        return receipt;
     }
 
     public async Task<ChatDelta> GetChatDelta(ChatDeltaRequest request)
@@ -81,35 +100,94 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
             "این گفتگو متعلق به کاربر فعلی نیست.");
     }
 
+    public async Task<ChatConversationCloseReceipt> CloseChat(
+        ChatConversationCloseRequest request)
+    {
+        var agentId = GetAuthenticatedAgentId();
+        EnsureRegisteredAgent(agentId);
+        var receipt = await chatStore.CloseConversationAsync(agentId,
+            request with { Identity = Normalize(request.Identity) },
+            Context.ConnectionAborted);
+        if (receipt.Accepted)
+            await dashboard.PublishHelpdeskAsync(new HelpdeskChange(
+                request.ConversationId, "closed"), Context.ConnectionAborted);
+        return receipt;
+    }
+
     public async Task<ChatActionDecisionReceipt> RespondToChatAction(
         ChatActionDecision decision)
     {
         var agentId = GetAuthenticatedAgentId();
         EnsureRegisteredAgent(agentId);
+        if (decision.ResponseText is { } responseText
+            && (!ChatActionReply.TryParse(responseText, out var approved)
+                || approved != decision.Approved))
+            return new ChatActionDecisionReceipt(false, null,
+                "Reply with an exact yes/no response to decide this action.");
         var result = await chatStore.DecideActionAsync(agentId,
             decision with { Identity = Normalize(decision.Identity) },
             Context.ConnectionAborted);
-        if (!result.Accepted || result.Proposal is null || !decision.Approved)
+        if (!result.Accepted || result.Proposal is null)
             return new ChatActionDecisionReceipt(result.Accepted, result.Proposal,
-                result.Message);
+                result.Message, result.DecisionMessage);
 
         var proposal = result.Proposal;
-        if (!OfficeChatActions.Contains(proposal.Method)
+        if (!decision.Approved)
+        {
+            await chatStore.WriteActionProgressAsync(proposal.ActionId,
+                ChatProgressStage.ActionRejected, ChatProgressOutcome.None,
+                Context.ConnectionAborted);
+            return new ChatActionDecisionReceipt(true, proposal,
+                result.Message, result.DecisionMessage);
+        }
+        if (!ChatActions.Contains(proposal.Method)
             || !commandCatalog.Contains(proposal.Method)
             || SensitiveCommandParameterGuard.ContainsSensitiveData(proposal.Parameters))
         {
             await chatStore.MarkActionExecutedAsync(proposal.ActionId, false,
                 "The stored action is no longer allow-listed.", Context.ConnectionAborted);
+            await chatStore.WriteActionProgressAsync(proposal.ActionId,
+                ChatProgressStage.ActionCompleted, ChatProgressOutcome.Failure,
+                Context.ConnectionAborted);
             return new ChatActionDecisionReceipt(false,
                 proposal with { State = ChatActionState.Failed },
-                "این اقدام دیگر مجاز نیست.");
+                "این اقدام دیگر مجاز نیست.", result.DecisionMessage);
         }
 
-        var rpcParameters = AddUserScope(proposal.Parameters, decision.Identity.UserSid);
+        var rpcParameters = AddUserScope(proposal.Parameters, decision.Identity.UserSid,
+            proposal.ActionId);
         var rpc = RpcRequest.Create(proposal.ActionId, proposal.Method, rpcParameters);
-        var response = await registry.SendCommandAsync(agentId, rpc, Context.ConnectionAborted);
+        await chatStore.WriteActionProgressAsync(proposal.ActionId,
+            ChatProgressStage.ActionStarted, ChatProgressOutcome.None,
+            Context.ConnectionAborted);
+        RpcResponse response;
+        try
+        {
+            response = await registry.SendCommandAsync(agentId, rpc,
+                Context.ConnectionAborted);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await chatStore.MarkActionExecutedAsync(proposal.ActionId, false,
+                ex.Message, Context.ConnectionAborted);
+            await chatStore.WriteActionProgressAsync(proposal.ActionId,
+                ChatProgressStage.ActionCompleted, ChatProgressOutcome.Failure,
+                Context.ConnectionAborted);
+            logger.LogWarning(ex, "Approved support action {ActionId} failed to dispatch.",
+                proposal.ActionId);
+            return new ChatActionDecisionReceipt(false,
+                proposal with { State = ChatActionState.Failed },
+                "انجام اقدام ناموفق بود. لطفاً با پشتیبانی تماس بگیرید.",
+                result.DecisionMessage);
+        }
         await chatStore.MarkActionExecutedAsync(proposal.ActionId, response.Error is null,
             response.Error?.Message, Context.ConnectionAborted);
+        await chatStore.WriteActionProgressAsync(proposal.ActionId,
+            ChatProgressStage.ActionCompleted,
+            response.Error is null
+                ? ChatProgressOutcome.Success
+                : ChatProgressOutcome.Failure,
+            Context.ConnectionAborted);
         return new ChatActionDecisionReceipt(response.Error is null,
             proposal with
             {
@@ -118,7 +196,8 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
                     : ChatActionState.Failed
             }, response.Error is null
                 ? "اقدام تأییدشده انجام شد."
-                : "انجام اقدام ناموفق بود. لطفاً با پشتیبانی تماس بگیرید.");
+                : "انجام اقدام ناموفق بود. لطفاً با پشتیبانی تماس بگیرید.",
+            result.DecisionMessage);
     }
 
     public async Task<SupportRequestReceipt> SubmitSupportRequest(
@@ -173,11 +252,13 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
     private static ChatIdentity Normalize(ChatIdentity identity) =>
         identity with { UserName = Normalize(identity.UserName, 256) };
 
-    private static JsonElement AddUserScope(JsonElement? parameters, string userSid)
+    private static JsonElement AddUserScope(JsonElement? parameters, string userSid,
+        string chatApprovalId)
     {
         var scoped = new Dictionary<string, object?>
         {
-            ["userSid"] = userSid
+            ["userSid"] = userSid,
+            [ChatActionApproval.ParameterName] = chatApprovalId
         };
         if (parameters is { ValueKind: JsonValueKind.Object } value)
             foreach (var property in value.EnumerateObject())

@@ -22,9 +22,12 @@ public sealed class ControlPlaneApiFactory : WebApplicationFactory<Program>
             configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["FileRepository:RootPath"] = FileRepositoryRoot,
+                ["FileRepository:RequireProtectedAcl"] = "false",
                 ["Chat:DatabasePath"] = DatabasePath,
                 ["AgentSecurity:RequireHttps"] = "false",
-                ["Hermes:Enabled"] = "false"
+                ["Hermes:Enabled"] = "false",
+                ["Hermes:McpApiKey"] =
+                    "test-controlplane-mcp-0123456789abcdef"
             }));
         builder.ConfigureServices(services =>
             services.AddSingleton<IStartupFilter, TestConnectionStartupFilter>());

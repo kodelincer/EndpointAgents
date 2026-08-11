@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { fileCompatibilityLabel, fileRequirementLabels } from "./files";
+import {
+  fileCompatibilityLabel,
+  fileRequirementLabels,
+  fileRequiresEndpointToken
+} from "./files";
 import type { EndpointFile } from "./types";
 
 const officeFile: EndpointFile = {
@@ -28,5 +32,19 @@ describe("file repository presentation", () => {
       category: "Office bugfix",
       maxOfficeVersionExclusive: "17.0"
     })).toBe("Office 16.0 to < 17.0");
+  });
+
+  it("identifies artifact routes that require an enrolled endpoint token", () => {
+    expect(fileRequiresEndpointToken(officeFile)).toBe(true);
+    expect(fileRequiresEndpointToken({
+      ...officeFile,
+      category: "Windows",
+      downloadPath: "/api/files/windows/bugfix/windows-activation-repair"
+    })).toBe(true);
+    expect(fileRequiresEndpointToken({
+      ...officeFile,
+      category: "IBSng",
+      downloadPath: "/api/files/ibsng-dialer"
+    })).toBe(false);
   });
 });

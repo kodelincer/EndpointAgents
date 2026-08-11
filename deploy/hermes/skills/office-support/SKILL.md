@@ -1,6 +1,6 @@
 ---
 name: office-support
-description: Diagnose Microsoft Office and propose the single approved activation repair. Use for Office activation failures, Product Unlicensed, license or activation errors, activation-required prompts, and the red activation warning shown at the top of Word, Excel, PowerPoint, or other Office apps.
+description: Diagnose Microsoft Office and run a version-compatible approved activation repair after verifying that Office applications are closed. Use for Office activation failures, Product Unlicensed, license or activation errors, activation-required prompts, and the red activation warning shown at the top of Word, Excel, PowerPoint, or other Office apps.
 ---
 
 # Office Support
@@ -8,25 +8,45 @@ description: Diagnose Microsoft Office and propose the single approved activatio
 For an activation problem, Product Unlicensed state, activation error, or red Office
 activation warning:
 
-1. Call `mcp_controlplane_office_inventory` once with the supplied run capability.
+1. Call `mcp_controlplane_office_inventory` once with exactly
+   `{ "runCapability": "<the supplied run capability>" }`.
 2. If Office is not installed or its version cannot be read, explain that and stop.
-3. Call `mcp_controlplane_office_activation_status` once and briefly summarize its
+3. Call `mcp_controlplane_office_activation_status` once with exactly
+   `{ "runCapability": "<the supplied run capability>" }` and briefly summarize its
    sanitized state. The user's explicit activation report remains valid evidence when
    the probe is unavailable.
-4. Call `mcp_controlplane_propose_endpoint_action` with method
-   `software.office_bugfix_run` and exactly
-   `{ "artifactId": "office-activation-repair" }`.
-5. Tell the user that the retailer-provided activation repair awaits confirmation.
-   Do not claim it ran or succeeded.
+4. Select exactly one artifact ID that appears in `compatibleBugfixArtifactIds`.
+   Current administrator policy: prefer `office-activation-repair` when it is in that
+   list. If the list is empty, explain that no compatible approved repair is installed
+   and stop. If more than one ID is returned and no rule below distinguishes them, stop
+   for administrator review instead of guessing.
+5. Call `mcp_controlplane_office_runtime_status` once with exactly
+   `{ "runCapability": "<the supplied run capability>" }`.
+6. If inspection fails, explain that Office applications could not be checked and
+   stop. If any are open, tell the user the exact friendly application names returned,
+   ask them to close those applications, and stop. Never close an application for the
+   user. When the user says they are closed, begin a new run and check again.
+7. If no Office application is open, call
+   `mcp_controlplane_run_office_activation_repair` once with exactly
+   `{ "runCapability": "<the supplied run capability>", "artifactId": "<the selected compatible ID>" }`.
+   Do not ask for confirmation. The endpoint service creates an identical verified
+   Desktop copy for the user and runs the protected hash-verified staged copy.
+8. If execution fails because an Office application reopened, tell the user exactly
+   which returned applications to close and stop. Otherwise, after the repair attempt
+   returns, call `mcp_controlplane_office_activation_status` again even when execution
+   reported an error. Say that Office is fixed only when this fresh result reports a
+   healthy licensed state. If execution completed but activation is still unhealthy,
+   say both facts. If execution failed and activation is unhealthy, report both failures.
 
 For a generic Office problem that does not mention activation, licensing, Product
 Unlicensed, or the red activation warning, ask for the symptom. Do not propose the
 activation repair for crashes, document corruption, printing, add-ins, or performance.
 
-Use only the three ControlPlane tools above. Never use terminal, filesystem, browser,
+Use only the four ControlPlane tools above. Never use terminal, filesystem, browser,
 web, code execution, memory, cron, delegation, learning, or skill-management tools.
 Never request credentials, product keys, tokens, endpoint identifiers, paths, URLs,
-commands, scripts, or screenshots containing secrets. Never invent another artifact ID,
-method, parameter, menu selection, or successful result. ControlPlane binds the endpoint
-and user; do not attempt to select either. Reply in clear Persian unless the user asks
-for another language.
+commands, scripts, or screenshots containing secrets. Never invent an artifact ID,
+method, parameter, menu selection, or successful result. Never ask for or transmit an
+administrator account or password; elevation belongs only to the endpoint service.
+ControlPlane binds the endpoint and user; do not attempt to select either. Follow the
+profile `SOUL.md` for response language and presentation.

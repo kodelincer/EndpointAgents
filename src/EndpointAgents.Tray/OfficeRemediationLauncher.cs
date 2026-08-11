@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
+using System.Windows.Forms;
+
 namespace EndpointAgents.Tray;
 
 /// <summary>
@@ -17,14 +19,15 @@ public sealed class OfficeRemediationLauncher
     {
         var bugfix = request.OfficeBugfixConsent;
         if (request.Method != TrayIpcProtocol.OfficeBugfixConsentMethod
-            || bugfix is null
-            || bugfix.ArtifactId != "office-activation-repair")
-            return new TrayIpcResponse(request.Id, false, "InvalidOfficeBugfixRequest");
+            || bugfix is null)
+            return new TrayIpcResponse(request.Id, false,
+                "InvalidOfficeBugfixRequest");
 
         var consent = MessageBox.Show(
-            $"The helpdesk recommends this Office activation repair:\n\n" +
+            $"The helpdesk recommends this approved Office repair:\n\n" +
             $"{bugfix.DisplayName}\n\n{bugfix.Description}\n\n" +
-            "It will run silently with local SYSTEM privileges and select menu item 1. Run it now?",
+            "The EndpointAgents service will run the verified repair with system privileges. " +
+            "No username or password will be requested or passed. Run it now?",
             "EndpointAgents Office repair",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Warning,
@@ -78,18 +81,21 @@ public sealed class OfficeRemediationLauncher
                     Message: "The remediation is not signed by a trusted Microsoft certificate.");
         }
 
-        var consent = MessageBox.Show(
-            $"The helpdesk recommends this Office tool:\n\n" +
-            $"{remediation.DisplayName}\n\n{remediation.Description}\n\n" +
-            $"{trustMessage}\n\nRun it now? No command-line arguments or credentials will be passed.",
-            "EndpointAgents Office tool",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Information,
-            MessageBoxDefaultButton.Button2);
-        if (consent != DialogResult.Yes)
-            return new TrayIpcResponse(request.Id, false, "UserDeclined",
-                OfficeRemediationArtifactId: remediation.ArtifactId,
-                SignerSubject: signer);
+        if (!remediation.ChatApproved)
+        {
+            var consent = MessageBox.Show(
+                $"The helpdesk recommends this Office tool:\n\n" +
+                $"{remediation.DisplayName}\n\n{remediation.Description}\n\n" +
+                $"{trustMessage}\n\nRun it now? No command-line arguments or credentials will be passed.",
+                "EndpointAgents Office tool",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information,
+                MessageBoxDefaultButton.Button2);
+            if (consent != DialogResult.Yes)
+                return new TrayIpcResponse(request.Id, false, "UserDeclined",
+                    OfficeRemediationArtifactId: remediation.ArtifactId,
+                    SignerSubject: signer);
+        }
 
         var process = Process.Start(new ProcessStartInfo
         {

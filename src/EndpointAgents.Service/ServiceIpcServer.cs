@@ -27,13 +27,24 @@ public sealed class ServiceIpcServer(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var clients = new HashSet<Task>();
         while (!stoppingToken.IsCancellationRequested)
         {
+            NamedPipeServerStream? pipe = null;
             try
             {
-                await using var pipe = CreatePipe();
+                clients.RemoveWhere(task => task.IsCompleted);
+                if (clients.Count >= 4)
+                {
+                    var completed = await Task.WhenAny(clients);
+                    clients.Remove(completed);
+                    await completed;
+                }
+
+                pipe = CreatePipe();
                 await pipe.WaitForConnectionAsync(stoppingToken);
-                await HandleConnectionAsync(pipe, stoppingToken);
+                clients.Add(HandleClientAsync(pipe, stoppingToken));
+                pipe = null;
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -43,6 +54,28 @@ public sealed class ServiceIpcServer(
             {
                 logger.LogWarning(ex, "The local Tray status pipe failed. Retrying.");
                 await Task.Delay(500, stoppingToken);
+            }
+            finally
+            {
+                if (pipe is not null) await pipe.DisposeAsync();
+            }
+        }
+        await Task.WhenAll(clients);
+    }
+
+    private async Task HandleClientAsync(NamedPipeServerStream pipe,
+        CancellationToken cancellationToken)
+    {
+        await using (pipe)
+        {
+            try
+            {
+                await HandleConnectionAsync(pipe, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "A local Tray operation ended unexpectedly.");
             }
         }
     }
@@ -72,11 +105,16 @@ public sealed class ServiceIpcServer(
         using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
         using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
         ServiceIpcResponse response;
+        ServiceIpcRequest? request = null;
         try
         {
             var line = await ReadBoundedLineAsync(reader, cancellationToken);
-            var request = JsonSerializer.Deserialize<ServiceIpcRequest>(line)
+            request = JsonSerializer.Deserialize<ServiceIpcRequest>(line)
                 ?? throw new InvalidDataException("The local IPC request was empty.");
+            if (ShouldReport(request.Method))
+                logger.LogInformation(
+                    "Received local Tray operation {Method} with request id {RequestId}.",
+                    request.Method, request.Id);
             response = await DispatchAsync(pipe, request, cancellationToken);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -84,6 +122,18 @@ public sealed class ServiceIpcServer(
             logger.LogWarning(ex, "Rejected an invalid local Tray request.");
             response = new ServiceIpcResponse(string.Empty, false, "InvalidRequest",
                 Message: "The local request was invalid.");
+        }
+
+        if (request is not null && ShouldReport(request.Method))
+        {
+            if (response.Success)
+                logger.LogInformation(
+                    "Completed local Tray operation {Method} with request id {RequestId}: {State}.",
+                    request.Method, request.Id, response.State);
+            else
+                logger.LogWarning(
+                    "Local Tray operation {Method} with request id {RequestId} failed: {State}.",
+                    request.Method, request.Id, response.State);
         }
 
         await writer.WriteLineAsync(JsonSerializer.Serialize(response).AsMemory(), cancellationToken);
@@ -117,11 +167,17 @@ public sealed class ServiceIpcServer(
             case ServiceIpcProtocol.OpenChatMethod:
                 return await OpenChatAsync(pipe, request, cancellationToken);
 
+            case ServiceIpcProtocol.ListChatsMethod:
+                return await ListChatsAsync(pipe, request, cancellationToken);
+
             case ServiceIpcProtocol.SendChatMessageMethod:
                 return await SendChatMessageAsync(pipe, request, cancellationToken);
 
             case ServiceIpcProtocol.GetChatDeltaMethod:
                 return await GetChatDeltaAsync(pipe, request, cancellationToken);
+
+            case ServiceIpcProtocol.CloseChatMethod:
+                return await CloseChatAsync(pipe, request, cancellationToken);
 
             case ServiceIpcProtocol.RespondToChatActionMethod:
                 return await RespondToChatActionAsync(pipe, request, cancellationToken);
@@ -147,11 +203,28 @@ public sealed class ServiceIpcServer(
         return Success(request.Id, "Opened", conversation);
     }
 
+    private async Task<ServiceIpcResponse> ListChatsAsync(NamedPipeServerStream pipe,
+        ServiceIpcRequest request, CancellationToken cancellationToken)
+    {
+        var supplied = request.Payload?.Deserialize<ChatConversationListRequest>()
+            ?? throw new InvalidDataException("The chat list request is missing.");
+        var normalized = supplied with
+        {
+            Identity = GetCallerIdentity(pipe, supplied.Identity.SessionId),
+            Limit = Math.Clamp(supplied.Limit, 1, 50)
+        };
+        return Success(request.Id, "Listed",
+            await worker.ListChatsAsync(normalized, cancellationToken));
+    }
+
     private async Task<ServiceIpcResponse> SendChatMessageAsync(NamedPipeServerStream pipe,
         ServiceIpcRequest request, CancellationToken cancellationToken)
     {
         var submission = request.Payload?.Deserialize<ChatMessageSubmission>()
             ?? throw new InvalidDataException("The chat message body is missing.");
+        if (submission.MessageText.Length > ChatLimits.MessageCharacters)
+            return new ServiceIpcResponse(request.Id, false, "ChatRejected",
+                Message: $"Chat messages are limited to {ChatLimits.MessageCharacters} characters.");
         var normalized = submission with
         {
             Identity = GetCallerIdentity(pipe, submission.Identity.SessionId)
@@ -186,8 +259,31 @@ public sealed class ServiceIpcServer(
         {
             Identity = GetCallerIdentity(pipe, decision.Identity.SessionId)
         };
-        return Success(request.Id, "Decided",
-            await worker.RespondToChatActionAsync(normalized, cancellationToken));
+        var receipt = await worker.RespondToChatActionAsync(normalized, cancellationToken);
+        if (receipt.Accepted)
+            logger.LogInformation("User {Decision} support action {ActionId}; state is {State}.",
+                decision.Approved ? "approved" : "rejected", decision.ActionId,
+                receipt.Proposal?.State.ToString() ?? "Unknown");
+        else
+            logger.LogWarning("Support action decision {ActionId} was not accepted: {State}.",
+                decision.ActionId, receipt.Proposal?.State.ToString() ?? "Unknown");
+        return Success(request.Id, "Decided", receipt);
+    }
+
+    private async Task<ServiceIpcResponse> CloseChatAsync(NamedPipeServerStream pipe,
+        ServiceIpcRequest request, CancellationToken cancellationToken)
+    {
+        var close = request.Payload?.Deserialize<ChatConversationCloseRequest>()
+            ?? throw new InvalidDataException("The chat close body is missing.");
+        var normalized = close with
+        {
+            Identity = GetCallerIdentity(pipe, close.Identity.SessionId)
+        };
+        var receipt = await worker.CloseChatAsync(normalized, cancellationToken);
+        return receipt.Accepted
+            ? Success(request.Id, "Closed", receipt)
+            : new ServiceIpcResponse(request.Id, false, "ChatCloseRejected",
+                JsonSerializer.SerializeToElement(receipt), receipt.Message);
     }
 
     private async Task<ServiceIpcResponse> DiagnoseIbsngAsync(NamedPipeServerStream pipe,
@@ -270,6 +366,10 @@ public sealed class ServiceIpcServer(
     private static ServiceIpcResponse AccessDenied(string id) =>
         new(id, false, "AdministratorRequired",
             Message: "Administrator approval is required for this action.");
+
+    private static bool ShouldReport(string method) => method is not
+        (ServiceIpcProtocol.StatusMethod or ServiceIpcProtocol.GetChatDeltaMethod
+            or ServiceIpcProtocol.ListChatsMethod);
 
     private static string Normalize(string value, int maximum) =>
         new string(value.Where(character => character is '\r' or '\n' or '\t' || !char.IsControl(character))

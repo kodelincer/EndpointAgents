@@ -1,42 +1,55 @@
-using System.Diagnostics;
-using System.Security.Cryptography;
 using EndpointAgents.Shared.Office;
+using EndpointAgents.Shared.Security;
+using System.Diagnostics;
+using System.Runtime.Versioning;
+using System.Security.Cryptography;
+using System.Security.Principal;
 
 namespace EndpointAgents.Platform.Windows.Office;
 
+/// <summary>Runs one hash-pinned Office BAT from protected service staging.</summary>
+[SupportedOSPlatform("windows")]
 public sealed class OfficeBugfixRunner
 {
-    public async Task<int> RunAsync(string path, string expectedSha256,
+    internal static readonly TimeSpan Timeout = TimeSpan.FromMinutes(8);
+
+    public async Task<OfficeBugfixRunResult> RunAsync(string path,
+        string artifactId, string fileName, string expectedSha256,
         CancellationToken cancellationToken)
     {
-        var fullPath = Path.GetFullPath(path);
-        var root = Path.GetFullPath(OfficeRemediationPaths.StagingRoot)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-            + Path.DirectorySeparatorChar;
-        if (!fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase)
-            || !Path.GetFileName(fullPath).Equals("office-activation-repair.bat",
-                StringComparison.OrdinalIgnoreCase)
-            || !File.Exists(fullPath)
-            || (File.GetAttributes(fullPath) & FileAttributes.ReparsePoint) != 0
-            || !await MatchesHashAsync(fullPath, expectedSha256, cancellationToken))
-            throw new InvalidDataException("The staged Office bugfix is not approved.");
+        using var identity = WindowsIdentity.GetCurrent();
+        if (!new WindowsPrincipal(identity).IsInRole(
+                WindowsBuiltInRole.Administrator))
+            throw new InvalidOperationException(
+                "The EndpointAgents service does not have an administrative token.");
+        if (!await IsApprovedAsync(path, artifactId, fileName, expectedSha256,
+                cancellationToken))
+            throw new InvalidDataException("The staged Office repair is not approved.");
 
-        using var process = new Process { StartInfo = CreateStartInfo(fullPath) };
+        using var process = new Process { StartInfo = CreateStartInfo(path) };
         if (!process.Start())
-            throw new InvalidOperationException("The Office bugfix process did not start.");
-        await process.StandardInput.WriteLineAsync("1");
-        await process.StandardInput.FlushAsync(cancellationToken);
-        process.StandardInput.Close();
+            throw new InvalidOperationException("The Office repair process did not start.");
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        timeout.CancelAfter(Timeout);
         try
         {
-            await process.WaitForExitAsync(cancellationToken);
+            await process.StandardInput.WriteLineAsync("1".AsMemory(), timeout.Token);
+            await process.StandardInput.FlushAsync(timeout.Token);
+            process.StandardInput.Close();
+            await process.WaitForExitAsync(timeout.Token);
+            return new OfficeBugfixRunResult(process.Id, process.ExitCode, false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            return new OfficeBugfixRunResult(process.Id, null, true);
+        }
+        catch
         {
             try { process.Kill(entireProcessTree: true); } catch { }
             throw;
         }
-        return process.ExitCode;
     }
 
     internal static ProcessStartInfo CreateStartInfo(string path)
@@ -56,12 +69,37 @@ public sealed class OfficeBugfixRunner
         return startInfo;
     }
 
-    private static async Task<bool> MatchesHashAsync(string path, string expectedSha256,
-        CancellationToken cancellationToken)
+    internal static async Task<bool> IsApprovedAsync(string path, string artifactId,
+        string fileName, string expectedSha256, CancellationToken cancellationToken)
     {
-        if (expectedSha256.Length != 64 || !expectedSha256.All(Uri.IsHexDigit))
+        if (artifactId.Length is < 1 or > 64
+            || artifactId.Any(character =>
+                !(character is >= 'a' and <= 'z' || char.IsAsciiDigit(character)
+                  || character is '-' or '_' or '.'))
+            || !(artifactId[^1] is >= 'a' and <= 'z'
+                || char.IsAsciiDigit(artifactId[^1]))
+            || !fileName.Equals($"{artifactId}.bat", StringComparison.OrdinalIgnoreCase))
             return false;
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+
+        if (expectedSha256.Length != 64
+            || !expectedSha256.All(Uri.IsHexDigit))
+            return false;
+        var root = Path.GetFullPath(OfficeRemediationPaths.StagingRoot)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        var expected = Path.GetFullPath(Path.Combine(root, artifactId,
+            expectedSha256.ToUpperInvariant(), fileName));
+        var fullPath = Path.GetFullPath(path);
+        var directory = Path.GetDirectoryName(fullPath)!;
+        if (!fullPath.Equals(expected, StringComparison.OrdinalIgnoreCase)
+            || !ProtectedWindowsPath.IsDirectorySecure(
+                OfficeRemediationPaths.StagingRoot, requireProtectedAcl: true)
+            || !ProtectedWindowsPath.IsDirectorySecure(directory,
+                requireProtectedAcl: false)
+            || !ProtectedWindowsPath.IsFileSecure(fullPath))
+            return false;
+
+        await using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read,
             FileShare.Read, 64 * 1024, FileOptions.Asynchronous
             | FileOptions.SequentialScan);
         var actual = Convert.ToHexString(
@@ -69,3 +107,8 @@ public sealed class OfficeBugfixRunner
         return actual.Equals(expectedSha256, StringComparison.OrdinalIgnoreCase);
     }
 }
+
+public sealed record OfficeBugfixRunResult(
+    int ProcessId,
+    int? ExitCode,
+    bool TimedOut);

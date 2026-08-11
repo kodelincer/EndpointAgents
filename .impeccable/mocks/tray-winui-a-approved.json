@@ -1,0 +1,17 @@
+{
+  "approved": false,
+  "mode": "Superseded",
+  "selection": "Superseded by the user's explicit selection of composition C and its multi-conversation workflow.",
+  "commitments": [
+    "Integrated Mica title bar with native caption buttons",
+    "Compact RTL top navigation with Helpdesk, Status/Control, and Reports",
+    "Slim real-status strip instead of dashboard metric cards",
+    "Conversation timeline owns the workspace",
+    "Persistent bottom composer and expandable progress timeline"
+  ],
+  "doNotLiteralize": [
+    "Generated service indicators that do not exist in product contracts",
+    "Attachment controls and date separators not present in current behavior",
+    "Generated copy; production uses existing Persian product copy"
+  ]
+}

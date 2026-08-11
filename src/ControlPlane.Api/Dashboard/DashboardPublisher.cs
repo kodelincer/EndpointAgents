@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using ControlPlane.Api.Chat;
 
 namespace ControlPlane.Api.Dashboard;
 
@@ -11,4 +12,8 @@ public sealed class DashboardPublisher(ActivityStore store, IHubContext<Dashboar
         store.Add(activity);
         await hub.Clients.All.SendAsync(activity.Type, activity, cancellationToken);
     }
+
+    public Task PublishHelpdeskAsync(HelpdeskChange change,
+        CancellationToken cancellationToken = default) =>
+        hub.Clients.All.SendAsync("helpdesk.changed", change, cancellationToken);
 }

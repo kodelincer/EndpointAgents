@@ -23,3 +23,12 @@ Controls use 8-12px radii, defined borders, strong focus rings, and consistent h
 ## Motion
 
 Use 150-220ms ease-out transitions only for state changes, menus, and drawers. Respect `prefers-reduced-motion`.
+
+## EndpointAgents Tray — WinUI 3
+
+- **Character and platform:** A calm, native Fluent operational console that follows system light, dark, and high-contrast modes. Use Mica on supported Windows 11 systems with a transparent root; fall back to a solid system surface when Mica is unavailable. The approved composition is `.impeccable/mocks/tray-winui-c.png`.
+- **Language and navigation:** The root is Persian RTL, while each conversation message derives its own direction. Isolate identifiers, paths, hashes, and timestamps as LTR. A top `NavigationView` exposes Helpdesk, Status & Control, and Reports, with a persistent `InfoBar` status strip.
+- **Helpdesk:** Lead with the conversation using native 12px-radius message bubbles, expandable progress in an `Expander`, and a persistent composer. Enter sends, Shift+Enter inserts a newline, and input is limited to 200 characters. Sensitive actions use native approval dialogs.
+- **Status & Control:** Present related service, connection, capability, activity, and problem facts as a grouped readout; keep service actions separate so operational state is never mistaken for an action.
+- **Reports:** Use labeled filters with 1h, 6h, 24h, and 7d ranges (6h by default). Refresh manually and every five seconds without reloading other sections. Use a virtualized `ListView` with persistent headers, Event ID, and a persistent details area; preserve selection across refreshes. Copy the selected item, or copy all visible results when nothing is selected.
+- **System and accessibility:** Use restrained neutral and blue system colors, native Segoe UI/system typography, 12px radii, accessible names, live announcements, non-color status cues, and system focus visuals. The minimum window size is 760×640. Close and minimize send the app to the notification area; restoring returns to the previous section. Visible WinForms controls are prohibited: WinForms is limited to the `NotifyIcon` adapter.

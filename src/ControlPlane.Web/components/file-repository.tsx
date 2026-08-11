@@ -1,9 +1,9 @@
 "use client";
 
-import { Check, CircleAlert, Copy, Download, FileArchive, RefreshCw, Server } from "lucide-react";
+import { Check, CircleAlert, Copy, Download, FileArchive, LockKeyhole, RefreshCw, Server } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { CONTROL_PLANE_URL, getFileInventory } from "@/lib/control-plane";
-import { fileCompatibilityLabel, fileRequirementLabels } from "@/lib/files";
+import { fileCompatibilityLabel, fileRequirementLabels, fileRequiresEndpointToken } from "@/lib/files";
 import type { EndpointFile, FileInventory } from "@/lib/types";
 
 function formatBytes(value: number) {
@@ -58,7 +58,7 @@ export function FileRepository() {
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} /><div><strong>File inventory is unavailable</strong><span>{error}</span></div><button onClick={() => void refresh()}>Retry</button></div>}
 
     <section className="file-route" aria-label="Endpoint download route">
-      <div className="file-route-icon"><Server size={17} /></div><div><strong>Endpoint download routes</strong><span>GET {CONTROL_PLANE_URL}/api/files/ibsng-dialer · /api/files/office/&#123;artifactId&#125; · /api/files/office/bugfix/&#123;artifactId&#125;</span></div>
+      <div className="file-route-icon"><Server size={17} /></div><div><strong>Endpoint download routes</strong><span>GET {CONTROL_PLANE_URL}/api/files/ibsng-dialer · /api/files/office/&#123;artifactId&#125; · /api/files/office/bugfix/&#123;artifactId&#125; · /api/files/windows/bugfix/&#123;artifactId&#125;</span></div>
       <span className="file-route-status"><span className="online-indicator" />Read-only</span>
     </section>
 
@@ -66,7 +66,7 @@ export function FileRepository() {
 
     {loading ? <div className="file-list" aria-label="Loading files"><div className="file-skeleton" /><div className="file-skeleton" /></div> : files.length === 0 ?
       <section className="file-empty"><span className="empty-icon"><FileArchive size={23} /></span><h2>No endpoint files available</h2>
-        <p>Place the IBSng file, add Microsoft remediation entries to <code>office-artifacts.json</code>, or provide the single approved <code>office-activation-repair.bat</code>. Endpoint downloads are SHA-256 verified.</p>
+        <p>Place the IBSng file, add Microsoft remediation entries to <code>office-artifacts.json</code>, or register approved Office BAT files in <code>office-bugfix-managers.json</code>. Endpoint downloads are SHA-256 verified.</p>
         <code className="repository-path">C:\ProgramData\EndpointAgents\ControlPlane\FileRepository</code>
       </section> :
       <section className="file-list" aria-label="Available endpoint files">{files.map(file => <FileRow key={file.artifactId} file={file} copied={copied} onCopy={() => void copyUrl(file)} />)}</section>}
@@ -78,6 +78,7 @@ export function FileRepository() {
 function FileRow({ file, copied, onCopy }: { file: EndpointFile; copied: boolean; onCopy: () => void }) {
   const url = `${CONTROL_PLANE_URL}${file.downloadPath}`;
   const requirements = fileRequirementLabels(file);
+  const requiresEndpointToken = fileRequiresEndpointToken(file);
   return <article className="file-row">
     <div className="file-row-icon"><FileArchive size={20} /></div><div className="file-row-main"><div className="file-row-title"><strong>{file.displayName ?? file.fileName}</strong><span className="file-chip">{file.category}</span>{file.kind && <span className="file-chip">{file.kind}</span>}<span className="file-available"><span className="online-indicator" />Available</span></div>
       {file.description && <p className="file-description">{file.description}</p>}
@@ -85,6 +86,8 @@ function FileRow({ file, copied, onCopy }: { file: EndpointFile; copied: boolean
       {requirements.length > 0 && <div className="file-tags">{requirements.map(requirement => <span key={requirement}>{requirement}</span>)}</div>}
       <dl><div><dt>Size</dt><dd>{formatBytes(file.sizeBytes)}</dd></div><div><dt>Modified</dt><dd>{formatDate(file.lastModifiedUtc)}</dd></div><div className="file-hash"><dt>SHA-256</dt><dd title={file.sha256}>{file.sha256}</dd></div></dl>
       <code className="file-url">{file.fileName} · {url}</code>
-    </div><div className="file-row-actions"><button className="secondary-button" onClick={onCopy}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? "Copied" : "Copy URL"}</button><a className="primary-button" href={url} download={file.fileName}><Download size={14} />Download</a></div>
+    </div><div className="file-row-actions"><button type="button" className="secondary-button" onClick={onCopy}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? "Copied" : requiresEndpointToken ? "Copy route" : "Copy URL"}</button>{requiresEndpointToken
+      ? <button type="button" className="primary-button" disabled title="Requires an enrolled endpoint device token."><LockKeyhole size={14} />Endpoint only</button>
+      : <a className="primary-button" href={url} download={file.fileName}><Download size={14} />Download</a>}</div>
   </article>;
 }

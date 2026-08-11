@@ -2,6 +2,9 @@ namespace ControlPlane.Api.Hermes;
 
 public static class PersianUserTextPolicy
 {
+    private const int AssistantMessageCharacters = 2_000;
+    private const int ActionReasonCharacters = 800;
+
     public const string InvalidOutputFallback =
         "نتوانستم نتیجه را به‌صورت قابل نمایش آماده کنم. لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.";
 
@@ -9,40 +12,27 @@ public static class PersianUserTextPolicy
         "برای ادامه بررسی و رفع مشکل آفیس، تأیید شما لازم است.";
 
     public static string AssistantMessage(string? value) =>
-        IsSafe(value) ? ToPersianDigits(value!.Trim()) : InvalidOutputFallback;
+        IsSafe(value, AssistantMessageCharacters)
+            ? value!.Trim().Replace("`", string.Empty)
+            : InvalidOutputFallback;
 
     public static string ActionReason(string? value) =>
-        IsSafe(value) ? ToPersianDigits(value!.Trim()) : ActionReasonFallback;
+        IsSafe(value, ActionReasonCharacters) ? value!.Trim() : ActionReasonFallback;
 
-    public static bool IsSafe(string? value)
+    public static bool IsSafe(string? value) => IsSafe(value, AssistantMessageCharacters);
+
+    private static bool IsSafe(string? value, int maximumCharacters)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > 800)
+        if (string.IsNullOrWhiteSpace(value) || value.Length > maximumCharacters)
             return false;
-        if (value.Any(character => character is >= 'A' and <= 'Z'
-                                  or >= 'a' and <= 'z'))
-            return false;
-        if (value.Contains('`')
+        if (value.Contains("```", StringComparison.Ordinal)
             || value.Contains('{') || value.Contains('}')
             || value.Contains('[') || value.Contains(']')
             || value.Contains('"')
             || value.Contains('<') || value.Contains('>')
-            || value.Contains('\\') || value.Contains('/'))
+            || value.Contains('\\') || value.Contains('/')
+            || value.Contains('_'))
             return false;
-        if (value.Count(character => character is '.' or '!' or '?' or '؟') > 3)
-            return false;
-        return value.Any(character =>
-            char.IsLetter(character) && character is >= '\u0600' and <= '\u06ff');
-    }
-
-    private static string ToPersianDigits(string value)
-    {
-        var characters = value.ToCharArray();
-        for (var index = 0; index < characters.Length; index++)
-        {
-            var character = characters[index];
-            if (character is >= '0' and <= '9')
-                characters[index] = (char)('۰' + character - '0');
-        }
-        return new string(characters);
+        return value.Any(char.IsLetter);
     }
 }

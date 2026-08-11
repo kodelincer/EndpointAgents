@@ -23,6 +23,48 @@ public sealed class EndpointEventLogReader
     private static IReadOnlyList<EndpointEventLogEntry> Read(TimeSpan age,
         string? level, string? search, CancellationToken cancellationToken)
     {
+        var cutoff = DateTimeOffset.UtcNow - age;
+        var entries = new List<EndpointEventLogEntry>();
+        AddJournal(entries, EndpointActivityJournal.ServicePath, cancellationToken);
+        AddJournal(entries, EndpointActivityJournal.TrayPath, cancellationToken);
+
+        try
+        {
+            AddWindowsEvents(entries, age, cancellationToken);
+        }
+        catch (EventLogNotFoundException) { }
+        catch (UnauthorizedAccessException) { }
+
+        return entries
+            .Where(item => item.TimestampUtc >= cutoff)
+            .Where(item => string.IsNullOrWhiteSpace(level)
+                || item.Level.Equals(level, StringComparison.OrdinalIgnoreCase))
+            .Where(item => string.IsNullOrWhiteSpace(search)
+                || item.Message.Contains(search, StringComparison.OrdinalIgnoreCase)
+                || item.Source.Contains(search, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(item => new
+            {
+                Second = item.TimestampUtc.ToUnixTimeSeconds(),
+                item.Level,
+                item.Message
+            })
+            .Select(group => group.First())
+            .OrderByDescending(item => item.TimestampUtc)
+            .Take(500)
+            .ToArray();
+    }
+
+    private static void AddJournal(List<EndpointEventLogEntry> entries, string path,
+        CancellationToken cancellationToken)
+    {
+        entries.AddRange(EndpointActivityJournal.Read(path, cancellationToken)
+            .Select(item => new EndpointEventLogEntry(item.TimestampUtc, item.Level,
+                item.Source, item.EventId, item.Message)));
+    }
+
+    private static void AddWindowsEvents(List<EndpointEventLogEntry> entries, TimeSpan age,
+        CancellationToken cancellationToken)
+    {
         var milliseconds = Math.Max(1, (long)age.TotalMilliseconds);
         var queryText = $"*[System[((Provider[@Name='{EndpointAgentProduct.ServiceEventSource}']) " +
             $"or (Provider[@Name='{EndpointAgentProduct.TrayEventSource}'])) and " +
@@ -33,28 +75,20 @@ public sealed class EndpointEventLogReader
             TolerateQueryErrors = true
         };
         using var reader = new EventLogReader(query);
-        var entries = new List<EndpointEventLogEntry>();
         while (entries.Count < 500)
         {
             cancellationToken.ThrowIfCancellationRequested();
             using var item = reader.ReadEvent();
             if (item is null) break;
-            var itemLevel = item.LevelDisplayName ?? MapLevel(item.Level);
+            var itemLevel = MapLevel(item.Level);
             string message;
             try { message = item.FormatDescription() ?? "No message was recorded."; }
             catch { message = "The event message could not be formatted on this computer."; }
-            if (!string.IsNullOrWhiteSpace(level)
-                && !itemLevel.Equals(level, StringComparison.OrdinalIgnoreCase)) continue;
-            if (!string.IsNullOrWhiteSpace(search)
-                && !message.Contains(search, StringComparison.OrdinalIgnoreCase)
-                && !(item.ProviderName?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false))
-                continue;
             var timestamp = item.TimeCreated is { } created
                 ? new DateTimeOffset(created) : DateTimeOffset.UtcNow;
             entries.Add(new EndpointEventLogEntry(timestamp,
                 itemLevel, item.ProviderName ?? "EndpointAgents", item.Id, message));
         }
-        return entries;
     }
 
     private static string MapLevel(byte? level) => level switch
@@ -71,9 +105,22 @@ public static class TrayEventLogger
     public static void Information(string message) => Write(message, EventLogEntryType.Information);
     public static void Warning(string message) => Write(message, EventLogEntryType.Warning);
     public static void Error(string message) => Write(message, EventLogEntryType.Error);
+    public static void Activity(DateTimeOffset timestampUtc, string message) =>
+        Write(message, EventLogEntryType.Information, timestampUtc, writeWindowsEvent: false);
 
-    private static void Write(string message, EventLogEntryType type)
+    private static void Write(string message, EventLogEntryType type,
+        DateTimeOffset? timestampUtc = null, bool writeWindowsEvent = true)
     {
+        var level = type switch
+        {
+            EventLogEntryType.Warning => "Warning",
+            EventLogEntryType.Error => "Error",
+            _ => "Information"
+        };
+        EndpointActivityJournal.TryAppend(EndpointActivityJournal.TrayPath,
+            new EndpointActivityEntry(timestampUtc ?? DateTimeOffset.UtcNow, level,
+                EndpointAgentProduct.TrayEventSource, 0, message));
+        if (!writeWindowsEvent) return;
         try { EventLog.WriteEntry(EndpointAgentProduct.TrayEventSource, message, type); }
         catch { Debug.WriteLine(message); }
     }

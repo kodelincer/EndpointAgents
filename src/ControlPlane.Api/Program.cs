@@ -11,6 +11,7 @@ using ControlPlane.Api.Support;
 using ControlPlane.Api.Tools;
 using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Office;
+using EndpointAgents.Shared.Windows;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -27,6 +28,7 @@ builder.Services.AddSignalR();
 builder.Services.AddAuthentication(AgentAuthentication.Scheme)
     .AddScheme<AuthenticationSchemeOptions, AgentTokenAuthenticationHandler>(
         AgentAuthentication.Scheme, _ => { });
+builder.Services.AddAuthorization();
 builder.Services.AddCors(options => options.AddPolicy("Dashboard", policy =>
     policy.WithOrigins(builder.Configuration.GetSection("Dashboard:AllowedOrigins").Get<string[]>() ?? [])
         .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
@@ -48,6 +50,8 @@ builder.Services.AddOptions<ChatOptions>()
         "Chat:DatabasePath must be an absolute path.")
     .Validate(options => options.RetentionDays is >= 1 and <= 3650,
         "Chat:RetentionDays must be between 1 and 3650.")
+    .Validate(options => options.MaxVisibleItems is >= 1 and <= 200,
+        "Chat:MaxVisibleItems must be between 1 and 200.")
     .ValidateOnStart();
 builder.Services.AddOptions<AgentSecurityOptions>()
     .Bind(builder.Configuration.GetSection("AgentSecurity"))
@@ -62,6 +66,8 @@ builder.Services.AddOptions<HermesOptions>()
         "Hermes:MaxConcurrentRuns must be between 1 and 32.")
     .Validate(options => options.RunTimeoutSeconds is >= 30 and <= 3600,
         "Hermes:RunTimeoutSeconds must be between 30 and 3600.")
+    .Validate(options => options.MaxHistoryMessages is >= 1 and <= 100,
+        "Hermes:MaxHistoryMessages must be between 1 and 100.")
     .Validate(options => !options.Enabled
         || (options.ApiKey.Length >= 32 && options.McpApiKey.Length >= 32),
         "Hermes API and MCP keys must each contain at least 32 characters when Hermes is enabled.")
@@ -88,9 +94,21 @@ builder.Services.AddOptions<FileRepositoryOptions>()
         && Path.GetFileName(options.OfficeManifestFileName) == options.OfficeManifestFileName
         && options.OfficeManifestFileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase),
         "FileRepository:OfficeManifestFileName must be a JSON file name.")
-    .Validate(options => options.OfficeBugfixFileName.Equals(
-            "office-activation-repair.bat", StringComparison.OrdinalIgnoreCase),
-        "FileRepository:OfficeBugfixFileName must be office-activation-repair.bat.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.OfficeBugfixManifestFileName)
+        && Path.GetFileName(options.OfficeBugfixManifestFileName)
+            == options.OfficeBugfixManifestFileName
+        && options.OfficeBugfixManifestFileName.EndsWith(".json",
+            StringComparison.OrdinalIgnoreCase),
+        "FileRepository:OfficeBugfixManifestFileName must be a JSON file name.")
+    .Validate(options => options.WindowsDirectoryName.Equals("Windows",
+            StringComparison.Ordinal),
+        "FileRepository:WindowsDirectoryName must be Windows.")
+    .Validate(options => options.WindowsBugfixFileName.Equals(
+            WindowsRemediationPaths.FileName, StringComparison.Ordinal),
+        "FileRepository:WindowsBugfixFileName must be windowsbugfixer.bat.")
+    .Validate(options => options.WindowsHelloSampleFileName.Equals(
+            WindowsHelloSamplePaths.FileName, StringComparison.Ordinal),
+        "FileRepository:WindowsHelloSampleFileName must be windows-hello-sample.bat.")
     .Validate(options => options.MaxFileSizeBytes is >= 1 and <= 1024L * 1024 * 1024,
         "FileRepository:MaxFileSizeBytes must be between 1 byte and 1 GiB.")
     .ValidateOnStart();
@@ -159,6 +177,7 @@ app.Use(async (context, next) =>
 // production, so its configured origin needs CORS access in every environment.
 app.UseCors("Dashboard");
 app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapHub<AgentHub>("/agent-hub");
 app.MapHub<DashboardHub>("/dashboard-hub");
@@ -237,6 +256,7 @@ app.MapGet("/api/files", async (FileArtifactRepository repository,
     var ibsng = await repository.GetIbsngDialerAsync(cancellationToken);
     var office = await repository.GetOfficeCatalogAsync(cancellationToken);
     var bugfixes = await repository.GetOfficeBugfixCatalogAsync(cancellationToken);
+    var windowsBugfixes = await repository.GetWindowsBugfixCatalogAsync(cancellationToken);
     var files = new List<FileRepositoryItem>();
     if (ibsng is not null)
         files.Add(new FileRepositoryItem("ibsng-dialer", ibsng.FileName, ibsng.SizeBytes,
@@ -244,16 +264,20 @@ app.MapGet("/api/files", async (FileArtifactRepository repository,
             "IBSng", "IBSng dialer", "Approved endpoint dialer", "Executable"));
     files.AddRange(office.Artifacts.Select(ToRepositoryItem));
     files.AddRange(bugfixes.Artifacts.Select(ToBugfixRepositoryItem));
+    files.AddRange(windowsBugfixes.Artifacts.Select(ToWindowsBugfixRepositoryItem));
 
     return Results.Ok(new
     {
         files,
-        issues = office.Issues.Concat(bugfixes.Issues),
+        issues = office.Issues.Concat(bugfixes.Issues).Concat(windowsBugfixes.Issues),
         repository = new
         {
             expectedPattern = repository.IbsngDialerFileName,
             officeManifestPath = repository.OfficeManifestPath,
-            officeBugfixFilePath = repository.OfficeBugfixFilePath,
+            officeBugfixManifestPath = repository.OfficeBugfixManifestPath,
+            windowsBugfixFilePath = repository.WindowsBugfixFilePath,
+            windowsHelloSampleFilePath = repository.WindowsHelloSampleFilePath,
+            protectedAclRequired = repository.ProtectedAclRequired,
             downloadMethod = "GET"
         }
     });
@@ -280,14 +304,14 @@ app.MapGet("/api/files/office/catalog", async (FileArtifactRepository repository
     var catalog = await repository.GetOfficeCatalogAsync(cancellationToken);
     return Results.Ok(new OfficeRemediationCatalog(
         catalog.Artifacts.Select(item => item.Descriptor).ToArray()));
-});
+}).RequireAuthorization();
 app.MapGet("/api/files/office/bugfix/catalog", async (
     FileArtifactRepository repository, CancellationToken cancellationToken) =>
 {
     var catalog = await repository.GetOfficeBugfixCatalogAsync(cancellationToken);
     return Results.Ok(new OfficeBugfixCatalog(
         catalog.Artifacts.Select(item => item.Descriptor).ToArray()));
-});
+}).RequireAuthorization();
 app.MapGet("/api/files/office/bugfix/{artifactId}", async (string artifactId,
     HttpContext context, FileArtifactRepository repository,
     CancellationToken cancellationToken) =>
@@ -305,7 +329,31 @@ app.MapGet("/api/files/office/bugfix/{artifactId}", async (string artifactId,
     return Results.File(artifact.File.FullPath, "application/octet-stream",
         artifact.File.FileName, artifact.File.LastModifiedUtc,
         enableRangeProcessing: true);
-});
+}).RequireAuthorization();
+app.MapGet("/api/files/windows/bugfix/catalog", async (
+    FileArtifactRepository repository, CancellationToken cancellationToken) =>
+{
+    var catalog = await repository.GetWindowsBugfixCatalogAsync(cancellationToken);
+    return Results.Ok(new WindowsBugfixCatalog(
+        catalog.Artifacts.Select(item => item.Descriptor).ToArray()));
+}).RequireAuthorization();
+app.MapGet("/api/files/windows/bugfix/{artifactId}", async (string artifactId,
+    HttpContext context, FileArtifactRepository repository,
+    CancellationToken cancellationToken) =>
+{
+    var artifact = await repository.GetWindowsBugfixArtifactAsync(
+        artifactId, cancellationToken);
+    if (artifact is null)
+        return Results.NotFound(new
+        {
+            message = "The approved Windows artifact is not available."
+        });
+    context.Response.Headers["X-Artifact-Sha256"] = artifact.File.Sha256;
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    return Results.File(artifact.File.FullPath, "application/octet-stream",
+        artifact.File.FileName, artifact.File.LastModifiedUtc,
+        enableRangeProcessing: true);
+}).RequireAuthorization();
 app.MapGet("/api/files/office/{artifactId}/metadata", async (string artifactId,
     FileArtifactRepository repository, CancellationToken cancellationToken) =>
 {
@@ -313,7 +361,7 @@ app.MapGet("/api/files/office/{artifactId}/metadata", async (string artifactId,
     return artifact is null
         ? Results.NotFound(new { message = "The approved Office artifact is not available." })
         : Results.Ok(ToRepositoryItem(artifact));
-});
+}).RequireAuthorization();
 app.MapGet("/api/files/office/{artifactId}", async (string artifactId, HttpContext context,
     FileArtifactRepository repository, CancellationToken cancellationToken) =>
 {
@@ -325,11 +373,85 @@ app.MapGet("/api/files/office/{artifactId}", async (string artifactId, HttpConte
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     return Results.File(artifact.File.FullPath, "application/octet-stream",
         artifact.File.FileName, artifact.File.LastModifiedUtc, enableRangeProcessing: true);
-});
+}).RequireAuthorization();
 app.MapGet("/api/activity", (int? limit, string? agentId, ActivityStore store) =>
     Results.Ok(store.Get(limit ?? 100, agentId)));
 app.MapGet("/api/support-requests", (int? limit, string? agentId,
     SupportRequestStore store) => Results.Ok(store.Get(limit ?? 100, agentId)));
+app.MapGet("/api/helpdesk/conversations", async (int? limit, string? status, string? query,
+    ChatStore store, AgentRegistry registry, CancellationToken cancellationToken) =>
+{
+    var conversations = await store.GetHelpdeskConversationsAsync(limit ?? 200,
+        status, query, cancellationToken);
+    var online = registry.GetOnlineAgents().ToDictionary(item => item.AgentId,
+        StringComparer.OrdinalIgnoreCase);
+    return Results.Ok(conversations.Select(item => EnrichHelpdesk(item, online)).ToArray());
+});
+app.MapGet("/api/helpdesk/conversations/{conversationId}", async (string conversationId,
+    long? afterSequence, ChatStore store, AgentRegistry registry,
+    CancellationToken cancellationToken) =>
+{
+    var detail = await store.GetHelpdeskConversationAsync(conversationId,
+        afterSequence ?? 0, cancellationToken);
+    if (detail is null) return Results.NotFound();
+    var online = registry.GetOnlineAgents().ToDictionary(item => item.AgentId,
+        StringComparer.OrdinalIgnoreCase);
+    return Results.Ok(detail with { Conversation = EnrichHelpdesk(detail.Conversation, online) });
+});
+app.MapPost("/api/helpdesk/conversations/{conversationId}/messages", async (
+    string conversationId, HelpdeskOperatorMessageRequest request, ChatStore store,
+    DashboardPublisher dashboard, CancellationToken cancellationToken) =>
+{
+    var receipt = await store.SubmitOperatorMessageAsync(conversationId, request,
+        cancellationToken);
+    if (!receipt.Accepted) return Results.BadRequest(receipt);
+    await dashboard.PublishHelpdeskAsync(new HelpdeskChange(conversationId,
+        "operator-message", receipt.Sequence), cancellationToken);
+    return Results.Ok(receipt);
+});
+app.MapMethods("/api/helpdesk/conversations/{conversationId}", ["PATCH"], async (
+    string conversationId, HelpdeskConversationPatch patch, ChatStore store,
+    DashboardPublisher dashboard, CancellationToken cancellationToken) =>
+{
+    if (!await store.PatchHelpdeskConversationAsync(conversationId, patch, cancellationToken))
+        return Results.BadRequest(new { message = "Conversation or requested state is invalid." });
+    await dashboard.PublishHelpdeskAsync(new HelpdeskChange(conversationId, "state"),
+        cancellationToken);
+    return Results.NoContent();
+});
+app.MapPost("/api/helpdesk/conversations/{conversationId}/diagnostics", async (
+    string conversationId, HelpdeskDiagnosticRequest diagnostic, ChatStore store,
+    AgentRegistry registry, CommandCatalog catalog, ControlPlaneRuntimeState runtime,
+    DashboardPublisher dashboard, CancellationToken cancellationToken) =>
+{
+    var readOnlyDiagnostics = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "endpoint.get_info", "system.windows_activation_status",
+        "software.office_inventory", "software.office_activation_status",
+        "software.office_runtime_status",
+        "network.ibsng_diagnose"
+    };
+    if (!readOnlyDiagnostics.Contains(diagnostic.Method) || !catalog.Contains(diagnostic.Method))
+        return Results.BadRequest(new { message = "Only approved read-only diagnostics are available here." });
+    if (SensitiveCommandParameterGuard.ContainsSensitiveData(diagnostic.Parameters))
+        return Results.BadRequest(new { message = "Diagnostic parameters cannot contain credentials." });
+    if (runtime.IsMaintenanceMode)
+        return Results.Json(new { message = "Diagnostics are paused during maintenance." },
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+
+    var conversation = await store.GetHelpdeskConversationAsync(conversationId,
+        long.MaxValue, cancellationToken);
+    if (conversation is null) return Results.NotFound();
+    var request = RpcRequest.Create($"helpdesk-{Guid.NewGuid():N}", diagnostic.Method,
+        diagnostic.Parameters);
+    var response = await registry.SendCommandAsync(conversation.Conversation.AgentId,
+        request, cancellationToken);
+    await store.AppendDiagnosticTraceAsync(conversationId,
+        conversation.Conversation.AgentId, request, response, cancellationToken);
+    await dashboard.PublishHelpdeskAsync(new HelpdeskChange(conversationId, "diagnostic"),
+        cancellationToken);
+    return response.Error?.Code == 404 ? Results.NotFound(response) : Results.Ok(response);
+});
 app.MapGet("/api/system/status", (ControlPlaneRuntimeState runtime, AgentRegistry registry,
     ActivityStore activity) =>
 {
@@ -358,6 +480,9 @@ app.MapPost("/api/agents/{agentId}/commands", async (string agentId, RpcRequest 
 {
     if (string.IsNullOrWhiteSpace(request.Id) || string.IsNullOrWhiteSpace(request.Method) || request.JsonRpc != "2.0")
         return Results.BadRequest(RpcResponse.Failure(request.Id ?? string.Empty, -32600, "Invalid JSON-RPC request."));
+    if (SensitiveCommandParameterGuard.ContainsReservedActionAuthorization(request.Params))
+        return Results.BadRequest(RpcResponse.Failure(request.Id, 400,
+            "Reserved action-authorization parameters are not accepted by this command endpoint."));
     if (SensitiveCommandParameterGuard.ContainsSensitiveData(request.Params))
         return Results.BadRequest(RpcResponse.Failure(request.Id, 400,
             "Passwords, tokens, and other credentials are not accepted by this command channel."));
@@ -396,6 +521,17 @@ static FileRepositoryItem ToRepositoryItem(OfficeFileArtifact artifact) => new(
     artifact.Descriptor.RequiresOfficeAppsClosed,
     artifact.Descriptor.RequiresRestart);
 
+static HelpdeskConversationSummary EnrichHelpdesk(HelpdeskConversationSummary item,
+    IReadOnlyDictionary<string, OnlineAgentDto> online) =>
+    online.TryGetValue(item.AgentId, out var agent)
+        ? item with
+        {
+            MachineName = agent.MachineName,
+            Version = agent.Version,
+            IsOnline = true
+        }
+        : item;
+
 static FileRepositoryItem ToBugfixRepositoryItem(OfficeBugfixFileArtifact artifact) => new(
     artifact.Descriptor.ArtifactId,
     artifact.File.FileName,
@@ -414,5 +550,19 @@ static FileRepositoryItem ToBugfixRepositoryItem(OfficeBugfixFileArtifact artifa
     null,
     null,
     true);
+
+static FileRepositoryItem ToWindowsBugfixRepositoryItem(
+    WindowsBugfixFileArtifact artifact) => new(
+    artifact.Descriptor.ArtifactId,
+    artifact.File.FileName,
+    artifact.File.SizeBytes,
+    artifact.File.LastModifiedUtc,
+    artifact.File.Sha256,
+    artifact.Descriptor.DownloadPath,
+    "Windows",
+    artifact.Descriptor.DisplayName,
+    artifact.Descriptor.Description,
+    "AdministratorApprovedSha256",
+    RequiresInteractiveUser: true);
 
 public partial class Program;

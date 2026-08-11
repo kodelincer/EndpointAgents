@@ -2,11 +2,12 @@ using EndpointAgents.Core.Commands;
 using EndpointAgents.Platform.Windows.Diagnostics;
 using EndpointAgents.Platform.Windows.Ibsng;
 using EndpointAgents.Shared.LocalIpc;
+using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Rpc;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
 using System.Runtime.Versioning;
+using System.Security.Principal;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -21,12 +22,11 @@ namespace EndpointAgents.Platform.Windows.Office;
 public sealed partial class OfficeRemediationCommandHandler(
     OfficeActivationService activation,
     IOfficeUserSessionSource sessionSource,
+    OfficeRuntimeInspector runtimeInspector,
     ITrayCommandClient trayClient,
     OfficeArtifactDownloader downloader,
     ILogger<OfficeRemediationCommandHandler> logger) : IEndpointCommandHandler
 {
-    private static readonly string[] OfficeProcessNames =
-        ["WINWORD", "EXCEL", "POWERPNT", "OUTLOOK", "ONENOTE", "MSACCESS", "MSPUB"];
     public string Method => "software.office_remediation_run";
 
     public async Task<RpcResponse> HandleAsync(RpcRequest request,
@@ -36,7 +36,15 @@ public sealed partial class OfficeRemediationCommandHandler(
             return RpcResponse.Failure(request.Id, 400,
                 "params.artifactId must be an approved artifact ID.");
 
-        var userSid = ParseUserSid(request.Params);
+        if (!TryParseUserSid(request.Params, out var userSid))
+            return RpcResponse.Failure(request.Id, 400,
+                "params.userSid is invalid.");
+        var hasChatApproval = ChatActionApproval.HasMarker(request.Params);
+        var chatApproved = ChatActionApproval.MatchesRequest(
+            request.Params, request.Id);
+        if (hasChatApproval && !chatApproved)
+            return RpcResponse.Failure(request.Id, 400,
+                "The chat approval does not match this action.");
         var status = await activation.GetStatusAsync(
             request.Id, cancellationToken, userSid);
         var descriptor = status.ApprovedArtifacts.FirstOrDefault(item =>
@@ -67,14 +75,25 @@ public sealed partial class OfficeRemediationCommandHandler(
 
         if (Path.GetFileName(descriptor.FileName) != descriptor.FileName)
             return RpcResponse.Failure(request.Id, 412, "The catalog artifact filename is invalid.");
+        if (chatApproved && !ChatActionApproval.MatchesArtifact(request.Params,
+                descriptor.FileName, descriptor.Sha256))
+            return RpcResponse.Failure(request.Id, 412,
+                "The approved Office remediation revision has changed; approve the new proposal before running it.");
 
         if (descriptor.RequiresOfficeAppsClosed)
         {
-            var running = GetRunningOfficeProcesses();
-            if (running.Length > 0)
+            var runtimeSession = sessionSource.GetActiveSession(userSid);
+            if (runtimeSession is null)
+                return RpcResponse.Failure(request.Id, 404,
+                    "No interactive Windows user is available to run the remediation.");
+            var runtime = runtimeInspector.Inspect(runtimeSession.SessionId);
+            if (!runtime.InspectionSucceeded)
+                return RpcResponse.Failure(request.Id, 500,
+                    "Office application state could not be inspected.");
+            if (runtime.OfficeApplicationsOpen)
                 return RpcResponse.Failure(request.Id, 409,
                     "Close the listed Office applications before running this remediation.",
-                    new { RunningProcesses = running });
+                    new { runtime.RunningApplications });
         }
 
         var session = sessionSource.GetActiveSession(userSid);
@@ -90,7 +109,8 @@ public sealed partial class OfficeRemediationCommandHandler(
 
             var launch = new OfficeRemediationLaunchRequest(descriptor.ArtifactId,
                 descriptor.DisplayName, descriptor.Description, download.FilePath,
-                descriptor.Sha256, OfficeArtifactTrustPolicies.MicrosoftSigned);
+                descriptor.Sha256, OfficeArtifactTrustPolicies.MicrosoftSigned,
+                chatApproved);
             var trayRequest = new TrayIpcRequest(request.Id,
                 TrayIpcProtocol.OfficeRemediationLaunchMethod, string.Empty, string.Empty, null,
                 OfficeRemediation: launch);
@@ -143,33 +163,31 @@ public sealed partial class OfficeRemediationCommandHandler(
         return ArtifactIdPattern().IsMatch(artifactId);
     }
 
-    internal static string? ParseUserSid(JsonElement? parameters)
+    internal static bool TryParseUserSid(JsonElement? parameters,
+        out string? userSid)
     {
+        userSid = null;
         if (parameters is not { ValueKind: JsonValueKind.Object } element
-            || !element.TryGetProperty("userSid", out var value)
-            || value.ValueKind != JsonValueKind.String)
-            return null;
-        var userSid = value.GetString()?.Trim();
-        return userSid is { Length: <= 184 }
-               && userSid.StartsWith("S-1-", StringComparison.Ordinal)
-            ? userSid
-            : null;
-    }
-
-    private static string[] GetRunningOfficeProcesses() => OfficeProcessNames
-        .Where(IsProcessRunning)
-        .ToArray();
-
-    private static bool IsProcessRunning(string name)
-    {
-        var processes = Process.GetProcessesByName(name);
+            || !element.TryGetProperty("userSid", out var value))
+            return true;
+        if (value.ValueKind != JsonValueKind.String)
+            return false;
+        userSid = value.GetString()?.Trim();
+        if (userSid is not { Length: <= 184 }
+            || !userSid.StartsWith("S-1-", StringComparison.Ordinal))
+        {
+            userSid = null;
+            return false;
+        }
         try
         {
-            return processes.Length > 0;
+            _ = new SecurityIdentifier(userSid);
+            return true;
         }
-        finally
+        catch (ArgumentException)
         {
-            foreach (var process in processes) process.Dispose();
+            userSid = null;
+            return false;
         }
     }
 

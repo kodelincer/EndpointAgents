@@ -14,6 +14,8 @@ public sealed class TrayIpcServer
     private readonly IbsngDialerLauncher _launcher = new();
     private readonly OfficeVNextActivationProbe _officeActivation = new();
     private readonly OfficeRemediationLauncher _officeRemediation = new();
+    private readonly WindowsRemediationConsent _windowsRemediation = new();
+    private readonly WindowsHelloLauncher _windowsHello = new();
 
     public TrayIpcServer(int sessionId, string pipePrefix = TrayIpcProtocol.DefaultPipePrefix)
     {
@@ -65,11 +67,14 @@ public sealed class TrayIpcServer
         using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
         using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
         TrayIpcResponse response;
+        TrayIpcRequest? request = null;
         try
         {
             var line = await ReadBoundedLineAsync(reader, cancellationToken);
-            var request = JsonSerializer.Deserialize<TrayIpcRequest>(line)
+            request = JsonSerializer.Deserialize<TrayIpcRequest>(line)
                 ?? throw new InvalidDataException("The Tray IPC request was empty.");
+            TrayEventLogger.Information(
+                $"درخواست محلی '{request.Method}' با شناسه {request.Id} دریافت شد.");
             response = request.Method switch
             {
                 TrayIpcProtocol.OfficeActivationStatusMethod =>
@@ -78,13 +83,27 @@ public sealed class TrayIpcServer
                     await _officeRemediation.LaunchAsync(request, cancellationToken),
                 TrayIpcProtocol.OfficeBugfixConsentMethod =>
                     _officeRemediation.ConfirmBugfix(request),
+                TrayIpcProtocol.WindowsBugfixConsentMethod =>
+                    _windowsRemediation.Confirm(request),
+                TrayIpcProtocol.WindowsHelloLaunchMethod =>
+                    await _windowsHello.LaunchAsync(request, cancellationToken),
                 _ => await _launcher.LaunchAsync(request, cancellationToken)
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            TrayEventLogger.Error("اجرای درخواست محلی برنامه ناحیه اعلان ناموفق بود: " +
+                $"{ex.GetType().Name}: {ex.Message}");
             response = new TrayIpcResponse(string.Empty, false, "InvalidRequest",
                 Message: ex.GetType().Name);
+        }
+
+        if (request is not null)
+        {
+            var message = $"درخواست محلی '{request.Method}' با شناسه {request.Id} " +
+                $"با وضعیت {response.State} پایان یافت.";
+            if (response.Success) TrayEventLogger.Information(message);
+            else TrayEventLogger.Warning(message);
         }
 
         await writer.WriteLineAsync(JsonSerializer.Serialize(response).AsMemory(), cancellationToken);
