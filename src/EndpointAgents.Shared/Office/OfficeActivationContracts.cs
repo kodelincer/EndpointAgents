@@ -24,6 +24,15 @@ public static class OfficeActivationMechanisms
     public const string Ospp = "OSPP";
 }
 
+public static class OfficeLicenseTypes
+{
+    public const string VolumeKms = "Volume|KMS";
+    public const string VolumeMak = "Volume|MAK";
+    public const string Retail = "Retail";
+    public const string Volume = "Volume";
+    public const string Other = "Other";
+}
+
 public static class OfficeActivationActions
 {
     public const string NoAction = "NoAction";

@@ -1,9 +1,15 @@
+using EndpointAgents.Core.Commands;
 using EndpointAgents.Platform.Windows;
+using EndpointAgents.Platform.Windows.Ibsng;
 using EndpointAgents.Platform.Windows.Office;
+using EndpointAgents.Platform.Windows.UserSessions;
 using EndpointAgents.Shared.LocalIpc;
 using EndpointAgents.Shared.Office;
+using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Security;
 using EndpointAgents.Tray;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Win32;
 using System.Diagnostics;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
@@ -165,6 +171,38 @@ public sealed class OfficeRemediationTests
         Assert.Empty(startInfo.UserName);
         Assert.Null(startInfo.Password);
         Assert.True(OfficeBugfixRunner.Timeout < TimeSpan.FromMinutes(10));
+    }
+
+    [Fact]
+    public async Task BugfixHandlerRefusesToRunWhenKmsIsAlreadyHealthy()
+    {
+        const string artifactId = "office-activation-repair";
+        var artifact = new OfficeBugfixArtifactDescriptor(artifactId,
+            "Office activation repair", "Approved KMS repair",
+            $"{artifactId}.bat", new string('A', 64), "16.0", "17.0",
+            $"/api/files/office/bugfix/{artifactId}");
+        var probe = new CountingVolumeProbe(new OfficeActivationProbeResult(
+            OfficeActivationMechanisms.Ospp, true, true,
+            [new OfficeActivationProduct("Office LTSC",
+                OfficeLicenseTypes.VolumeKms, OfficeActivationStates.Licensed,
+                null, OfficeActivationMechanisms.Ospp)]));
+        var handler = new OfficeBugfixCommandHandler(
+            new OfficeInventoryCollector(new InstalledOfficeSource()),
+            new FakeBugfixCatalog(artifact), new FakeOfficeSessionSource(),
+            new OfficeRuntimeInspector(), null!, probe, null!, null!,
+            NullLogger<OfficeBugfixCommandHandler>.Instance);
+        var request = RpcRequest.Create("healthy-kms",
+            "software.office_bugfix_run",
+            JsonSerializer.SerializeToElement(new { artifactId }));
+
+        var response = await handler.HandleAsync(request,
+            new CommandExecutionContext("agent", null, null, DateTimeOffset.UtcNow),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(409, response.Error?.Code);
+        Assert.Contains("already has healthy KMS activation",
+            response.Error?.Message);
+        Assert.Equal(1, probe.Calls);
     }
 
     [Fact]
@@ -331,5 +369,48 @@ public sealed class OfficeRemediationTests
     {
         public Task<string?> GetBearerTokenAsync(CancellationToken cancellationToken) =>
             Task.FromResult(token);
+    }
+
+    private sealed class InstalledOfficeSource : IOfficeInstallationSource
+    {
+        public OfficeClickToRunInstallation? ReadClickToRun(RegistryView view) =>
+            view == RegistryView.Registry64
+                ? new OfficeClickToRunInstallation("Registry64", "16.0", "x64",
+                    null, null, "ProPlus2024Volume", @"C:\Office")
+                : null;
+
+        public IReadOnlyList<OfficeInstalledProduct> ReadInstalledProducts(
+            RegistryView view) => [];
+
+        public IReadOnlyList<OfficeInstalledApplication> ReadInstalledApplications(
+            RegistryView view, IReadOnlyCollection<string> installationPaths) => [];
+    }
+
+    private sealed class FakeBugfixCatalog(OfficeBugfixArtifactDescriptor artifact)
+        : IOfficeBugfixCatalogClient
+    {
+        public Task<IReadOnlyList<OfficeBugfixArtifactDescriptor>> GetArtifactsAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<OfficeBugfixArtifactDescriptor>>([artifact]);
+    }
+
+    private sealed class FakeOfficeSessionSource : IOfficeUserSessionSource
+    {
+        public InteractiveUserSession GetActiveSession(string? userSid = null) =>
+            new(int.MaxValue, "test-user", "TEST",
+                "S-1-5-21-1-2-3-1001", @"C:\Users\test-user\Desktop");
+    }
+
+    private sealed class CountingVolumeProbe(OfficeActivationProbeResult result)
+        : IOfficeVolumeActivationProbe
+    {
+        public int Calls { get; private set; }
+
+        public Task<OfficeActivationProbeResult> ProbeAsync(OfficeInventory inventory,
+            CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromResult(result);
+        }
     }
 }

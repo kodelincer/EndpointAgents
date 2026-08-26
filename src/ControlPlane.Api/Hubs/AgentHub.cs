@@ -26,7 +26,6 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
         {
             "software.office_remediation_run",
             "software.office_bugfix_run",
-            "system.windows_activation_bugfix_run",
             "system.windows_hello_sample_run"
         };
 

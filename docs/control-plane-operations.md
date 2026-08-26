@@ -41,6 +41,21 @@ Run the API from the repository root:
 dotnet run --project .\src\ControlPlane.Api\ControlPlane.Api.csproj --launch-profile http
 ```
 
+The Development profile reads artifacts directly from
+`deploy\control-plane\FileRepository` and does not require protected ACLs. To test a
+Windows repair BAT without administrator rights, replace only the fixed development
+file from the repository root:
+
+```powershell
+Copy-Item -LiteralPath 'C:\path\to\reviewed-test.bat' `
+  -Destination '.\deploy\control-plane\FileRepository\Windows\windowsbugfixer.bat'
+```
+
+The development endpoint stages the downloaded BAT in its local build directory and
+runs it with the current user's token. Exact path, fixed artifact ID, and SHA-256 checks
+still apply. Production ignores these development relaxations and continues to require
+the protected ProgramData repository, protected endpoint staging, and LocalSystem.
+
 Run the frontend in a second terminal:
 
 ```powershell

@@ -19,6 +19,7 @@ public sealed class OfficeBugfixCommandHandler(
     IOfficeUserSessionSource sessionSource,
     OfficeRuntimeInspector runtimeInspector,
     ITrayCommandClient trayClient,
+    IOfficeVolumeActivationProbe volumeProbe,
     OfficeArtifactDownloader downloader,
     OfficeBugfixRunner runner,
     ILogger<OfficeBugfixCommandHandler> logger) : IEndpointCommandHandler
@@ -112,6 +113,12 @@ public sealed class OfficeBugfixCommandHandler(
                 "Close the listed Office applications before running this repair.",
                 new { runtime.RunningApplications });
 
+        var activationBefore = await volumeProbe.ProbeAsync(snapshot.Inventory,
+            cancellationToken);
+        if (OfficeActivationRecommendation.IsHealthyKms(activationBefore))
+            return RpcResponse.Failure(request.Id, 409,
+                "Office already has healthy KMS activation; the repair was not run.");
+
         try
         {
             if (!authorized)
@@ -149,6 +156,21 @@ public sealed class OfficeBugfixCommandHandler(
                     "The approved Office repair returned a failure exit code.",
                     new { execution.ExitCode });
 
+            var activationAfter = await volumeProbe.ProbeAsync(snapshot.Inventory,
+                cancellationToken);
+            if (!OfficeActivationRecommendation.IsHealthyKms(activationAfter))
+                return RpcResponse.Failure(request.Id, 409,
+                    "The approved Office repair completed, but Office did not report healthy KMS activation.",
+                    new
+                    {
+                        execution.ProcessId,
+                        execution.ExitCode,
+                        activationAfter.ToolAvailable,
+                        activationAfter.Succeeded,
+                        activationAfter.Products,
+                        activationAfter.FailureCode
+                    });
+
             var warnings = snapshot.Issues.Select(issue => new DiagnosticWarning(
                 issue.Source, issue.Message, issue.Exception)).ToArray();
             return RpcResponse.Success(request.Id, DiagnosticResponse.Create(context, new
@@ -161,6 +183,7 @@ public sealed class OfficeBugfixCommandHandler(
                 download.Downloaded,
                 execution.ProcessId,
                 execution.ExitCode,
+                KmsVerified = true,
                 session.SessionId,
                 session.UserName
             }, warnings));

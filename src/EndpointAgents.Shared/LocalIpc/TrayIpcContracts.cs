@@ -12,7 +12,6 @@ public static class TrayIpcProtocol
     public const string ReconcileIbsngMethod = "ibsng.reconcile";
     public const string InspectIbsngMethod = "ibsng.inspect";
     public const string ReadIbsngUiMethod = "ibsng.read_ui_snapshot";
-    public const string OfficeActivationStatusMethod = "office.activation_status";
     public const string OfficeRemediationLaunchMethod = "office.remediation_launch";
     public const string OfficeBugfixConsentMethod = "office.bugfix_consent";
     public const string WindowsBugfixConsentMethod = "windows.bugfix_consent";

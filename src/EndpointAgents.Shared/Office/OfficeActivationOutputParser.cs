@@ -99,23 +99,30 @@ public static partial class OfficeActivationOutputParser
         var state = First(values, "licensestatus");
         if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(state))
             return;
+        var normalizedState = NormalizeState(state);
 
         products.Add(new OfficeActivationProduct(
             string.IsNullOrWhiteSpace(name) ? "Volume Office" : name,
             NormalizeLicenseType(description),
-            NormalizeState(state),
-            ExtractErrorCode(First(values, "errorcode")),
+            normalizedState,
+            normalizedState == OfficeActivationStates.Licensed
+                ? null
+                : ExtractErrorCode(First(values, "errorcode")),
             OfficeActivationMechanisms.Ospp));
     }
 
     private static string? NormalizeLicenseType(string? description)
     {
         if (string.IsNullOrWhiteSpace(description)) return null;
-        if (description.Contains("KMSCLIENT", StringComparison.OrdinalIgnoreCase)) return "Volume|KMS";
-        if (description.Contains("MAK", StringComparison.OrdinalIgnoreCase)) return "Volume|MAK";
-        if (description.Contains("RETAIL", StringComparison.OrdinalIgnoreCase)) return "Retail";
-        if (description.Contains("VOLUME", StringComparison.OrdinalIgnoreCase)) return "Volume";
-        return "Other";
+        if (description.Contains("KMSCLIENT", StringComparison.OrdinalIgnoreCase))
+            return OfficeLicenseTypes.VolumeKms;
+        if (description.Contains("MAK", StringComparison.OrdinalIgnoreCase))
+            return OfficeLicenseTypes.VolumeMak;
+        if (description.Contains("RETAIL", StringComparison.OrdinalIgnoreCase))
+            return OfficeLicenseTypes.Retail;
+        if (description.Contains("VOLUME", StringComparison.OrdinalIgnoreCase))
+            return OfficeLicenseTypes.Volume;
+        return OfficeLicenseTypes.Other;
     }
 
     private static string? ExtractErrorCode(string? value) =>

@@ -1,6 +1,7 @@
 using EndpointAgents.Core.Commands;
 using EndpointAgents.Platform.Windows.Diagnostics;
 using EndpointAgents.Platform.Windows.UserSessions;
+using EndpointAgents.Platform.Windows.Windows;
 using EndpointAgents.Shared.Rpc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -122,12 +123,14 @@ public sealed class EndpointInfoCommandHandler : IEndpointCommandHandler
     {
         using var key = Registry.LocalMachine.OpenSubKey(
             @"SOFTWARE\Microsoft\Windows NT\CurrentVersion");
+        var build = key?.GetValue("CurrentBuildNumber")?.ToString();
 
         return new
         {
-            ProductName = key?.GetValue("ProductName")?.ToString(),
+            ProductName = WindowsVersionInfo.NormalizeProductName(
+                key?.GetValue("ProductName")?.ToString(), build),
             DisplayVersion = key?.GetValue("DisplayVersion")?.ToString(),
-            CurrentBuild = key?.GetValue("CurrentBuildNumber")?.ToString(),
+            CurrentBuild = build,
             UpdateBuildRevision = key?.GetValue("UBR"),
             InstallationType = key?.GetValue("InstallationType")?.ToString()
         };

@@ -16,7 +16,7 @@ public sealed class CommandCatalog
         new("system.windows_activation_status", "Check Windows activation",
             "Collect sanitized Windows version, edition, license, and activation state.", null),
         new("system.windows_activation_bugfix_run", "Run Windows activation repair",
-            "Download the approved windowsbugfixer.bat, verify its SHA-256, obtain local consent, and run it without arguments.",
+            "Download the approved windowsbugfixer.bat, verify its SHA-256, and run it without arguments. Automatic chat execution is request-scoped; direct operator dispatch obtains local consent.",
             new { artifactId = "windows-activation-repair" }),
         new("system.windows_hello_sample_run", "Run Windows Hello terminal demo",
             "Copy the approved harmless Hello batch file to the signed-in user's desktop and open it visibly without arguments or elevation.",

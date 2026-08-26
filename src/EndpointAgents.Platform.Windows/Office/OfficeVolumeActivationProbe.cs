@@ -47,6 +47,9 @@ public sealed class OfficeVolumeActivationProbe : IOfficeVolumeActivationProbe
     {
         var roots = inventory.ClickToRun.Select(item => item.InstallationPath)
             .Where(path => !string.IsNullOrWhiteSpace(path)).Cast<string>()
+            .Concat(inventory.Applications.Select(item =>
+                    Path.GetDirectoryName(item.ExecutablePath))
+                .Where(path => !string.IsNullOrWhiteSpace(path)).Cast<string>())
             .Concat(new[]
             {
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
@@ -59,6 +62,7 @@ public sealed class OfficeVolumeActivationProbe : IOfficeVolumeActivationProbe
 
         return roots.SelectMany(root => new[]
             {
+                Path.Combine(root, "OSPP.VBS"),
                 Path.Combine(root, "root", "Office16", "OSPP.VBS"),
                 Path.Combine(root, "Office16", "OSPP.VBS"),
                 Path.Combine(root, "Office15", "OSPP.VBS"),

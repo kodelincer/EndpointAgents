@@ -280,6 +280,13 @@ public sealed class ChatStoreTests : IClassFixture<ControlPlaneApiFactory>
             TestCancellation);
         Assert.Contains("not allow-listed", rejectedIbsng, StringComparison.Ordinal);
 
+        var rejectedWindowsProposal = await EndpointSupportTools.ProposeEndpointAction(
+            _store, new CommandCatalog(), _files, lease.Capability,
+            "system.windows_activation_bugfix_run", "Repair Windows activation",
+            new EndpointActionParameters("windows-activation-repair"), TestCancellation);
+        Assert.Contains("not allow-listed", rejectedWindowsProposal,
+            StringComparison.Ordinal);
+
         var parameters = JsonSerializer.SerializeToElement(
             new { artifactId = "approved-fix" });
         var proposal = await _store.CreateActionProposalAsync(lease.Capability,

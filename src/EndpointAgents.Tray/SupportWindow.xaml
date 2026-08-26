@@ -375,7 +375,7 @@
                                                       Padding="12,9" BorderThickness="1" CornerRadius="6"
                                                       PlaceholderText="پیام خود را بنویسید…"
                                                      TextChanged="MessageInput_TextChanged"
-                                                     KeyDown="MessageInput_KeyDown"
+                                                     PreviewKeyDown="MessageInput_KeyDown"
                                                      AutomationProperties.AutomationId="MessageInput"
                                                      AutomationProperties.HelpText="حداکثر ۲۰۰ نویسه. Enter برای ارسال؛ Shift+Enter برای خط جدید"
                                                      AutomationProperties.Name="متن درخواست پشتیبانی" />

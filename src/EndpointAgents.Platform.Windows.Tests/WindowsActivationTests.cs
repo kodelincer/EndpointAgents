@@ -1,7 +1,10 @@
 using EndpointAgents.Platform.Windows.Windows;
+using EndpointAgents.Core.Commands;
+using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Windows;
 using EndpointAgents.Shared.Chat;
 using EndpointAgents.Tray;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace EndpointAgents.Platform.Windows.Tests;
@@ -50,6 +53,54 @@ public sealed class WindowsActivationTests
         Assert.True(WindowsActivationBugfixCommandHandler.TryParse(valid, out var sid));
         Assert.Equal("S-1-5-21-111-222-333-1001", sid);
         Assert.False(WindowsActivationBugfixCommandHandler.TryParse(wrong, out _));
+    }
+
+    [Fact]
+    public void CommandAcceptsValidControlPlaneAuthorizationAndArtifactPin()
+    {
+        var requestId = Guid.NewGuid().ToString("N");
+        var valid = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+        {
+            ["artifactId"] = WindowsRemediationPaths.ArtifactId,
+            ["userSid"] = "S-1-5-21-111-222-333-1001",
+            [ControlPlaneActionAuthorization.ParameterName] = requestId,
+            [ChatActionApproval.ArtifactFileNameParameterName] =
+                WindowsRemediationPaths.FileName,
+            [ChatActionApproval.ArtifactSha256ParameterName] = new string('A', 64)
+        });
+
+        Assert.True(WindowsActivationBugfixCommandHandler.TryParse(valid, out var sid));
+        Assert.Equal("S-1-5-21-111-222-333-1001", sid);
+        Assert.True(ControlPlaneActionAuthorization.MatchesRequest(valid, requestId));
+        Assert.False(ControlPlaneActionAuthorization.MatchesRequest(valid,
+            Guid.NewGuid().ToString("N")));
+        Assert.True(ChatActionApproval.MatchesArtifact(valid,
+            WindowsRemediationPaths.FileName, new string('a', 64)));
+    }
+
+    [Fact]
+    public async Task CommandRejectsForgedControlPlaneAuthorizationBeforeExecution()
+    {
+        var requestId = Guid.NewGuid().ToString("N");
+        var parameters = JsonSerializer.SerializeToElement(new Dictionary<string, object?>
+        {
+            ["artifactId"] = WindowsRemediationPaths.ArtifactId,
+            ["userSid"] = "S-1-5-21-111-222-333-1001",
+            [ControlPlaneActionAuthorization.ParameterName] =
+                Guid.NewGuid().ToString("N"),
+            [ChatActionApproval.ArtifactFileNameParameterName] =
+                WindowsRemediationPaths.FileName,
+            [ChatActionApproval.ArtifactSha256ParameterName] = new string('A', 64)
+        });
+        var handler = new WindowsActivationBugfixCommandHandler(
+            null!, null!, null!, null!, null!, null!);
+
+        var response = await handler.HandleAsync(RpcRequest.Create(requestId,
+            handler.Method, parameters), new CommandExecutionContext(
+            "agent-1", null, null, DateTimeOffset.UtcNow), CancellationToken.None);
+
+        Assert.Equal(400, response.Error?.Code);
+        Assert.Contains("ControlPlane authorization", response.Error?.Message);
     }
 
     [Theory]
@@ -128,5 +179,33 @@ public sealed class WindowsActivationTests
         Assert.False(startInfo.RedirectStandardInput);
         Assert.False(startInfo.UseShellExecute);
         Assert.True(startInfo.CreateNoWindow);
+    }
+
+    [Fact]
+    public async Task DevelopmentRunnerAcceptsOnlyExactHashPinnedStagingPath()
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            $"EndpointAgents-Windows-dev-{Guid.NewGuid():N}");
+        var bytes = "@echo off\r\nexit /b 0\r\n"u8.ToArray();
+        var hash = Convert.ToHexString(SHA256.HashData(bytes));
+        var path = Path.Combine(root, WindowsRemediationPaths.ArtifactId, hash,
+            WindowsRemediationPaths.FileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await File.WriteAllBytesAsync(path, bytes, TestContext.Current.CancellationToken);
+        try
+        {
+            Assert.True(await WindowsBugfixRunner.IsApprovedAsync(path, hash, root,
+                requireProtectedAcl: false, TestContext.Current.CancellationToken));
+            Assert.False(await WindowsBugfixRunner.IsApprovedAsync(path,
+                new string('A', 64), root, requireProtectedAcl: false,
+                TestContext.Current.CancellationToken));
+            Assert.False(await WindowsBugfixRunner.IsApprovedAsync(
+                Path.Combine(root, "outside.bat"), hash, root,
+                requireProtectedAcl: false, TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 }

@@ -42,9 +42,9 @@ only its own sequence delta while its chat view is visible.
 - Loopback MCP endpoint at `/internal/mcp`, protected by a separate bearer key.
 - Read-only diagnostics plus immutable, single-use action proposals. Generic
   proposals never run a command; the same endpoint user must approve them in
-  the Tray. The dedicated Office activation workflow instead checks for open
-  Office applications, runs its pinned compatible repair automatically, and
-  checks activation again. Direct operator dispatch keeps its Tray consent gate.
+  the Tray. The dedicated Windows and Office activation workflows instead run
+  their pinned approved repairs automatically after their safety checks and verify
+  activation again. Direct operator dispatch keeps its Tray consent gate.
 - Thirty-day cleanup for completed conversation data; devices and their
   revocation state are retained.
 
@@ -241,16 +241,19 @@ Only these tools are visible to Hermes:
 
 - `endpoint_get_info`
 - `windows_activation_status`
+- `run_windows_activation_repair`
 - `office_inventory`
 - `office_activation_status`
 - `office_runtime_status`
 - `run_office_activation_repair`
 - `propose_endpoint_action`
 
-The dedicated Office repair tool accepts only a cataloged, version-compatible
-artifact ID and dispatches a filename-and-SHA-pinned command to the endpoint and
-user bound to the run capability. It creates no approval card. The endpoint
-checks again that Office applications are closed immediately before execution.
+The dedicated Windows repair tool supplies only the fixed Windows activation artifact.
+The dedicated Office repair tool accepts only a cataloged, version-compatible artifact
+ID. Both dispatch filename-and-SHA-pinned commands to the endpoint and user bound to the
+run capability and create no approval card. The Windows endpoint repeats its activation
+check before execution; the Office endpoint also checks again that Office applications
+are closed.
 
 The generic proposal tool accepts only cataloged Office and Windows remediation
 methods. It stores the exact method and parameters with the run, conversation,

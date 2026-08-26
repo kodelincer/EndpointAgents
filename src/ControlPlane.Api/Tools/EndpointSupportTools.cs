@@ -5,6 +5,7 @@ using ControlPlane.Api.Files;
 using ControlPlane.Api.Hermes;
 using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Rpc;
+using EndpointAgents.Shared.Windows;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 using System.Text.Json;
@@ -25,7 +26,6 @@ public sealed class EndpointSupportTools
         {
             "software.office_remediation_run",
             "software.office_bugfix_run",
-            "system.windows_activation_bugfix_run",
             "system.windows_hello_sample_run"
         };
 
@@ -95,9 +95,24 @@ public sealed class EndpointSupportTools
         RunReadOnlyAsync(store, registry, runCapability,
             "software.office_runtime_status", parameters: null, cancellationToken);
 
+    [McpServerTool(Name = "run_windows_activation_repair"), Description(
+        "Run the fixed administrator-approved Windows activation repair without user approval after an explicit activation request.")]
+    public static Task<string> RunWindowsActivationRepair(
+        ChatStore store,
+        AgentRegistry registry,
+        CommandCatalog catalog,
+        FileArtifactRepository files,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        CancellationToken cancellationToken) =>
+        RunAutomaticRepairAsync(store, registry, catalog, files, runCapability,
+            "system.windows_activation_bugfix_run", WindowsRemediationPaths.ArtifactId,
+            "Windows activation repair", "run_windows_activation_repair",
+            ChatProgressActivity.WindowsActivationRepair, cancellationToken);
+
     [McpServerTool(Name = "run_office_activation_repair"), Description(
         "Run one compatible administrator-approved Office activation FixManager without user approval. Office applications must already be closed.")]
-    public static async Task<string> RunOfficeActivationRepair(
+    public static Task<string> RunOfficeActivationRepair(
         ChatStore store,
         AgentRegistry registry,
         CommandCatalog catalog,
@@ -106,14 +121,34 @@ public sealed class EndpointSupportTools
         string runCapability,
         [Description("The exact approved artifact ID returned by Office activation status.")]
         string artifactId,
+        CancellationToken cancellationToken) =>
+        RunAutomaticRepairAsync(store, registry, catalog, files, runCapability,
+            "software.office_bugfix_run", artifactId, "Office repair",
+            "run_office_activation_repair", ChatProgressActivity.OfficeActivationRepair,
+            cancellationToken);
+
+    private static async Task<string> RunAutomaticRepairAsync(
+        ChatStore store,
+        AgentRegistry registry,
+        CommandCatalog catalog,
+        FileArtifactRepository files,
+        string runCapability,
+        string method,
+        string artifactId,
+        string repairName,
+        string toolName,
+        ChatProgressActivity activity,
         CancellationToken cancellationToken)
     {
-        const string method = "software.office_bugfix_run";
         var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
         if (scope is null)
             return """{"ok":false,"error":"The run capability is invalid or expired."}""";
         if (!catalog.Contains(method))
-            return """{"ok":false,"error":"The Office repair is not allow-listed."}""";
+            return ToolResultSanitizer.Sanitize(new
+            {
+                ok = false,
+                error = $"The {repairName} is not allow-listed."
+            });
 
         var parameters = new EndpointActionParameters(artifactId);
         if (!TryValidateActionParameters(method, parameters, out var validated,
@@ -128,16 +163,15 @@ public sealed class EndpointSupportTools
         var request = RpcRequest.Create(requestId, method,
             AddUserScope(pinned, scope.UserSid, requestId));
         await store.WriteProgressAsync(scope.RunId, ChatProgressStage.ActionStarted,
-            ChatProgressActivity.OfficeActivationRepair, ChatProgressOutcome.None,
-            cancellationToken);
+            activity, ChatProgressOutcome.None, cancellationToken);
 
         var response = await registry.SendCommandAsync(scope.AgentId, request,
             cancellationToken);
         var succeeded = response.Error is null;
-        await store.WriteToolAuditAsync(scope, "run_office_activation_repair",
+        await store.WriteToolAuditAsync(scope, toolName,
             succeeded ? "success" : "error", response.Error?.Message, cancellationToken);
         await store.WriteProgressAsync(scope.RunId, ChatProgressStage.ActionCompleted,
-            ChatProgressActivity.OfficeActivationRepair,
+            activity,
             succeeded ? ChatProgressOutcome.Success : ChatProgressOutcome.Failure,
             cancellationToken);
 

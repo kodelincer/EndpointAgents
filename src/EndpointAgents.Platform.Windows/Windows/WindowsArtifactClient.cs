@@ -1,6 +1,7 @@
 using EndpointAgents.Platform.Windows.Office;
 using EndpointAgents.Shared.Security;
 using EndpointAgents.Shared.Windows;
+using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.Http.Json;
 using System.Runtime.Versioning;
@@ -9,10 +10,12 @@ namespace EndpointAgents.Platform.Windows.Windows;
 
 [SupportedOSPlatform("windows")]
 public sealed class WindowsArtifactClient(
-    EndpointArtifactTransport transport)
+    EndpointArtifactTransport transport,
+    IOptions<WindowsRemediationOptions> options)
 {
     private const long MaxDownloadBytes = 100 * 1024 * 1024;
     private const string CatalogPath = "/api/files/windows/bugfix/catalog";
+    private readonly WindowsRemediationOptions _options = options.Value;
 
     public async Task<WindowsBugfixArtifactDescriptor?> GetArtifactAsync(
         CancellationToken cancellationToken)
@@ -37,8 +40,8 @@ public sealed class WindowsArtifactClient(
         CancellationToken cancellationToken)
     {
         ValidateDescriptor(descriptor);
-        var rootPath = Path.GetFullPath(WindowsRemediationPaths.StagingRoot);
-        ProtectedWindowsPath.EnsureDirectory(rootPath, requireProtectedAcl: true);
+        var rootPath = Path.GetFullPath(_options.StagingRoot);
+        EnsureDirectory(rootPath, requireProtectedAcl: true);
         var root = rootPath
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
@@ -54,15 +57,12 @@ public sealed class WindowsArtifactClient(
         if (!directory.StartsWith(artifactRoot, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException(
                 "The Windows remediation revision path is invalid.");
-        Directory.CreateDirectory(directory);
-        ProtectedWindowsPath.EnsureDirectory(rootPath, requireProtectedAcl: true);
-        ProtectedWindowsPath.EnsureDirectory(artifactDirectory,
-            requireProtectedAcl: false);
-        ProtectedWindowsPath.EnsureDirectory(directory, requireProtectedAcl: false);
+        EnsureDirectory(artifactDirectory, requireProtectedAcl: false);
+        EnsureDirectory(directory, requireProtectedAcl: false);
 
         var destination = Path.Combine(directory, descriptor.FileName);
         if (File.Exists(destination))
-            ProtectedWindowsPath.EnsureFile(destination);
+            EnsureFile(destination);
         if (File.Exists(destination)
             && await OfficeArtifactDownloader.IsApprovedLocalFileAsync(destination,
                 descriptor.Sha256, cancellationToken, requirePortableExecutable: false))
@@ -107,15 +107,42 @@ public sealed class WindowsArtifactClient(
                     requirePortableExecutable: false))
                 throw new InvalidDataException(
                     "The Windows remediation does not match its approved SHA-256.");
-            ProtectedWindowsPath.EnsureFile(partial);
+            EnsureFile(partial);
             File.Move(partial, destination, overwrite: true);
-            ProtectedWindowsPath.EnsureFile(destination);
+            EnsureFile(destination);
             return (destination, true);
         }
         finally
         {
             try { File.Delete(partial); } catch { }
         }
+    }
+
+    private void EnsureDirectory(string path, bool requireProtectedAcl)
+    {
+        if (_options.RequireProtectedAcl)
+        {
+            if (!requireProtectedAcl) Directory.CreateDirectory(path);
+            ProtectedWindowsPath.EnsureDirectory(path, requireProtectedAcl);
+            return;
+        }
+        Directory.CreateDirectory(path);
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException(
+                "The development Windows remediation directory is redirected.");
+    }
+
+    private void EnsureFile(string path)
+    {
+        if (_options.RequireProtectedAcl)
+        {
+            ProtectedWindowsPath.EnsureFile(path);
+            return;
+        }
+        if (!File.Exists(path)
+            || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException(
+                "The development Windows remediation file is missing or redirected.");
     }
 
     private static void ValidateDescriptor(WindowsBugfixArtifactDescriptor descriptor)

@@ -129,7 +129,8 @@ public sealed class WindowsActivationProbe : IWindowsActivationProbe
         var build = key?.GetValue("CurrentBuildNumber")?.ToString();
         var ubr = key?.GetValue("UBR")?.ToString();
         return new WindowsMachineInfo(
-            key?.GetValue("ProductName")?.ToString(),
+            WindowsVersionInfo.NormalizeProductName(
+                key?.GetValue("ProductName")?.ToString(), build),
             key?.GetValue("EditionID")?.ToString(),
             key?.GetValue("DisplayVersion")?.ToString(),
             string.IsNullOrWhiteSpace(ubr) ? build : $"{build}.{ubr}",

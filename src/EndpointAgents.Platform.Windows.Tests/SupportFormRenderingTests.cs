@@ -51,6 +51,20 @@ public sealed class SupportWindowStateTests
     }
 
     [Fact]
+    public void AutomaticWindowsRepairProgressDoesNotClaimUserApproval()
+    {
+        var model = new SupportViewModel();
+        var progress = model.AddProgress(new ChatRunProgressEvent(
+            "event-1", "conversation-1", "run-1", 1,
+            ChatProgressStage.ActionStarted,
+            ChatProgressActivity.WindowsActivationRepair,
+            ChatProgressOutcome.None, DateTimeOffset.UtcNow));
+
+        Assert.Contains("تعمیر فعال‌سازی ویندوز", progress.Summary);
+        Assert.DoesNotContain("تأیید", progress.Summary);
+    }
+
+    [Fact]
     public void StatusStateControlsAvailableServiceActions()
     {
         var model = new SupportViewModel();
@@ -128,6 +142,36 @@ public sealed class SupportWindowStateTests
         Assert.Single(model.ConversationGroups.SelectMany(group => group));
         Assert.Equal("active",
             model.ConversationGroups.SelectMany(group => group).Single().ConversationId);
+    }
+
+    [Fact]
+    public void ConversationRefreshPreservesRowsAndUpdatesOnlyChangedData()
+    {
+        var model = new SupportViewModel();
+        var now = DateTimeOffset.UtcNow;
+        var original = Summary("active", "Original", now,
+            ChatConversationState.Working, true);
+        model.ReplaceConversations([original], original.ConversationId);
+        var group = Assert.Single(model.ConversationGroups);
+        var row = Assert.Single(group);
+
+        model.ReplaceConversations([original], original.ConversationId);
+        Assert.Same(group, Assert.Single(model.ConversationGroups));
+        Assert.Same(row, Assert.Single(group));
+
+        var changed = original with
+        {
+            Title = "Updated",
+            Preview = "New reply",
+            State = ChatConversationState.Answered,
+            LastSequence = original.LastSequence + 1
+        };
+        model.ReplaceConversations([changed], changed.ConversationId);
+
+        Assert.Same(row, Assert.Single(group));
+        Assert.Equal("Updated", row.Title);
+        Assert.Equal("New reply", row.Preview);
+        Assert.Equal(ChatConversationState.Answered, row.State);
     }
 
     [Fact]

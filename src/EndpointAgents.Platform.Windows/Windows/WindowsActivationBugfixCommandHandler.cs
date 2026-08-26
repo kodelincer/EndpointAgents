@@ -25,13 +25,22 @@ public sealed class WindowsActivationBugfixCommandHandler(
     public async Task<RpcResponse> HandleAsync(RpcRequest request,
         CommandExecutionContext context, CancellationToken cancellationToken)
     {
-        if (!TryParse(request.Params, out var userSid, out var chatApproved))
+        if (!TryParse(request.Params, out var userSid))
             return RpcResponse.Failure(request.Id, 400,
                 "Only the approved windows-activation-repair artifactId is accepted.");
-        if (chatApproved && !ChatActionApproval.MatchesRequest(
-                request.Params, request.Id))
+        var hasChatApproval = ChatActionApproval.HasMarker(request.Params);
+        var chatApproved = ChatActionApproval.MatchesRequest(request.Params, request.Id);
+        if (hasChatApproval && !chatApproved)
             return RpcResponse.Failure(request.Id, 400,
                 "The chat approval does not match this action.");
+        var hasControlPlaneAuthorization =
+            ControlPlaneActionAuthorization.HasMarker(request.Params);
+        var controlPlaneAuthorized =
+            ControlPlaneActionAuthorization.MatchesRequest(request.Params, request.Id);
+        if (hasControlPlaneAuthorization && !controlPlaneAuthorized)
+            return RpcResponse.Failure(request.Id, 400,
+                "The ControlPlane authorization does not match this action.");
+        var authorized = chatApproved || controlPlaneAuthorized;
 
         var before = await probe.ProbeAsync(cancellationToken);
         if (!before.ProbeSucceeded)
@@ -44,7 +53,7 @@ public sealed class WindowsActivationBugfixCommandHandler(
         var session = sessions.GetActiveSession(userSid);
         if (session is null)
             return RpcResponse.Failure(request.Id, 404,
-                "No interactive Windows user is available to approve the remediation.");
+                "No interactive Windows user is available for the remediation.");
 
         try
         {
@@ -52,12 +61,12 @@ public sealed class WindowsActivationBugfixCommandHandler(
             if (descriptor is null)
                 return RpcResponse.Failure(request.Id, 404,
                     "The approved Windows activation remediation is not available.");
-            if (chatApproved && !ChatActionApproval.MatchesArtifact(request.Params,
+            if (authorized && !ChatActionApproval.MatchesArtifact(request.Params,
                     descriptor.FileName, descriptor.Sha256))
                 return RpcResponse.Failure(request.Id, 412,
-                    "The approved Windows remediation revision has changed; approve the new proposal before running it.");
+                    "The approved Windows remediation revision has changed; request the current repair again.");
 
-            if (!chatApproved)
+            if (!authorized)
             {
                 var consent = new WindowsBugfixConsentRequest(descriptor.ArtifactId,
                     descriptor.DisplayName, descriptor.Description);
@@ -109,13 +118,8 @@ public sealed class WindowsActivationBugfixCommandHandler(
     }
 
     internal static bool TryParse(JsonElement? parameters, out string? userSid)
-        => TryParse(parameters, out userSid, out _);
-
-    internal static bool TryParse(JsonElement? parameters, out string? userSid,
-        out bool chatApproved)
     {
         userSid = null;
-        chatApproved = ChatActionApproval.TryRead(parameters, out _);
         if (parameters is not { ValueKind: JsonValueKind.Object } value)
             return false;
         foreach (var property in value.EnumerateObject())
@@ -133,7 +137,11 @@ public sealed class WindowsActivationBugfixCommandHandler(
             }
             else if (property.NameEquals(ChatActionApproval.ParameterName))
             {
-                if (!chatApproved) return false;
+                if (property.Value.ValueKind != JsonValueKind.String) return false;
+            }
+            else if (property.NameEquals(ControlPlaneActionAuthorization.ParameterName))
+            {
+                if (property.Value.ValueKind != JsonValueKind.String) return false;
             }
             else if (ChatActionApproval.IsArtifactPin(property.Name))
             {

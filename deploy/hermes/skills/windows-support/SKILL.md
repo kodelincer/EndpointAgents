@@ -11,11 +11,15 @@ For a Windows activation, license, unlicensed, or activation-warning problem:
 2. Briefly summarize only the sanitized activation state. Never expose raw diagnostic data.
 3. If the result is `Licensed`, explain that Windows reports as activated and stop.
 4. If the probe failed, explain that activation could not be verified and stop.
-5. Otherwise call `mcp_controlplane_propose_endpoint_action` with method
-   `system.windows_activation_bugfix_run` and exactly
-   `{ "artifactId": "windows-activation-repair" }`.
-6. Tell the user that the administrator-reviewed repair awaits confirmation. Do not
-   claim it ran, succeeded, or activated Windows.
+5. Otherwise call `mcp_controlplane_run_windows_activation_repair` once with exactly
+   `{ "runCapability": "<the supplied run capability>" }`. Do not ask for confirmation.
+   ControlPlane supplies the fixed administrator-approved artifact and binds the action
+   to the endpoint and user for this explicit activation request.
+6. After the repair attempt returns, call `mcp_controlplane_windows_activation_status`
+   again even when execution reported an error. Say that Windows is fixed only when this
+   fresh result is `Licensed`. If execution completed but Windows remains unlicensed,
+   report both facts. If execution failed and Windows remains unlicensed, report both
+   failures.
 
 For another Windows problem, ask for the specific symptom when it is unclear. Call
 `mcp_controlplane_endpoint_get_info` only when machine, version, network, proxy, or

@@ -166,9 +166,18 @@ public sealed class SupportViewModel : INotifyPropertyChanged
     public ConversationSummaryViewModel? ReplaceConversations(
         IEnumerable<ChatConversationSummary> conversations, string? preferredId)
     {
+        var existing = _allConversations.ToDictionary(item => item.ConversationId);
+        var updated = new List<ConversationSummaryViewModel>();
+        foreach (var summary in conversations)
+        {
+            if (!existing.TryGetValue(summary.ConversationId, out var item))
+                item = new ConversationSummaryViewModel(summary);
+            else
+                item.Update(summary);
+            updated.Add(item);
+        }
         _allConversations.Clear();
-        _allConversations.AddRange(conversations.Select(item =>
-            new ConversationSummaryViewModel(item)));
+        _allConversations.AddRange(updated);
         RefreshConversationGroups();
         NotifyConversationListState();
         var selected = string.IsNullOrWhiteSpace(preferredId)
@@ -280,7 +289,6 @@ public sealed class SupportViewModel : INotifyPropertyChanged
 
     private void RefreshConversationGroups()
     {
-        ConversationGroups.Clear();
         var visible = _allConversations.Where(item => _conversationFilter switch
         {
             ConversationListFilter.Active => item.IsActive
@@ -288,9 +296,38 @@ public sealed class SupportViewModel : INotifyPropertyChanged
             ConversationListFilter.Resolved => item.State == ChatConversationState.Resolved,
             ConversationListFilter.Closed => item.State == ChatConversationState.Closed,
             _ => true
-        });
-        foreach (var group in visible.GroupBy(item => item.DateGroup))
-            ConversationGroups.Add(new ConversationDateGroup(group.Key, group));
+        }).GroupBy(item => item.DateGroup).ToList();
+
+        for (var groupIndex = 0; groupIndex < visible.Count; groupIndex++)
+        {
+            var desired = visible[groupIndex];
+            var group = ConversationGroups.FirstOrDefault(item => item.Label == desired.Key);
+            if (group is null)
+            {
+                group = new ConversationDateGroup(desired.Key, []);
+                ConversationGroups.Insert(groupIndex, group);
+            }
+            else
+            {
+                var currentIndex = ConversationGroups.IndexOf(group);
+                if (currentIndex != groupIndex)
+                    ConversationGroups.Move(currentIndex, groupIndex);
+            }
+
+            var items = desired.ToList();
+            for (var itemIndex = 0; itemIndex < items.Count; itemIndex++)
+            {
+                var item = items[itemIndex];
+                if (itemIndex < group.Count && ReferenceEquals(group[itemIndex], item))
+                    continue;
+                var currentIndex = group.IndexOf(item);
+                if (currentIndex >= 0) group.Move(currentIndex, itemIndex);
+                else group.Insert(itemIndex, item);
+            }
+            while (group.Count > items.Count) group.RemoveAt(group.Count - 1);
+        }
+        while (ConversationGroups.Count > visible.Count)
+            ConversationGroups.RemoveAt(ConversationGroups.Count - 1);
     }
 
     private void NotifyConversationMode()
@@ -367,9 +404,20 @@ public sealed class ConversationDateGroup : ObservableCollection<ConversationSum
     public string Label { get; }
 }
 
-public sealed class ConversationSummaryViewModel
+public sealed class ConversationSummaryViewModel : INotifyPropertyChanged
 {
-    public ConversationSummaryViewModel(ChatConversationSummary summary)
+    public ConversationSummaryViewModel(ChatConversationSummary summary) => Apply(summary);
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public void Update(ChatConversationSummary summary)
+    {
+        if (Summary == summary) return;
+        Apply(summary);
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(string.Empty));
+    }
+
+    private void Apply(ChatConversationSummary summary)
     {
         Summary = summary;
         var local = summary.UpdatedAtUtc.LocalDateTime;
@@ -393,16 +441,16 @@ public sealed class ConversationSummaryViewModel
         };
     }
 
-    public ChatConversationSummary Summary { get; }
+    public ChatConversationSummary Summary { get; private set; } = null!;
     public string ConversationId => Summary.ConversationId;
     public string Title => Summary.Title;
     public string Preview => Summary.Preview;
     public ChatConversationState State => Summary.State;
     public bool IsActive => Summary.IsActive;
-    public string UpdatedTime { get; }
-    public string DateGroup { get; }
-    public string StatusLabel { get; }
-    public string StatusGlyph { get; }
+    public string UpdatedTime { get; private set; } = string.Empty;
+    public string DateGroup { get; private set; } = string.Empty;
+    public string StatusLabel { get; private set; } = string.Empty;
+    public string StatusGlyph { get; private set; } = string.Empty;
 }
 
 public enum ConversationItemKind
@@ -492,9 +540,27 @@ public sealed class ProgressItemViewModel : ConversationItemViewModel, INotifyPr
         ChatProgressStage.Completed => "پاسخ آماده شد",
         ChatProgressStage.Failed => "بررسی درخواست کامل نشد",
         ChatProgressStage.AwaitingApproval => "در انتظار تأیید اقدام پیشنهادی",
-        ChatProgressStage.ActionStarted => "اقدام تأییدشده در حال اجرا است",
-        ChatProgressStage.ActionCompleted => progress.Outcome == ChatProgressOutcome.Failure
-            ? "اجرای اقدام ناموفق بود" : "اقدام تأییدشده انجام شد",
+        ChatProgressStage.ActionStarted => progress.Activity switch
+        {
+            ChatProgressActivity.OfficeActivationRepair =>
+                "تعمیر فعال‌سازی آفیس در حال اجرا است",
+            ChatProgressActivity.WindowsActivationRepair =>
+                "تعمیر فعال‌سازی ویندوز در حال اجرا است",
+            _ => "اقدام تأییدشده در حال اجرا است"
+        },
+        ChatProgressStage.ActionCompleted => progress.Activity switch
+        {
+            ChatProgressActivity.OfficeActivationRepair =>
+                progress.Outcome == ChatProgressOutcome.Failure
+                    ? "تعمیر فعال‌سازی آفیس ناموفق بود"
+                    : "تعمیر فعال‌سازی آفیس انجام شد",
+            ChatProgressActivity.WindowsActivationRepair =>
+                progress.Outcome == ChatProgressOutcome.Failure
+                    ? "تعمیر فعال‌سازی ویندوز ناموفق بود"
+                    : "تعمیر فعال‌سازی ویندوز انجام شد",
+            _ => progress.Outcome == ChatProgressOutcome.Failure
+                ? "اجرای اقدام ناموفق بود" : "اقدام تأییدشده انجام شد"
+        },
         ChatProgressStage.ActionRejected => "اقدام پیشنهادی اجرا نشد",
         _ => "در حال بررسی درخواست"
     };
@@ -505,6 +571,7 @@ public sealed class ProgressItemViewModel : ConversationItemViewModel, INotifyPr
         ChatProgressActivity.OfficeActivationStatus => "در حال بررسی فعال‌سازی آفیس",
         ChatProgressActivity.OfficeRuntimeStatus => "در حال بررسی برنامه‌های باز آفیس",
         ChatProgressActivity.WindowsActivationStatus => "در حال بررسی فعال‌سازی ویندوز",
+        ChatProgressActivity.WindowsActivationRepair => "در حال تعمیر فعال‌سازی ویندوز",
         ChatProgressActivity.ProposedAction => "در حال آماده‌سازی اقدام پیشنهادی",
         _ => "در حال بررسی عامل"
     };

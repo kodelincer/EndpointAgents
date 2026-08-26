@@ -12,7 +12,6 @@ public sealed class TrayIpcServer
 {
     private readonly string _pipeName;
     private readonly IbsngDialerLauncher _launcher = new();
-    private readonly OfficeVNextActivationProbe _officeActivation = new();
     private readonly OfficeRemediationLauncher _officeRemediation = new();
     private readonly WindowsRemediationConsent _windowsRemediation = new();
     private readonly WindowsHelloLauncher _windowsHello = new();
@@ -77,8 +76,6 @@ public sealed class TrayIpcServer
                 $"درخواست محلی '{request.Method}' با شناسه {request.Id} دریافت شد.");
             response = request.Method switch
             {
-                TrayIpcProtocol.OfficeActivationStatusMethod =>
-                    await _officeActivation.ProbeAsync(request.Id, cancellationToken),
                 TrayIpcProtocol.OfficeRemediationLaunchMethod =>
                     await _officeRemediation.LaunchAsync(request, cancellationToken),
                 TrayIpcProtocol.OfficeBugfixConsentMethod =>

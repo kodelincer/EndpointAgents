@@ -141,7 +141,7 @@ public sealed partial class SupportWindow : Window
         if (_appWindow.Presenter is OverlappedPresenter
             { State: OverlappedPresenterState.Minimized } presenter)
             presenter.Restore();
-        _appWindow.Show();
+        _appWindow.Show(activateWindow: true);
         Activate();
         if (section == SupportSection.Helpdesk)
         {
@@ -294,7 +294,7 @@ public sealed partial class SupportWindow : Window
     }
 
     private async void RefreshConversations_Click(object sender, RoutedEventArgs e) =>
-        await RefreshConversationsAsync();
+        await RefreshConversationsAsync(showLoading: true);
 
     private async void ConversationIndex_SelectionChanged(object sender,
         SelectionChangedEventArgs e)
@@ -344,12 +344,14 @@ public sealed partial class SupportWindow : Window
         }
     }
 
-    private async Task RefreshConversationsAsync(string? selectConversationId = null)
+    private async Task RefreshConversationsAsync(string? selectConversationId = null,
+        bool showLoading = false)
     {
         if (_refreshingConversations || !ViewModel.IsConnected
             || HelpdeskPage.Visibility != Visibility.Visible) return;
         _refreshingConversations = true;
-        ViewModel.BeginConversationListRefresh();
+        if (showLoading || !_conversationListInitialized)
+            ViewModel.BeginConversationListRefresh();
         try
         {
             var summaries = await _serviceClient.ListChatsAsync(

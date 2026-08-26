@@ -19,6 +19,10 @@ $officeBugfixManifestPath = Join-Path $fileRepositoryRoot "office-bugfix-manager
 $windowsRepositoryRoot = Join-Path $fileRepositoryRoot "Windows"
 $windowsBugfixPath = Join-Path $windowsRepositoryRoot "windowsbugfixer.bat"
 $windowsHelloPath = Join-Path $windowsRepositoryRoot "windows-hello-sample.bat"
+$sampleWindowsBugfixPath = Join-Path $repoRoot `
+    "deploy\control-plane\FileRepository\Windows\windowsbugfixer.bat"
+$disabledWindowsBugfixPath = Join-Path $windowsRepositoryRoot `
+    "windowsbugfixer.development-sample.disabled"
 $sampleWindowsHelloPath = Join-Path $repoRoot "deploy\control-plane\FileRepository\Windows\windows-hello-sample.bat"
 $apiSettingsPath = Join-Path $apiOutput "appsettings.json"
 $legacyOfficeBugfixBackupPath = Join-Path $fileRepositoryRoot `
@@ -435,6 +439,19 @@ New-SafeDirectory $dataRoot
 New-SafeDirectory $officeRepositoryRoot
 New-SafeDirectory $windowsRepositoryRoot
 Set-ExactProtectedTreeAcl $dataRoot
+if (Test-Path -LiteralPath $windowsBugfixPath) {
+    $runtimeHash = (Get-FileHash -LiteralPath $windowsBugfixPath -Algorithm SHA256).Hash
+    $sampleHash = (Get-FileHash -LiteralPath $sampleWindowsBugfixPath `
+        -Algorithm SHA256).Hash
+    if ($runtimeHash -eq $sampleHash) {
+        if (Test-Path -LiteralPath $disabledWindowsBugfixPath) {
+            throw "The development Windows repair sample cannot be disabled because the disabled target already exists."
+        }
+        Move-Item -LiteralPath $windowsBugfixPath `
+            -Destination $disabledWindowsBugfixPath
+        Write-Host "Disabled the development Windows repair sample; install an approved seller BAT separately."
+    }
+}
 if (-not (Test-Path -LiteralPath $officeManifestPath)) {
     Write-JsonAtomic $officeManifestPath ([ordered]@{ version = 1; artifacts = @() })
 }
@@ -462,6 +479,7 @@ Write-Host "Control plane API installed on http://127.0.0.1:5052."
 Write-Host "Office remediation manifest: $officeManifestPath"
 Write-Host "Office bugfix manifest: $officeBugfixManifestPath"
 Write-Host "Windows bugfix file (administrator supplied; not seeded): $windowsBugfixPath"
+Write-Host "Windows bugfix installer: $(Join-Path $repoRoot 'scripts\install-windows-activation-repair.ps1')"
 Write-Host "Windows Hello sample file: $windowsHelloPath"
 Write-Host "SQLite chat database: $(Join-Path $dataRoot 'control-plane.db')"
 Write-Host "Install the pinned Hermes runtime next with scripts\install-hermes-service.ps1."

@@ -13,9 +13,14 @@ activation warning:
 2. If Office is not installed or its version cannot be read, explain that and stop.
 3. Call `mcp_controlplane_office_activation_status` once with exactly
    `{ "runCapability": "<the supplied run capability>" }` and briefly summarize its
-   sanitized state. The user's explicit activation report remains valid evidence when
-   the probe is unavailable.
-4. Select exactly one artifact ID that appears in `compatibleBugfixArtifactIds`.
+   sanitized state. KMS is healthy only when the OSPP probe succeeded, returned at
+   least one product, and every product has license type `Volume|KMS`, state `Licensed`,
+   and no error code. If KMS is healthy, say so and stop. A licensed MAK or Retail
+   product is not healthy for this environment. The user's explicit activation report
+   remains valid evidence when the probe is unavailable.
+4. For an unhealthy result, or an explicit activation problem when the probe is
+   unavailable, select exactly one artifact ID that appears in
+   `compatibleBugfixArtifactIds`.
    Current administrator policy: prefer `office-activation-repair` when it is in that
    list. If the list is empty, explain that no compatible approved repair is installed
    and stop. If more than one ID is returned and no rule below distinguishes them, stop
@@ -31,12 +36,14 @@ activation warning:
    `{ "runCapability": "<the supplied run capability>", "artifactId": "<the selected compatible ID>" }`.
    Do not ask for confirmation. The endpoint service creates an identical verified
    Desktop copy for the user and runs the protected hash-verified staged copy.
-8. If execution fails because an Office application reopened, tell the user exactly
-   which returned applications to close and stop. Otherwise, after the repair attempt
-   returns, call `mcp_controlplane_office_activation_status` again even when execution
-   reported an error. Say that Office is fixed only when this fresh result reports a
-   healthy licensed state. If execution completed but activation is still unhealthy,
-   say both facts. If execution failed and activation is unhealthy, report both failures.
+8. If execution reports that Office is already healthy KMS, say that no repair was
+   needed and stop. If execution fails because an Office application reopened, tell the
+   user exactly which returned applications to close and stop. Otherwise, after the
+   repair attempt returns, call `mcp_controlplane_office_activation_status` again even
+   when execution reported an error. Say that Office is fixed only when this fresh
+   result satisfies the complete healthy KMS rule from step 3. If execution completed
+   but activation is still unhealthy, say both facts. If execution failed and activation
+   is unhealthy, report both failures.
 
 For a generic Office problem that does not mention activation, licensing, Product
 Unlicensed, or the red activation warning, ask for the symptom. Do not propose the

@@ -95,6 +95,19 @@ builder.Services.AddOptions<OfficeRemediationOptions>()
         "Diagnostics:OfficeRemediation:MaxDownloadBytes must be between 1 byte and 1 GiB.")
     .ValidateOnStart();
 
+builder.Services.AddOptions<WindowsRemediationOptions>()
+    .Bind(builder.Configuration.GetSection("Diagnostics:WindowsRemediation"))
+    .Validate(options => !string.IsNullOrWhiteSpace(options.StagingRoot),
+        "Diagnostics:WindowsRemediation:StagingRoot is required.")
+    .Validate(options => builder.Environment.IsDevelopment()
+        || Path.GetFullPath(options.StagingRoot).Equals(
+            Path.GetFullPath(EndpointAgents.Shared.Windows.WindowsRemediationPaths.StagingRoot),
+            StringComparison.OrdinalIgnoreCase)
+        && options.RequireProtectedAcl
+        && options.RequireAdministrator,
+        "Unprotected, non-administrator Windows remediation is allowed only in Development.")
+    .ValidateOnStart();
+
 // These shared services are consumed by AgentWorker and the command handlers.
 builder.Services.AddSingleton<CommandDispatcher>();
 builder.Services.AddSingleton<AgentIdentityProvider>();

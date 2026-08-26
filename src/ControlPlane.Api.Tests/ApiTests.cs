@@ -280,6 +280,14 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
             .Select(item => item.GetString()).ToArray();
         Assert.Contains("runCapability", repairRequired);
         Assert.Contains("artifactId", repairRequired);
+
+        var windowsRepair = tools.EnumerateArray().Single(tool =>
+            tool.GetProperty("name").GetString() == "run_windows_activation_repair");
+        var windowsRepairRequired = windowsRepair.GetProperty("inputSchema")
+            .GetProperty("required").EnumerateArray()
+            .Select(item => item.GetString()).ToArray();
+        Assert.Contains("runCapability", windowsRepairRequired);
+        Assert.DoesNotContain("artifactId", windowsRepairRequired);
     }
 
     [Fact]

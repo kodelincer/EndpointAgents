@@ -52,6 +52,7 @@ public enum ChatProgressActivity
     OfficeRuntimeStatus,
     OfficeActivationRepair,
     WindowsActivationStatus,
+    WindowsActivationRepair,
     ProposedAction,
     EndpointCheck
 }

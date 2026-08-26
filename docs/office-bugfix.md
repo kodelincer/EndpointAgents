@@ -47,30 +47,34 @@ ten-minute outer timeout.
 
 ## Runtime flow
 
-1. Hermes calls `office_inventory` and `office_activation_status`.
-2. Activation status returns `compatibleBugfixArtifactIds`, computed from the installed
-   Office version and the current protected manifest.
-3. The reviewed `office-support` skill selects only an ID in that returned list and
+1. Hermes calls `office_inventory` and the KMS-only `office_activation_status`.
+2. If OSPP reports that every Office product is licensed through `Volume|KMS` with no
+   error, Hermes reports that Office is healthy and stops. No repair ID is returned.
+3. Otherwise, activation status returns `compatibleBugfixArtifactIds`, computed from
+   the installed Office version and the current protected manifest.
+4. The reviewed `office-support` skill selects only an ID in that returned list and
    calls `office_runtime_status` for the Windows session bound to the conversation.
-4. If Word, Excel, PowerPoint, Outlook, OneNote, Access, or Publisher is open, Hermes
+5. If Word, Excel, PowerPoint, Outlook, OneNote, Access, or Publisher is open, Hermes
    names the running applications and stops. The endpoint never closes them. After the
    user closes them, Hermes checks again in the next turn.
-5. When none is open, Hermes calls `run_office_activation_repair` with the compatible
+6. When none is open, Hermes calls `run_office_activation_repair` with the compatible
    artifact ID. This dedicated workflow does not create an approval card. Direct operator
    dispatch still uses the Tray consent path.
-6. The endpoint service performs a final session-scoped process check, downloads the
+7. The endpoint service performs final session-scoped process and OSPP checks. It
+   refuses to run the BAT if Office is already healthy KMS, then downloads the
    selected BAT with its enrolled-device bearer token,
    verifies SHA-256, and stages it in the content-addressed path
    `<artifactId>\<SHA-256>\<artifactId>.bat` under the protected remediation tree.
    Different approved revisions therefore never share a runnable pathname.
-7. The service opens the protected source first, impersonates the verified interactive
+8. The service opens the protected source first, impersonates the verified interactive
    user's Windows token, and writes a verified convenience copy to that user's Desktop.
-8. The LocalSystem service runs only the protected staged copy in session 0. It never
-   elevates or executes the user-writable Desktop copy, and no UAC password prompt is used.
-9. After the repair attempt returns, Hermes calls `office_activation_status` again even
-   when execution reported an error, unless an Office app reopened and blocked execution.
-   It reports success only when this fresh check is healthy; exit code `0` alone is not
-   proof that activation is healthy.
+9. The LocalSystem service runs only the protected staged copy in session 0. It supplies
+   fixed menu choice `1`, never executes the user-writable Desktop copy, and never
+   requests a UAC password.
+10. After exit code `0`, the endpoint immediately verifies healthy KMS with OSPP.
+    Hermes calls `office_activation_status` again even when execution reported an error,
+    unless an Office app reopened and blocked execution. Exit code `0` alone is not
+    proof that activation is healthy.
 
 ## Adding or changing a repair
 
