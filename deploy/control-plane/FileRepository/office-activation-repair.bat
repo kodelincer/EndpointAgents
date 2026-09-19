@@ -15,7 +15,10 @@ if "%selection%"=="2" goto unused
 exit /b 2
 
 :office_activation
-echo SAMPLE ONLY: replace this file with the reviewed production office-activation-repair.bat.
+echo SAMPLE ONLY: no Office settings will be changed.
+choice /c YN /n /m "Continue with harmless sample? [Y/N]: "
+if errorlevel 2 exit /b 4
+echo Harmless sample completed.
 exit /b 0
 
 :unused

@@ -268,7 +268,7 @@ public sealed partial class FileArtifactRepository
             if (duplicateIds.Contains(entry.ArtifactId)
                 || duplicateFiles.Contains(entry.FileName))
                 continue;
-            if (!TryValidateBugfixEntry(entry, out var error))
+            if (!TryValidateBugfixEntry(entry, out var playbook, out var error))
             {
                 issues.Add(new FileRepositoryIssue(
                     $"office_bugfix.{SafeIssueId(entry.ArtifactId)}", error!));
@@ -296,6 +296,7 @@ public sealed partial class FileArtifactRepository
                 entry.DisplayName.Trim(), entry.Description.Trim(), entry.FileName,
                 expectedHash, Version.Parse(entry.MinOfficeVersion).ToString(),
                 Version.Parse(entry.MaxOfficeVersionExclusive).ToString(),
+                playbook!, BatchPlaybookPolicy.ComputeSha256(playbook!),
                 $"/api/files/office/bugfix/{entry.ArtifactId}");
             artifacts.Add(new OfficeBugfixFileArtifact(file, descriptor));
         }
@@ -451,8 +452,9 @@ public sealed partial class FileArtifactRepository
     }
 
     private static bool TryValidateBugfixEntry(OfficeBugfixManifestEntry entry,
-        out string? error)
+        out BatchPlaybook? playbook, out string? error)
     {
+        playbook = null;
         if (entry.ArtifactId is not { } artifactId
             || !ArtifactIdPattern().IsMatch(artifactId))
             return Fail("Artifact ID must contain only lowercase letters, numbers, dots, underscores, or hyphens.", out error);
@@ -473,6 +475,9 @@ public sealed partial class FileArtifactRepository
             return Fail("Office version bounds must use numeric dotted versions.", out error);
         if (minimum >= maximum)
             return Fail("Minimum Office version must be lower than the exclusive maximum version.", out error);
+        if (!BatchPlaybookPolicy.TryNormalize(entry.Playbook, out playbook,
+                out var playbookError))
+            return Fail($"Invalid playbook: {playbookError}", out error);
         error = null;
         return true;
     }

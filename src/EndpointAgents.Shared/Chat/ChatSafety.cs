@@ -54,6 +54,7 @@ public static class ChatActionApproval
     public const string ParameterName = "_chatApprovalId";
     public const string ArtifactFileNameParameterName = "_approvedArtifactFileName";
     public const string ArtifactSha256ParameterName = "_approvedArtifactSha256";
+    public const string PlaybookSha256ParameterName = "_approvedPlaybookSha256";
 
     public static bool TryRead(JsonElement? parameters, out string approvalId)
     {
@@ -95,10 +96,25 @@ public static class ChatActionApproval
                 StringComparison.OrdinalIgnoreCase);
     }
 
+    public static bool MatchesArtifactAndPlaybook(JsonElement? parameters,
+        string fileName, string sha256, string playbookSha256)
+    {
+        if (!MatchesArtifact(parameters, fileName, sha256)
+            || parameters is not { ValueKind: JsonValueKind.Object } value
+            || !value.TryGetProperty(PlaybookSha256ParameterName,
+                out var playbookSha256Property)
+            || playbookSha256Property.ValueKind != JsonValueKind.String)
+            return false;
+        return string.Equals(playbookSha256Property.GetString(), playbookSha256,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     public static bool IsArtifactPin(string propertyName) =>
         string.Equals(propertyName, ArtifactFileNameParameterName,
             StringComparison.Ordinal)
         || string.Equals(propertyName, ArtifactSha256ParameterName,
+            StringComparison.Ordinal)
+        || string.Equals(propertyName, PlaybookSha256ParameterName,
             StringComparison.Ordinal);
 
     public static bool IsReserved(string propertyName) =>

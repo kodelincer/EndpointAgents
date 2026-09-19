@@ -3,6 +3,7 @@ using EndpointAgents.Platform.Windows;
 using EndpointAgents.Platform.Windows.Ibsng;
 using EndpointAgents.Platform.Windows.Office;
 using EndpointAgents.Platform.Windows.UserSessions;
+using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.LocalIpc;
 using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Rpc;
@@ -153,7 +154,7 @@ public sealed class OfficeRemediationTests
     }
 
     [Fact]
-    public void BugfixRunnerUsesHiddenServiceCmdWithOnlyFixedMenuInput()
+    public void BugfixRunnerUsesHiddenServiceCmdWithRedirectedTerminalStreams()
     {
         var path = Path.Combine(OfficeRemediationPaths.StagingRoot,
             "office-activation-repair", new string('A', 64),
@@ -165,6 +166,8 @@ public sealed class OfficeRemediationTests
             startInfo.FileName);
         Assert.Equal(["/d", "/s", "/c", path], startInfo.ArgumentList);
         Assert.True(startInfo.RedirectStandardInput);
+        Assert.True(startInfo.RedirectStandardOutput);
+        Assert.True(startInfo.RedirectStandardError);
         Assert.False(startInfo.UseShellExecute);
         Assert.True(startInfo.CreateNoWindow);
         Assert.Empty(startInfo.Verb);
@@ -180,6 +183,7 @@ public sealed class OfficeRemediationTests
         var artifact = new OfficeBugfixArtifactDescriptor(artifactId,
             "Office activation repair", "Approved KMS repair",
             $"{artifactId}.bat", new string('A', 64), "16.0", "17.0",
+            TestPlaybook(), BatchPlaybookPolicy.ComputeSha256(TestPlaybook()),
             $"/api/files/office/bugfix/{artifactId}");
         var probe = new CountingVolumeProbe(new OfficeActivationProbeResult(
             OfficeActivationMechanisms.Ospp, true, true,
@@ -341,7 +345,9 @@ public sealed class OfficeRemediationTests
         var artifact = new OfficeBugfixArtifactDescriptor("office-activation-repair",
             "Office activation repair", "Approved batch tool",
             "office-activation-repair.bat", new string('A', 64),
-            "14.0", "15.0", "/api/files/office/bugfix/office-bugfix-14");
+            "14.0", "15.0", TestPlaybook(),
+            BatchPlaybookPolicy.ComputeSha256(TestPlaybook()),
+            "/api/files/office/bugfix/office-bugfix-14");
 
         Assert.Equal(expected, OfficeBugfixCommandHandler.IsCompatible(
             artifact, Version.Parse(officeVersion)));
@@ -363,6 +369,259 @@ public sealed class OfficeRemediationTests
         Assert.False(OfficeRemediationLauncher.TryResolveTrustPolicy(
             "Unknown", out _, out _));
     }
+
+    [Fact]
+    public void OfficeBugfixAuthorizationPinsBatAndPlaybookRevisions()
+    {
+        var original = TestPlaybook();
+        var changed = original with
+        {
+            Steps =
+            [
+                original.Steps[0],
+                original.Steps[1] with { Send = "N" }
+            ]
+        };
+        var originalHash = BatchPlaybookPolicy.ComputeSha256(original);
+        var parameters = JsonSerializer.SerializeToElement(
+            new Dictionary<string, string>
+            {
+                [ChatActionApproval.ArtifactFileNameParameterName] = "repair.bat",
+                [ChatActionApproval.ArtifactSha256ParameterName] = new string('A', 64),
+                [ChatActionApproval.PlaybookSha256ParameterName] = originalHash
+            });
+
+        Assert.True(ChatActionApproval.MatchesArtifactAndPlaybook(parameters,
+            "repair.bat", new string('A', 64), originalHash));
+        Assert.False(ChatActionApproval.MatchesArtifactAndPlaybook(parameters,
+            "repair.bat", new string('C', 64), originalHash));
+        Assert.False(ChatActionApproval.MatchesArtifactAndPlaybook(parameters,
+            "repair.bat", new string('A', 64),
+            BatchPlaybookPolicy.ComputeSha256(changed)));
+    }
+
+    [Fact]
+    public void OfficeBugfixRpcCannotOverridePlaybookResponses()
+    {
+        var attemptedOverride = JsonSerializer.SerializeToElement(new
+        {
+            artifactId = "office-activation-repair",
+            send = "N",
+            response = "2"
+        });
+        var serverScoped = JsonSerializer.SerializeToElement(
+            new Dictionary<string, string>
+            {
+                ["artifactId"] = "office-activation-repair",
+                ["userSid"] = "S-1-5-21-1-2-3-1001",
+                [ChatActionApproval.ArtifactFileNameParameterName] =
+                    "office-activation-repair.bat",
+                [ChatActionApproval.ArtifactSha256ParameterName] = new string('A', 64),
+                [ChatActionApproval.PlaybookSha256ParameterName] = new string('B', 64)
+            });
+
+        Assert.False(OfficeBugfixCommandHandler.HasOnlyApprovedParameters(
+            attemptedOverride));
+        Assert.True(OfficeBugfixCommandHandler.HasOnlyApprovedParameters(
+            serverScoped));
+    }
+
+    [Fact]
+    public async Task InteractiveRunnerCompletesDelayedNestedLineAndKeyMenus()
+    {
+        var playbook = new BatchPlaybook(1,
+        [
+            new BatchPlaybookStep("Select an option", "1", "line", 5),
+            new BatchPlaybookStep("Select Office operation", "2", "line", 5),
+            new BatchPlaybookStep("Continue [Y/N]", "Y", "key", 5)
+        ]);
+        var result = await RunFixtureAsync(
+            """
+            @echo off
+            setlocal
+            <nul set /p "=Files are extracting... "
+            >nul ping -n 2 127.0.0.1
+            <nul set /p "=Select "
+            >nul ping -n 2 127.0.0.1
+            <nul set /p "=an option: "
+            set /p "first="
+            if not "%first%"=="1" exit /b 11
+            >&2 <nul set /p "=Select Office operation: "
+            set /p "second="
+            if not "%second%"=="2" exit /b 12
+            <nul set /p "=Continue [Y/N]: "
+            choice /c YN /n
+            if errorlevel 2 exit /b 13
+            exit /b 0
+            """, playbook,
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(result.State == OfficeBugfixRunStates.Completed,
+            result.ToString());
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(3, result.CompletedStepCount);
+        Assert.Null(result.FailedStepIndex);
+    }
+
+    [Fact]
+    public async Task InteractiveRunnerDoesNotReuseStaleMenuText()
+    {
+        var playbook = new BatchPlaybook(1,
+        [
+            new BatchPlaybookStep("MENU", "1", "line", 5),
+            new BatchPlaybookStep("MENU", "2", "line", 5)
+        ]);
+        var result = await RunFixtureAsync(
+            """
+            @echo off
+            <nul set /p "=MENU: "
+            set /p "first="
+            >nul ping -n 2 127.0.0.1
+            <nul set /p "=NEXT: "
+            set /p "second="
+            exit /b 0
+            """, playbook, TimeSpan.FromMilliseconds(750),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.True(result.State == OfficeBugfixRunStates.PromptTimedOut,
+            result.ToString());
+        Assert.Equal(1, result.CompletedStepCount);
+        Assert.Equal(1, result.FailedStepIndex);
+    }
+
+    [Fact]
+    public async Task InteractiveRunnerReportsEarlyExitAndNonzeroExit()
+    {
+        var early = await RunFixtureAsync(
+            """
+            @echo off
+            <nul set /p "=First: "
+            set /p "first="
+            exit /b 0
+            """,
+            new BatchPlaybook(1,
+            [
+                new BatchPlaybookStep("First", "1", "line", 5),
+                new BatchPlaybookStep("Second", "2", "line", 5)
+            ]), cancellationToken: TestContext.Current.CancellationToken);
+        var failed = await RunFixtureAsync(
+            """
+            @echo off
+            <nul set /p "=Run: "
+            set /p "value="
+            exit /b 7
+            """,
+            new BatchPlaybook(1,
+                [new BatchPlaybookStep("Run", "Y", "line", 5)]),
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(OfficeBugfixRunStates.ExitedBeforePlaybookCompleted,
+            early.State);
+        Assert.Equal(1, early.CompletedStepCount);
+        Assert.Equal(1, early.FailedStepIndex);
+        Assert.Equal(OfficeBugfixRunStates.ProcessFailed, failed.State);
+        Assert.Equal(7, failed.ExitCode);
+    }
+
+    [Fact]
+    public async Task InteractiveRunnerReportsOutputOverflowAndCancellation()
+    {
+        var playbook = new BatchPlaybook(1,
+            [new BatchPlaybookStep("Never", "1", "line", 5)]);
+        var overflow = await RunFixtureAsync(
+            """
+            @echo off
+            for /L %%i in (1,1,100) do <nul set /p "=0123456789"
+            set /p "value=Never: "
+            """, playbook, outputLimitBytes: 128,
+            cancellationToken: TestContext.Current.CancellationToken);
+        using var cancellation = new CancellationTokenSource(
+            TimeSpan.FromMilliseconds(200));
+        var cancelled = await RunFixtureAsync(
+            """
+            @echo off
+            set /p "value=Waiting: "
+            """, playbook, cancellationToken: cancellation.Token);
+
+        Assert.Equal(OfficeBugfixRunStates.OutputLimitExceeded, overflow.State);
+        Assert.Equal(0, overflow.CompletedStepCount);
+        Assert.Equal(OfficeBugfixRunStates.Cancelled, cancelled.State);
+    }
+
+    [Theory]
+    [InlineData(OfficeBugfixRunStates.PromptTimedOut, 408)]
+    [InlineData(OfficeBugfixRunStates.ExitedBeforePlaybookCompleted, 409)]
+    [InlineData(OfficeBugfixRunStates.OutputLimitExceeded, 413)]
+    [InlineData(OfficeBugfixRunStates.Cancelled, 499)]
+    [InlineData(OfficeBugfixRunStates.ProcessFailed, 500)]
+    public void HandlerMapsInteractionFailures(string state, int expectedCode)
+    {
+        var failed = OfficeBugfixCommandHandler.TryGetExecutionFailure(
+            new OfficeBugfixRunResult(42, null, state, 1, 1),
+            out var code, out _);
+
+        Assert.True(failed);
+        Assert.Equal(expectedCode, code);
+    }
+
+    [Fact]
+    public void HandlerRequiresCompletedPlaybookAndHealthyActivationPostCheck()
+    {
+        var completed = new OfficeBugfixRunResult(42, 0,
+            OfficeBugfixRunStates.Completed, 3, null);
+        var healthy = new OfficeActivationProbeResult(
+            OfficeActivationMechanisms.Ospp, true, true,
+            [new OfficeActivationProduct("Office LTSC",
+                OfficeLicenseTypes.VolumeKms, OfficeActivationStates.Licensed,
+                null, OfficeActivationMechanisms.Ospp)]);
+        var unhealthy = healthy with
+        {
+            Products =
+            [
+                new OfficeActivationProduct("Office LTSC",
+                    OfficeLicenseTypes.VolumeKms,
+                    OfficeActivationStates.Unlicensed, null,
+                    OfficeActivationMechanisms.Ospp)
+            ]
+        };
+
+        Assert.True(OfficeBugfixCommandHandler.IsVerifiedSuccess(completed, healthy));
+        Assert.False(OfficeBugfixCommandHandler.IsVerifiedSuccess(completed, unhealthy));
+        Assert.False(OfficeBugfixCommandHandler.IsVerifiedSuccess(
+            completed with { State = OfficeBugfixRunStates.ProcessFailed }, healthy));
+    }
+
+    private static async Task<OfficeBugfixRunResult> RunFixtureAsync(string batch,
+        BatchPlaybook playbook, TimeSpan? overallTimeout = null,
+        int outputLimitBytes = OfficeBugfixRunner.OutputLimitBytes,
+        CancellationToken cancellationToken = default)
+    {
+        var root = Path.Combine(Path.GetTempPath(),
+            $"EndpointAgents-playbook-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, "fixture.bat");
+            await File.WriteAllTextAsync(path,
+                batch.Replace("\r\n", "\n", StringComparison.Ordinal)
+                    .Replace("\n", "\r\n", StringComparison.Ordinal),
+                cancellationToken.IsCancellationRequested
+                    ? CancellationToken.None : cancellationToken);
+            return await OfficeBugfixRunner.RunProcessAsync(
+                OfficeBugfixRunner.CreateStartInfo(path), playbook,
+                cancellationToken, overallTimeout, outputLimitBytes);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static BatchPlaybook TestPlaybook() => new(1,
+    [
+        new BatchPlaybookStep("Select an item", "1", "line", 30),
+        new BatchPlaybookStep("Continue", "Y", "key", 30)
+    ]);
 
     private sealed class FakeArtifactAuthorization(string? token)
         : IEndpointArtifactAuthorizationProvider

@@ -33,17 +33,48 @@ exclude the maximum.
       "fileName": "office-activation-repair.bat",
       "sha256": "REPLACE_WITH_64_HEXADECIMAL_CHARACTERS",
       "minOfficeVersion": "16.0",
-      "maxOfficeVersionExclusive": "17.0"
+      "maxOfficeVersionExclusive": "17.0",
+      "playbook": {
+        "version": 1,
+        "steps": [
+          {
+            "expect": "Select an item",
+            "send": "1",
+            "submit": "line",
+            "timeoutSeconds": 30
+          },
+          {
+            "expect": "Continue with harmless sample? [Y/N]",
+            "send": "Y",
+            "submit": "key",
+            "timeoutSeconds": 30
+          }
+        ]
+      }
     }
   ]
 }
 ```
 
-The BAT contract is deliberately narrow: Office activation is menu item `1`. The
-endpoint service supplies only that fixed input and no arguments, paths, credentials,
-keys, or model-generated text. The repair must terminate with exit code `0` on successful
-completion. The service stops it after eight minutes, before the endpoint command's
-ten-minute outer timeout.
+The BAT contract is deliberately narrow. Its playbook contains 1–32 ordered steps. Each
+step waits for a literal prompt fragment and sends only its administrator-approved fixed
+response. `submit: "key"` requires exactly one printable character and does not send
+Enter; `submit: "line"` sends up to 64 printable characters followed by Enter. Step
+timeouts must be 5–300 seconds. Responses cannot contain control characters,
+credentials, tokens, secrets, or product keys.
+
+The control plane normalizes and hashes the complete ordered playbook. Action approval
+pins the filename, BAT SHA-256, and playbook SHA-256, so a meaningful prompt, response,
+submission mode, timeout, order, or version change requires fresh authorization. The
+endpoint verifies both hashes independently before launch.
+
+The endpoint starts hidden `System32\cmd.exe` with redirected input, output, and error
+streams. It reads output in chunks because prompts need not end in a newline, removes
+ANSI formatting and nonsemantic control characters, and matches each step only against
+output received after the prior response. Status text is retained but ignored unless it
+contains the approved literal prompt. Output is capped at 1 MiB. The process must finish
+all steps and terminate with exit code `0`; the service stops it after eight minutes,
+before the endpoint command's ten-minute outer timeout.
 
 ## Runtime flow
 
@@ -68,10 +99,11 @@ ten-minute outer timeout.
    Different approved revisions therefore never share a runnable pathname.
 8. The service opens the protected source first, impersonates the verified interactive
    user's Windows token, and writes a verified convenience copy to that user's Desktop.
-9. The LocalSystem service runs only the protected staged copy in session 0. It supplies
-   fixed menu choice `1`, never executes the user-writable Desktop copy, and never
-   requests a UAC password.
-10. After exit code `0`, the endpoint immediately verifies healthy KMS with OSPP.
+9. The LocalSystem service runs only the protected staged copy in session 0. It waits for
+   and answers each approved playbook prompt, never executes the user-writable Desktop
+   copy, and never requests a UAC password.
+10. After a `Completed` playbook result with exit code `0`, the endpoint immediately
+    verifies healthy KMS with OSPP.
     Hermes calls `office_activation_status` again even when execution reported an error,
     unless an Office app reopened and blocked execution. Exit code `0` alone is not
     proof that activation is healthy.
@@ -81,15 +113,30 @@ ten-minute outer timeout.
 1. Review the BAT and copy it into the protected repository using the artifact ID as its
    filename.
 2. Compute its hash with `Get-FileHash -Algorithm SHA256`.
-3. Add or update its manifest entry and intended Office version range; avoid accidental
-   overlaps unless the skill contains an explicit rule for choosing between them.
-4. Update the administrator selection policy in
+3. Manually run the BAT in a disposable VM and transcribe stable literal prompt fragments
+   and fixed responses into a version 1 playbook. Do not include credentials, tokens, or
+   product keys.
+4. Add or update its manifest entry, playbook, and intended Office version range; avoid
+   accidental overlaps unless the skill contains an explicit rule for choosing between
+   them.
+5. Update the administrator selection policy in
    `deploy\hermes\skills\office-support\SKILL.md` if more than one compatible ID can be
    returned.
-5. Promote the reviewed skill to the active Hermes profile and reload that profile.
+6. Promote the reviewed skill to the active Hermes profile and reload that profile.
 
 No endpoint code change is needed for another valid manifest entry. Replacing BAT content
 without updating its pinned hash makes the artifact unavailable.
+
+Deploy the playbook-aware control plane and endpoint binaries before publishing a
+playbook-enabled production artifact, and confirm endpoints report the updated version.
+Pilot the harmless sample first, then an independently reviewed legitimate reseller BAT
+in a disposable VM, and finally one test endpoint. BATs that require UAC, credentials,
+GUI interaction, arrow keys, a signed-in user's profile, new console windows, or detached
+processes are unsupported. ConPTY, branching, transcript storage, live input, and
+automatic response selection are intentionally not part of this release.
+
+`KMS_mng.bat` remains excluded until its embedded payload, provenance, behavior, and
+licensing purpose are independently approved.
 
 The privileged path is available only after the elevated production installers have
 created the protected repository and installed `EndpointAgents.Service` as LocalSystem.

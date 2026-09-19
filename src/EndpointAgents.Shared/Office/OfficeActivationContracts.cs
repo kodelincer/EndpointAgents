@@ -109,6 +109,8 @@ public sealed record OfficeBugfixArtifactDescriptor(
     string Sha256,
     string MinOfficeVersion,
     string MaxOfficeVersionExclusive,
+    BatchPlaybook Playbook,
+    string PlaybookSha256,
     string DownloadPath);
 
 public sealed record OfficeBugfixCatalog(

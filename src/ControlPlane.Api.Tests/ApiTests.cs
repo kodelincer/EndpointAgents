@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Security.Cryptography;
 using ControlPlane.Api.Files;
 using ControlPlane.Api.Chat;
+using EndpointAgents.Shared.Office;
 
 namespace ControlPlane.Api.Tests;
 
@@ -418,7 +419,12 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
                         FileName = fileName,
                         Sha256 = hash,
                         MinOfficeVersion = "16.0",
-                        MaxOfficeVersionExclusive = "17.0"
+                        MaxOfficeVersionExclusive = "17.0",
+                        Playbook = new BatchPlaybook(1,
+                        [
+                            new BatchPlaybookStep("Select an item", "1", "line", 30),
+                            new BatchPlaybookStep("Continue", "Y", "key", 30)
+                        ])
                     }
                 ]
             }), TestCancellation);

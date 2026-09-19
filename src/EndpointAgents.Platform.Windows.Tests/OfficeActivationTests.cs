@@ -226,9 +226,15 @@ public sealed class OfficeActivationTests
         errorCode, OfficeActivationMechanisms.Ospp);
 
     private static OfficeBugfixArtifactDescriptor Bugfix(string id, string minimum,
-        string maximumExclusive) => new(id, id, "Approved Office BAT", $"{id}.bat",
-        new string('A', 64), minimum, maximumExclusive,
-        $"/api/files/office/bugfix/{id}");
+        string maximumExclusive)
+    {
+        var playbook = new BatchPlaybook(1,
+            [new BatchPlaybookStep("Select an item", "1", "line", 30)]);
+        return new OfficeBugfixArtifactDescriptor(id, id, "Approved Office BAT",
+            $"{id}.bat", new string('A', 64), minimum, maximumExclusive,
+            playbook, BatchPlaybookPolicy.ComputeSha256(playbook),
+            $"/api/files/office/bugfix/{id}");
+    }
 
     private sealed class ActivationInventorySource(bool clickToRun)
         : IOfficeInstallationSource

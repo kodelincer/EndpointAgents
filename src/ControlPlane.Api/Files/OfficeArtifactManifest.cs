@@ -1,3 +1,5 @@
+using EndpointAgents.Shared.Office;
+
 namespace ControlPlane.Api.Files;
 
 public sealed class OfficeArtifactManifest
@@ -39,6 +41,7 @@ public sealed class OfficeBugfixManifestEntry
     public string Sha256 { get; set; } = string.Empty;
     public string MinOfficeVersion { get; set; } = string.Empty;
     public string MaxOfficeVersionExclusive { get; set; } = string.Empty;
+    public BatchPlaybook? Playbook { get; set; }
 }
 
 public sealed record FileRepositoryIssue(string Source, string Message);

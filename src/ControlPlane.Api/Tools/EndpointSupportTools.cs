@@ -367,7 +367,8 @@ public sealed class EndpointSupportTools
             var artifact = await files.GetOfficeBugfixArtifactAsync(
                 artifactId, cancellationToken);
             return artifact is null ? null : PinArtifact(artifactId,
-                artifact.Descriptor.FileName, artifact.Descriptor.Sha256);
+                artifact.Descriptor.FileName, artifact.Descriptor.Sha256,
+                artifact.Descriptor.PlaybookSha256);
         }
         if (method == "software.office_remediation_run")
         {
@@ -388,11 +389,16 @@ public sealed class EndpointSupportTools
     }
 
     private static JsonElement PinArtifact(string artifactId, string fileName,
-        string sha256) => JsonSerializer.SerializeToElement(
-            new Dictionary<string, string>
-            {
-                ["artifactId"] = artifactId,
-                [ChatActionApproval.ArtifactFileNameParameterName] = fileName,
-                [ChatActionApproval.ArtifactSha256ParameterName] = sha256
-            });
+        string sha256, string? playbookSha256 = null)
+    {
+        var pinned = new Dictionary<string, string>
+        {
+            ["artifactId"] = artifactId,
+            [ChatActionApproval.ArtifactFileNameParameterName] = fileName,
+            [ChatActionApproval.ArtifactSha256ParameterName] = sha256
+        };
+        if (playbookSha256 is not null)
+            pinned[ChatActionApproval.PlaybookSha256ParameterName] = playbookSha256;
+        return JsonSerializer.SerializeToElement(pinned);
+    }
 }

@@ -12,27 +12,18 @@ public static class PersianUserTextPolicy
         "برای ادامه بررسی و رفع مشکل آفیس، تأیید شما لازم است.";
 
     public static string AssistantMessage(string? value) =>
-        IsSafe(value, AssistantMessageCharacters)
-            ? value!.Trim().Replace("`", string.Empty)
-            : InvalidOutputFallback;
+        Normalize(value, AssistantMessageCharacters, InvalidOutputFallback);
 
     public static string ActionReason(string? value) =>
-        IsSafe(value, ActionReasonCharacters) ? value!.Trim() : ActionReasonFallback;
+        Normalize(value, ActionReasonCharacters, ActionReasonFallback);
 
-    public static bool IsSafe(string? value) => IsSafe(value, AssistantMessageCharacters);
-
-    private static bool IsSafe(string? value, int maximumCharacters)
+    private static string Normalize(string? value, int maximumCharacters,
+        string fallback)
     {
-        if (string.IsNullOrWhiteSpace(value) || value.Length > maximumCharacters)
-            return false;
-        if (value.Contains("```", StringComparison.Ordinal)
-            || value.Contains('{') || value.Contains('}')
-            || value.Contains('[') || value.Contains(']')
-            || value.Contains('"')
-            || value.Contains('<') || value.Contains('>')
-            || value.Contains('\\') || value.Contains('/')
-            || value.Contains('_'))
-            return false;
-        return value.Any(char.IsLetter);
+        if (string.IsNullOrWhiteSpace(value)) return fallback;
+        var text = value.Trim();
+        return text.Length <= maximumCharacters
+            ? text
+            : text[..(maximumCharacters - 1)] + '…';
     }
 }

@@ -31,7 +31,7 @@ public sealed class CommandCatalog
             "Download one compatible Microsoft-signed remediation by artifact ID, ask the signed-in user for consent, and launch it without caller-provided arguments.",
             new { artifactId = "" }),
         new("software.office_bugfix_run", "اجرای برنامه رفع مشکل آفیس",
-            "Download one version-compatible administrator-approved Office BAT, verify its SHA-256, copy it to the signed-in user's desktop, and run the protected staged copy through the endpoint service.",
+            "Download one version-compatible administrator-approved Office BAT, verify its BAT and playbook hashes, copy it to the signed-in user's desktop, and run the protected staged copy through the endpoint service using only the fixed playbook responses.",
             new { artifactId = "" }),
         new("network.ibsng_diagnose", "Diagnose IBSng connection",
             "Inspect the approved dialer, gateway, DNS, DHCP, server route, protocol, UI log, and Windows RAS/VPN state.",

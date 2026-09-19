@@ -3,6 +3,7 @@ using ControlPlane.Api.Commands;
 using ControlPlane.Api.Files;
 using ControlPlane.Api.Tools;
 using EndpointAgents.Shared.Chat;
+using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Rpc;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
@@ -345,6 +346,11 @@ public sealed class ChatStoreTests : IClassFixture<ControlPlaneApiFactory>
         const string fileName = "pin-test.bat";
         var bytes = "@echo off\r\nexit /b 0\r\n"u8.ToArray();
         var sha256 = Convert.ToHexString(SHA256.HashData(bytes));
+        var playbook = new BatchPlaybook(1,
+        [
+            new BatchPlaybookStep("Select an item", "1", "line", 30),
+            new BatchPlaybookStep("Continue", "Y", "key", 30)
+        ]);
         Directory.CreateDirectory(_files.RootPath);
         await File.WriteAllBytesAsync(Path.Combine(_files.RootPath, fileName), bytes,
             TestCancellation);
@@ -362,7 +368,8 @@ public sealed class ChatStoreTests : IClassFixture<ControlPlaneApiFactory>
                         FileName = fileName,
                         Sha256 = sha256,
                         MinOfficeVersion = "16.0",
-                        MaxOfficeVersionExclusive = "17.0"
+                        MaxOfficeVersionExclusive = "17.0",
+                        Playbook = playbook
                     }
                 ]
             }, cancellationToken: TestCancellation);
@@ -391,6 +398,9 @@ public sealed class ChatStoreTests : IClassFixture<ControlPlaneApiFactory>
             ChatActionApproval.ArtifactFileNameParameterName).GetString());
         Assert.Equal(sha256, proposal.Parameters.Value.GetProperty(
             ChatActionApproval.ArtifactSha256ParameterName).GetString());
+        Assert.Equal(BatchPlaybookPolicy.ComputeSha256(playbook),
+            proposal.Parameters.Value.GetProperty(
+                ChatActionApproval.PlaybookSha256ParameterName).GetString());
 
         await _store.CompleteRunAsync(lease.RunId, "ready", TestCancellation);
         await _store.DecideActionAsync(agentId, new ChatActionDecision(

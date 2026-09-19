@@ -49,6 +49,23 @@ $manifest = [ordered]@{
             sha256 = $hash
             minOfficeVersion = "16.0"
             maxOfficeVersionExclusive = "17.0"
+            playbook = [ordered]@{
+                version = 1
+                steps = @(
+                    [ordered]@{
+                        expect = "Select an item"
+                        send = "1"
+                        submit = "line"
+                        timeoutSeconds = 30
+                    },
+                    [ordered]@{
+                        expect = "Continue with harmless sample? [Y/N]"
+                        send = "Y"
+                        submit = "key"
+                        timeoutSeconds = 30
+                    }
+                )
+            }
         }
     )
 }

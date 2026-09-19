@@ -29,6 +29,9 @@ public sealed class OfficeBugfixCommandHandler(
     public async Task<RpcResponse> HandleAsync(RpcRequest request,
         CommandExecutionContext context, CancellationToken cancellationToken)
     {
+        if (!HasOnlyApprovedParameters(request.Params))
+            return RpcResponse.Failure(request.Id, 400,
+                "Only params.artifactId is accepted from the caller.");
         if (!OfficeRemediationCommandHandler.TryParseArtifactId(
                 request.Params, out var artifactId))
             return RpcResponse.Failure(request.Id, 400,
@@ -95,8 +98,18 @@ public sealed class OfficeBugfixCommandHandler(
                 StringComparison.OrdinalIgnoreCase))
             return RpcResponse.Failure(request.Id, 412,
                 "The Office repair catalog returned an invalid batch filename.");
-        if (authorized && !ChatActionApproval.MatchesArtifact(request.Params,
-                descriptor.FileName, descriptor.Sha256))
+        if (!BatchPlaybookPolicy.TryNormalize(descriptor.Playbook,
+                out var normalizedPlaybook, out _)
+            || descriptor.PlaybookSha256 is not { Length: 64 }
+            || !descriptor.PlaybookSha256.All(Uri.IsHexDigit)
+            || !BatchPlaybookPolicy.ComputeSha256(normalizedPlaybook!).Equals(
+                descriptor.PlaybookSha256, StringComparison.OrdinalIgnoreCase))
+            return RpcResponse.Failure(request.Id, 412,
+                "The Office repair catalog returned an invalid playbook revision.");
+        descriptor = descriptor with { Playbook = normalizedPlaybook! };
+        if (authorized && !ChatActionApproval.MatchesArtifactAndPlaybook(
+                request.Params, descriptor.FileName, descriptor.Sha256,
+                descriptor.PlaybookSha256))
             return RpcResponse.Failure(request.Id, 412,
                 "The authorized Office repair revision has changed; request the current catalog revision before running it.");
 
@@ -145,20 +158,23 @@ public sealed class OfficeBugfixCommandHandler(
             var desktopPath = await DesktopArtifactFile.CopyForSessionAsync(
                 download.FilePath, session, descriptor.FileName, descriptor.Sha256,
                 cancellationToken);
-            var execution = await runner.RunAsync(download.FilePath,
-                descriptor.ArtifactId, descriptor.FileName, descriptor.Sha256,
+            var execution = await runner.RunAsync(download.FilePath, descriptor,
                 cancellationToken);
-            if (execution.TimedOut)
-                return RpcResponse.Failure(request.Id, 408,
-                    "The approved Office repair timed out.");
-            if (execution.ExitCode != 0)
-                return RpcResponse.Failure(request.Id, 500,
-                    "The approved Office repair returned a failure exit code.",
-                    new { execution.ExitCode });
+            if (TryGetExecutionFailure(execution, out var executionCode,
+                    out var executionMessage))
+                return RpcResponse.Failure(request.Id, executionCode,
+                    executionMessage, new
+                {
+                    execution.State,
+                    execution.ProcessId,
+                    execution.ExitCode,
+                    execution.CompletedStepCount,
+                    execution.FailedStepIndex
+                });
 
             var activationAfter = await volumeProbe.ProbeAsync(snapshot.Inventory,
                 cancellationToken);
-            if (!OfficeActivationRecommendation.IsHealthyKms(activationAfter))
+            if (!IsVerifiedSuccess(execution, activationAfter))
                 return RpcResponse.Failure(request.Id, 409,
                     "The approved Office repair completed, but Office did not report healthy KMS activation.",
                     new
@@ -175,7 +191,7 @@ public sealed class OfficeBugfixCommandHandler(
                 issue.Source, issue.Message, issue.Exception)).ToArray();
             return RpcResponse.Success(request.Id, DiagnosticResponse.Create(context, new
             {
-                State = "Completed",
+                execution.State,
                 descriptor.ArtifactId,
                 descriptor.DisplayName,
                 OfficeVersion = snapshot.Inventory.Version,
@@ -208,4 +224,46 @@ public sealed class OfficeBugfixCommandHandler(
         && Version.TryParse(artifact.MaxOfficeVersionExclusive, out var maximum)
         && officeVersion >= minimum
         && officeVersion < maximum;
+
+    internal static bool HasOnlyApprovedParameters(JsonElement? parameters)
+    {
+        if (parameters is not { ValueKind: JsonValueKind.Object } value)
+            return false;
+        foreach (var property in value.EnumerateObject())
+        {
+            if (property.NameEquals("artifactId")
+                || property.NameEquals("userSid")
+                || property.NameEquals(ChatActionApproval.ParameterName)
+                || property.NameEquals(ControlPlaneActionAuthorization.ParameterName)
+                || ChatActionApproval.IsArtifactPin(property.Name))
+                continue;
+            return false;
+        }
+        return true;
+    }
+
+    internal static bool TryGetExecutionFailure(OfficeBugfixRunResult execution,
+        out int code, out string message)
+    {
+        (code, message) = execution.State switch
+        {
+            OfficeBugfixRunStates.Completed => (0, string.Empty),
+            OfficeBugfixRunStates.PromptTimedOut => (408,
+                "The approved Office repair did not show the expected prompt before its timeout."),
+            OfficeBugfixRunStates.ExitedBeforePlaybookCompleted => (409,
+                "The approved Office repair exited before all approved playbook steps completed."),
+            OfficeBugfixRunStates.OutputLimitExceeded => (413,
+                "The approved Office repair exceeded the terminal output limit."),
+            OfficeBugfixRunStates.Cancelled => (499,
+                "The approved Office repair was cancelled."),
+            _ => (500, "The approved Office repair process failed.")
+        };
+        return execution.State != OfficeBugfixRunStates.Completed;
+    }
+
+    internal static bool IsVerifiedSuccess(OfficeBugfixRunResult execution,
+        OfficeActivationProbeResult activationAfter) =>
+        execution.State == OfficeBugfixRunStates.Completed
+        && execution.ExitCode == 0
+        && OfficeActivationRecommendation.IsHealthyKms(activationAfter);
 }

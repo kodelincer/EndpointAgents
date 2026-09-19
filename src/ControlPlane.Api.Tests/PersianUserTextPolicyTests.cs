@@ -29,8 +29,7 @@ public sealed class PersianUserTextPolicyTests
             "چند لایسنس حجمی MAK از کار افتادن اما یک لایسنس KMS فعاله. " +
             "پیشنهاد می‌کنم اقدام تعمیر فعال‌سازی رو ثبت کنم. لطفاً تأیید کنید تا ادامه بدم.";
 
-        Assert.Equal(output.Replace("`", string.Empty),
-            PersianUserTextPolicy.AssistantMessage(output));
+        Assert.Equal(output, PersianUserTextPolicy.AssistantMessage(output));
     }
 
     [Theory]
@@ -40,33 +39,46 @@ public sealed class PersianUserTextPolicyTests
     [InlineData("جزئیات در https://example.test قرار دارد.")]
     [InlineData("ابزار mcp_controlplane_office_inventory اجرا شد.")]
     [InlineData("```دستور```")]
-    public void ReplacesTechnicalOrNonPersianOutput(string output)
+    [InlineData("برای ادامه به Settings > Activation بروید.")]
+    public void KeepsDisplayableTechnicalText(string output)
+    {
+        Assert.Equal(output, PersianUserTextPolicy.AssistantMessage(output));
+    }
+
+    [Fact]
+    public void KeepsActionReason()
+    {
+        Assert.Equal("Run approved Office repair",
+            PersianUserTextPolicy.ActionReason("Run approved Office repair"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void FallsBackOnlyForMissingAssistantText(string? output)
     {
         Assert.Equal(PersianUserTextPolicy.InvalidOutputFallback,
             PersianUserTextPolicy.AssistantMessage(output));
     }
 
     [Fact]
-    public void ReplacesUnsafeActionReason()
+    public void TruncatesLongAssistantOutputInsteadOfHidingIt()
     {
-        Assert.Equal("Run approved Office repair",
-            PersianUserTextPolicy.ActionReason("Run approved Office repair"));
+        var result = PersianUserTextPolicy.AssistantMessage(new string('a', 2_001));
+
+        Assert.Equal(2_000, result.Length);
+        Assert.EndsWith("…", result);
     }
 
     [Fact]
-    public void AllowsAssistantOutputUpToTwoThousandCharacters()
+    public void TruncatesLongActionReasonAndFallsBackOnlyWhenMissing()
     {
-        Assert.False(PersianUserTextPolicy.IsSafe(" "));
-        Assert.True(PersianUserTextPolicy.IsSafe(new string('a', 2_000)));
-        Assert.False(PersianUserTextPolicy.IsSafe(new string('a', 2_001)));
-    }
+        var result = PersianUserTextPolicy.ActionReason(new string('a', 801));
 
-    [Fact]
-    public void KeepsActionReasonLimitAtEightHundredCharacters()
-    {
-        Assert.Equal(new string('a', 800),
-            PersianUserTextPolicy.ActionReason(new string('a', 800)));
+        Assert.Equal(800, result.Length);
+        Assert.EndsWith("…", result);
         Assert.Equal(PersianUserTextPolicy.ActionReasonFallback,
-            PersianUserTextPolicy.ActionReason(new string('a', 801)));
+            PersianUserTextPolicy.ActionReason(" "));
     }
 }

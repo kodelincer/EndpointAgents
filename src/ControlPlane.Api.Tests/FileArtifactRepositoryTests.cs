@@ -1,4 +1,5 @@
 using ControlPlane.Api.Files;
+using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Windows;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -189,6 +190,10 @@ public sealed class FileArtifactRepositoryTests
             Assert.Equal("office-repair-16", catalog.Artifacts[1].Descriptor.ArtifactId);
             Assert.Equal("/api/files/office/bugfix/office-repair-16",
                 catalog.Artifacts[1].Descriptor.DownloadPath);
+            Assert.Equal(2, catalog.Artifacts[1].Descriptor.Playbook.Steps.Count);
+            Assert.Equal(BatchPlaybookPolicy.ComputeSha256(
+                catalog.Artifacts[1].Descriptor.Playbook),
+                catalog.Artifacts[1].Descriptor.PlaybookSha256);
             Assert.Empty(catalog.Issues);
         }
         finally { Directory.Delete(root, recursive: true); }
@@ -315,6 +320,92 @@ public sealed class FileArtifactRepositoryTests
     }
 
     [Fact]
+    public async Task RejectsOfficeBugfixWithoutAPlaybook()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var bytes = "@echo off\r\nexit /b 0\r\n"u8.ToArray();
+            await File.WriteAllBytesAsync(Path.Combine(root, "missing-playbook.bat"),
+                bytes, TestContext.Current.CancellationToken);
+            var entry = BugfixEntry("missing-playbook", "missing-playbook.bat",
+                Convert.ToHexString(SHA256.HashData(bytes)), "16.0", "17.0");
+            entry.Playbook = null;
+            await WriteBugfixManifestAsync(root, entry);
+
+            var catalog = await CreateRepository(root).GetOfficeBugfixCatalogAsync(
+                TestContext.Current.CancellationToken);
+
+            Assert.Empty(catalog.Artifacts);
+            Assert.Contains("playbook", Assert.Single(catalog.Issues).Message,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    public static TheoryData<BatchPlaybook> InvalidPlaybooks => new()
+    {
+        new BatchPlaybook(1,
+            [new BatchPlaybookStep("Prompt", "1", "press", 30)]),
+        new BatchPlaybook(1,
+            [new BatchPlaybookStep("  \r\n", "1", "key", 30)]),
+        new BatchPlaybook(1,
+            [new BatchPlaybookStep("Prompt", "12", "key", 30)]),
+        new BatchPlaybook(1,
+            [new BatchPlaybookStep("Prompt", "Y\r", "line", 30)]),
+        new BatchPlaybook(1,
+            [new BatchPlaybookStep("Prompt", "1", "key", 4)]),
+        new BatchPlaybook(1,
+            [new BatchPlaybookStep("Prompt", "1", "key", 301)]),
+        new BatchPlaybook(1,
+            [new BatchPlaybookStep("Prompt", new string('X', 65), "line", 30)]),
+        new BatchPlaybook(1,
+            [new BatchPlaybookStep("Prompt", "AAAAA-BBBBB-CCCCC-DDDDD-EEEEE", "line", 30)]),
+        new BatchPlaybook(1, []),
+        new BatchPlaybook(1, Enumerable.Range(0, 33)
+            .Select(index => new BatchPlaybookStep($"Prompt {index}", "1", "key", 30))
+            .ToArray())
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidPlaybooks))]
+    public void RejectsInvalidOfficeBugfixPlaybooks(BatchPlaybook playbook)
+    {
+        Assert.False(BatchPlaybookPolicy.TryNormalize(playbook, out _, out _));
+    }
+
+    [Fact]
+    public void PlaybookHashIsStableForNormalizedStepsAndChangesWithBehavior()
+    {
+        var first = new BatchPlaybook(1,
+        [
+            new BatchPlaybookStep(" Select   an option \r\n", "1", "LINE", 30),
+            new BatchPlaybookStep("Continue", "Y", "key", 10)
+        ]);
+        var equivalent = new BatchPlaybook(1,
+        [
+            new BatchPlaybookStep("Select an option", "1", "line", 30),
+            new BatchPlaybookStep("Continue", "Y", "key", 10)
+        ]);
+        var changed = equivalent with
+        {
+            Steps =
+            [
+                equivalent.Steps[0],
+                equivalent.Steps[1] with { Send = "N" }
+            ]
+        };
+
+        Assert.Equal(BatchPlaybookPolicy.ComputeSha256(first),
+            BatchPlaybookPolicy.ComputeSha256(equivalent));
+        Assert.NotEqual(BatchPlaybookPolicy.ComputeSha256(equivalent),
+            BatchPlaybookPolicy.ComputeSha256(changed));
+        Assert.True(BatchPlaybookPolicy.TryNormalize(new BatchPlaybook(1,
+            [new BatchPlaybookStep("Select [1].*", "1", "key", 30)]),
+            out _, out _));
+    }
+
+    [Fact]
     public async Task LoadsOnlyFixedWindowsBugfixAndComputesSha256()
     {
         var root = CreateRoot();
@@ -409,8 +500,15 @@ public sealed class FileArtifactRepositoryTests
             FileName = fileName,
             Sha256 = sha256,
             MinOfficeVersion = minimum,
-            MaxOfficeVersionExclusive = maximumExclusive
+            MaxOfficeVersionExclusive = maximumExclusive,
+            Playbook = TestPlaybook()
         };
+
+    private static BatchPlaybook TestPlaybook() => new(1,
+    [
+        new BatchPlaybookStep("Select an option", "1", "line", 30),
+        new BatchPlaybookStep("Continue", "Y", "key", 30)
+    ]);
 
     private static async Task WriteBugfixManifestAsync(string root,
         params OfficeBugfixManifestEntry[] entries)
