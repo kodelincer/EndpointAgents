@@ -141,6 +141,27 @@ public sealed class OfficeActivationTests
     }
 
     [Fact]
+    public async Task ActivationStatusListsOnlyMatchingOfficeProductIds()
+    {
+        var service = CreateService(new FakeVolumeProbe(Probe(
+                Product(OfficeLicenseTypes.VolumeKms,
+                    OfficeActivationStates.Unlicensed))),
+            bugfixes:
+            [
+                Bugfix("office-2021", "16.0", "17.0") with
+                { OfficeProductReleaseIds = ["ProPlus2021Volume"] },
+                Bugfix("office-2024", "16.0", "17.0") with
+                { OfficeProductReleaseIds = ["ProPlus2024Volume"] }
+            ]);
+
+        var snapshot = await service.GetStatusAsync("test",
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(["office-2024"],
+            snapshot.Report.CompatibleBugfixArtifactIds);
+    }
+
+    [Fact]
     public async Task ToolUnavailableRemainsInconclusiveAndAllowsApprovedBat()
     {
         var result = new OfficeActivationProbeResult(OfficeActivationMechanisms.Ospp,

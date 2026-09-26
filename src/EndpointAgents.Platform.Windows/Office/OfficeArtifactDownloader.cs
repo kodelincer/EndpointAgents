@@ -1,4 +1,5 @@
 using EndpointAgents.Platform.Windows;
+using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Security;
 using Microsoft.Extensions.Options;
 using System.Net;
@@ -17,12 +18,17 @@ public sealed class OfficeArtifactDownloader(
 
     public async Task<OfficeArtifactDownload> EnsureAsync(string artifactId,
         string fileName, string sha256, string downloadPath,
-        CancellationToken cancellationToken, bool requirePortableExecutable = true)
+        CancellationToken cancellationToken, bool requirePortableExecutable = true,
+        string? revisionSha256 = null)
     {
         if (Path.GetFileName(fileName) != fileName)
             throw new InvalidDataException("The Office artifact filename is invalid.");
         if (sha256.Length != 64 || !sha256.All(Uri.IsHexDigit))
             throw new InvalidDataException("The Office artifact SHA-256 is invalid.");
+        if (revisionSha256 is not null
+            && (revisionSha256.Length != 64
+                || !revisionSha256.All(Uri.IsHexDigit)))
+            throw new InvalidDataException("The Office artifact revision is invalid.");
         if (string.IsNullOrWhiteSpace(downloadPath)
             || (downloadPath != $"/api/files/office/{artifactId}"
                 && downloadPath != $"/api/files/office/bugfix/{artifactId}"))
@@ -38,7 +44,7 @@ public sealed class OfficeArtifactDownloader(
         if (!artifactDirectory.StartsWith(stagingRoot, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The Office artifact staging path is invalid.");
         var revisionDirectory = Path.GetFullPath(Path.Combine(artifactDirectory,
-            sha256.ToUpperInvariant()));
+            (revisionSha256 ?? sha256).ToUpperInvariant()));
         var artifactRoot = artifactDirectory
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
@@ -110,6 +116,12 @@ public sealed class OfficeArtifactDownloader(
             try { File.Delete(partial); } catch { }
         }
     }
+
+    public Task EnsureSupportFilesAsync(string batchPath,
+        IReadOnlyList<BatchSupportFile>? files,
+        CancellationToken cancellationToken) =>
+        BatchSupportFileDownloader.EnsureAsync(batchPath, files, transport,
+            requireProtectedAcl: true, cancellationToken);
 
     internal static async Task<bool> IsApprovedLocalFileAsync(string path,
         string expectedSha256, CancellationToken cancellationToken,

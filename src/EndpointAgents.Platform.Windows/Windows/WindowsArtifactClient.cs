@@ -1,4 +1,5 @@
 using EndpointAgents.Platform.Windows.Office;
+using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Security;
 using EndpointAgents.Shared.Windows;
 using Microsoft.Extensions.Options;
@@ -23,6 +24,11 @@ public sealed class WindowsArtifactClient(
 
     public async Task<WindowsBugfixArtifactDescriptor?> GetArtifactAsync(
         string artifactId, CancellationToken cancellationToken)
+        => (await GetArtifactsAsync(cancellationToken)).SingleOrDefault(item =>
+            item.ArtifactId == artifactId);
+
+    public async Task<IReadOnlyList<WindowsBugfixArtifactDescriptor>> GetArtifactsAsync(
+        CancellationToken cancellationToken)
     {
         using var client = transport.CreateClient();
         using var request = await transport.CreateGetRequestAsync(CatalogPath,
@@ -31,8 +37,7 @@ public sealed class WindowsArtifactClient(
         response.EnsureSuccessStatusCode();
         var catalog = await response.Content.ReadFromJsonAsync<WindowsBugfixCatalog>(
             cancellationToken: cancellationToken);
-        return catalog?.Artifacts.SingleOrDefault(item =>
-            item.ArtifactId == artifactId);
+        return catalog?.Artifacts ?? [];
     }
 
     public async Task<(string Path, bool Downloaded)> EnsureAsync(
@@ -50,7 +55,7 @@ public sealed class WindowsArtifactClient(
         if (!artifactDirectory.StartsWith(root, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The Windows remediation path is invalid.");
         var directory = Path.GetFullPath(Path.Combine(artifactDirectory,
-            descriptor.Sha256.ToUpperInvariant()));
+            (descriptor.BundleSha256 ?? descriptor.Sha256).ToUpperInvariant()));
         var artifactRoot = artifactDirectory
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
@@ -66,7 +71,12 @@ public sealed class WindowsArtifactClient(
         if (File.Exists(destination)
             && await OfficeArtifactDownloader.IsApprovedLocalFileAsync(destination,
                 descriptor.Sha256, cancellationToken, requirePortableExecutable: false))
+        {
+            await BatchSupportFileDownloader.EnsureAsync(destination,
+                descriptor.SupportFiles, transport, _options.RequireProtectedAcl,
+                cancellationToken);
             return (destination, false);
+        }
 
         using var client = transport.CreateClient();
         using var request = await transport.CreateGetRequestAsync(
@@ -110,6 +120,9 @@ public sealed class WindowsArtifactClient(
             EnsureFile(partial);
             File.Move(partial, destination, overwrite: true);
             EnsureFile(destination);
+            await BatchSupportFileDownloader.EnsureAsync(destination,
+                descriptor.SupportFiles, transport, _options.RequireProtectedAcl,
+                cancellationToken);
             return (destination, true);
         }
         finally
@@ -157,11 +170,30 @@ public sealed class WindowsArtifactClient(
                 descriptor.FileName == WindowsHelloSamplePaths.FileName
                 && descriptor.DownloadPath ==
                     "/api/files/windows/bugfix/windows-hello-sample",
-            _ => false
+            _ => descriptor.ArtifactId.Length is >= 1 and <= 64
+                && descriptor.ArtifactId.All(character =>
+                    character is >= 'a' and <= 'z' or >= '0' and <= '9'
+                        or '-' or '_' or '.')
+                && char.IsAsciiLetterOrDigit(descriptor.ArtifactId[^1])
+                && descriptor.FileName == $"{descriptor.ArtifactId}.bat"
+                && descriptor.DownloadPath ==
+                    $"/api/files/windows/bugfix/{descriptor.ArtifactId}"
+                && descriptor.Playbook is not null
+                && BatchPlaybookPolicy.TryNormalize(descriptor.Playbook,
+                    out var playbook, out _)
+                && descriptor.PlaybookSha256 is { Length: 64 }
+                && BatchPlaybookPolicy.ComputeSha256(playbook!)
+                    .Equals(descriptor.PlaybookSha256,
+                        StringComparison.OrdinalIgnoreCase)
         };
         if (!approved
             || descriptor.Sha256.Length != 64
-            || !descriptor.Sha256.All(Uri.IsHexDigit))
+            || !descriptor.Sha256.All(Uri.IsHexDigit)
+            || descriptor.Playbook is null
+                && descriptor.SupportFiles is { Count: > 0 }
+            || !BatchSupportFilePolicy.IsValidBundle(descriptor.Sha256,
+                descriptor.SupportFiles, descriptor.BundleSha256,
+                $"/api/files/windows/bugfix/{descriptor.ArtifactId}/file"))
             throw new InvalidDataException(
                 "The control plane returned an invalid Windows remediation descriptor.");
     }

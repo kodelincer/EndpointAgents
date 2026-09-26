@@ -69,6 +69,7 @@ public sealed partial class FileArtifactRepository
     private readonly string _officeBugfixManifestPath;
     private readonly string _windowsRootPath;
     private readonly string _windowsBugfixFilePath;
+    private readonly string _windowsBugfixManifestPath;
     private readonly string _windowsHelloSampleFilePath;
 
     public FileArtifactRepository(IOptions<FileRepositoryOptions> options,
@@ -88,6 +89,8 @@ public sealed partial class FileArtifactRepository
             _options.WindowsDirectoryName));
         _windowsBugfixFilePath = Path.GetFullPath(Path.Combine(_windowsRootPath,
             _options.WindowsBugfixFileName));
+        _windowsBugfixManifestPath = Path.GetFullPath(Path.Combine(_windowsRootPath,
+            _options.WindowsBugfixManifestFileName));
         _windowsHelloSampleFilePath = Path.GetFullPath(Path.Combine(_windowsRootPath,
             _options.WindowsHelloSampleFileName));
     }
@@ -97,6 +100,7 @@ public sealed partial class FileArtifactRepository
     public string OfficeManifestPath => _officeManifestPath;
     public string OfficeBugfixManifestPath => _officeBugfixManifestPath;
     public string WindowsBugfixFilePath => _windowsBugfixFilePath;
+    public string WindowsBugfixManifestPath => _windowsBugfixManifestPath;
     public string WindowsHelloSampleFilePath => _windowsHelloSampleFilePath;
     public string IbsngDialerFileName => _options.IbsngDialerFileName;
     public bool ProtectedAclRequired => _options.RequireProtectedAcl;
@@ -292,18 +296,43 @@ public sealed partial class FileArtifactRepository
                 continue;
             }
 
+            var (supportFiles, supportError) = await LoadSupportFilesAsync(
+                _rootPath, entry.ArtifactId, entry.SupportFiles,
+                $"/api/files/office/bugfix/{entry.ArtifactId}/file",
+                cancellationToken);
+            if (supportError is not null)
+            {
+                issues.Add(new FileRepositoryIssue(
+                    $"office_bugfix.{entry.ArtifactId}", supportError));
+                continue;
+            }
+
             var descriptor = new OfficeBugfixArtifactDescriptor(entry.ArtifactId,
                 entry.DisplayName.Trim(), entry.Description.Trim(), entry.FileName,
                 expectedHash, Version.Parse(entry.MinOfficeVersion).ToString(),
                 Version.Parse(entry.MaxOfficeVersionExclusive).ToString(),
                 playbook!, BatchPlaybookPolicy.ComputeSha256(playbook!),
-                $"/api/files/office/bugfix/{entry.ArtifactId}");
+                $"/api/files/office/bugfix/{entry.ArtifactId}",
+                entry.OfficeProductReleaseIds.ToArray(),
+                entry.MinWindowsVersion is null ? null
+                    : Version.Parse(entry.MinWindowsVersion).ToString(),
+                entry.MaxWindowsVersionExclusive is null ? null
+                    : Version.Parse(entry.MaxWindowsVersionExclusive).ToString(),
+                supportFiles, supportFiles!.Count == 0 ? null
+                    : BatchSupportFilePolicy.ComputeBundleSha256(expectedHash,
+                        supportFiles),
+                entry.AdditionalCompatibility.Select(NormalizeOfficeCompatibility)
+                    .ToArray());
             artifacts.Add(new OfficeBugfixFileArtifact(file, descriptor));
         }
 
         return new OfficeBugfixCatalogSnapshot(
-            artifacts.OrderBy(item => item.Descriptor.ArtifactId,
-                StringComparer.OrdinalIgnoreCase).ToArray(), issues);
+            artifacts.OrderBy(item => new[] { item.Descriptor.MinOfficeVersion }
+                    .Concat(item.Descriptor.AdditionalCompatibility?.Select(rule =>
+                        rule.MinOfficeVersion) ?? [])
+                    .Select(Version.Parse).Min())
+                .ThenBy(item => item.Descriptor.ArtifactId,
+                    StringComparer.OrdinalIgnoreCase).ToArray(), issues);
     }
 
     public async Task<OfficeBugfixFileArtifact?> GetOfficeBugfixArtifactAsync(
@@ -314,6 +343,20 @@ public sealed partial class FileArtifactRepository
         var catalog = await GetOfficeBugfixCatalogAsync(cancellationToken);
         return catalog.Artifacts.FirstOrDefault(item => item.Descriptor.ArtifactId.Equals(
             artifactId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public async Task<FileArtifact?> GetOfficeBugfixSupportFileAsync(
+        string artifactId, string fileName, CancellationToken cancellationToken)
+    {
+        var artifact = await GetOfficeBugfixArtifactAsync(artifactId,
+            cancellationToken);
+        if (artifact?.Descriptor.SupportFiles?.Any(item =>
+                item.FileName == fileName) != true)
+            return null;
+        return await InspectFileAsync(Path.Combine(_rootPath,
+                $"{artifactId}.files", fileName),
+            artifact.Descriptor.SupportFiles.Single(item =>
+                item.FileName == fileName).Sha256, cancellationToken);
     }
 
     public async Task<WindowsBugfixCatalogSnapshot> GetWindowsBugfixCatalogAsync(
@@ -332,6 +375,96 @@ public sealed partial class FileArtifactRepository
                 "The Windows artifact filenames are not approved.")]);
 
         var artifacts = new List<WindowsBugfixFileArtifact>();
+        var issues = new List<FileRepositoryIssue>();
+        if (File.Exists(_windowsBugfixManifestPath))
+        {
+            WindowsBugfixManifest manifest;
+            try
+            {
+                var info = new FileInfo(_windowsBugfixManifestPath);
+                if (info.Length is <= 0 or > MaxManifestBytes
+                    || (info.Attributes & FileAttributes.ReparsePoint) != 0
+                    || !IsTrustedFile(_windowsBugfixManifestPath))
+                    throw new InvalidDataException("Manifest file is not trusted.");
+                await using var stream = File.OpenRead(_windowsBugfixManifestPath);
+                manifest = await JsonSerializer.DeserializeAsync<WindowsBugfixManifest>(
+                    stream, new JsonSerializerOptions(JsonSerializerDefaults.Web),
+                    cancellationToken) ?? new WindowsBugfixManifest();
+                if (manifest.Version != 1)
+                    throw new InvalidDataException("Manifest version must be 1.");
+            }
+            catch (Exception ex) when (ex is JsonException or IOException
+                or UnauthorizedAccessException or InvalidDataException)
+            {
+                manifest = new WindowsBugfixManifest();
+                issues.Add(new FileRepositoryIssue("windows_bugfix.manifest",
+                    $"The Windows bugfix manifest could not be read: {ex.GetType().Name}."));
+            }
+
+            var entries = manifest.Artifacts ?? [];
+            var duplicateIds = FindDuplicates(entries.OfType<WindowsBugfixManifestEntry>()
+                .Select(item => item.ArtifactId));
+            if (entries.Any(item => item is null))
+                issues.Add(new FileRepositoryIssue("windows_bugfix.invalid",
+                    "A null manifest entry was rejected."));
+            foreach (var entry in entries.OfType<WindowsBugfixManifestEntry>())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                BatchPlaybook? playbook = null;
+                string? error = null;
+                if (duplicateIds.Contains(entry.ArtifactId)
+                    || !TryValidateWindowsBugfixEntry(entry, out playbook,
+                        out error))
+                {
+                    issues.Add(new FileRepositoryIssue(
+                        $"windows_bugfix.{SafeIssueId(entry.ArtifactId)}",
+                        error ?? "Duplicate artifact ID was rejected."));
+                    continue;
+                }
+                var path = Path.GetFullPath(Path.Combine(_windowsRootPath,
+                    entry.FileName));
+                if (!IsWithinRoot(path))
+                {
+                    issues.Add(new FileRepositoryIssue(
+                        $"windows_bugfix.{entry.ArtifactId}",
+                        "Artifact path escaped the file repository."));
+                    continue;
+                }
+                var file = await InspectFileAsync(path,
+                    NormalizeSha256(entry.Sha256), cancellationToken);
+                if (file is null)
+                {
+                    issues.Add(new FileRepositoryIssue(
+                        $"windows_bugfix.{entry.ArtifactId}",
+                        "Artifact is missing or does not match its SHA-256."));
+                    continue;
+                }
+                var (supportFiles, supportError) = await LoadSupportFilesAsync(
+                    _windowsRootPath, entry.ArtifactId, entry.SupportFiles,
+                    $"/api/files/windows/bugfix/{entry.ArtifactId}/file",
+                    cancellationToken);
+                if (supportError is not null)
+                {
+                    issues.Add(new FileRepositoryIssue(
+                        $"windows_bugfix.{entry.ArtifactId}", supportError));
+                    continue;
+                }
+                artifacts.Add(new WindowsBugfixFileArtifact(file,
+                    new WindowsBugfixArtifactDescriptor(entry.ArtifactId,
+                        entry.DisplayName.Trim(), entry.Description.Trim(),
+                        entry.FileName, file.Sha256,
+                        $"/api/files/windows/bugfix/{entry.ArtifactId}",
+                        Version.Parse(entry.MinWindowsVersion).ToString(),
+                        Version.Parse(entry.MaxWindowsVersionExclusive).ToString(),
+                        entry.EditionIds.ToArray(), playbook,
+                        BatchPlaybookPolicy.ComputeSha256(playbook!),
+                        supportFiles, supportFiles!.Count == 0 ? null
+                            : BatchSupportFilePolicy.ComputeBundleSha256(
+                                file.Sha256, supportFiles),
+                        entry.AdditionalCompatibility
+                            .Select(NormalizeWindowsCompatibility).ToArray())));
+            }
+        }
         var activation = await InspectFileAsync(_windowsBugfixFilePath,
             expectedSha256: null, cancellationToken);
         if (activation is not null)
@@ -353,18 +486,131 @@ public sealed partial class FileArtifactRepository
                     "Copies a harmless Hello batch file to the signed-in user's desktop and opens it visibly.",
                     WindowsHelloSamplePaths.FileName, hello.Sha256,
                     "/api/files/windows/bugfix/windows-hello-sample")));
-        return new WindowsBugfixCatalogSnapshot(artifacts, []);
+        return new WindowsBugfixCatalogSnapshot(artifacts
+            .OrderBy(item => item.Descriptor.MinWindowsVersion is null
+                ? new Version(0, 0)
+                : new[] { item.Descriptor.MinWindowsVersion }
+                    .Concat(item.Descriptor.AdditionalCompatibility?.Select(rule =>
+                        rule.MinWindowsVersion) ?? [])
+                    .Select(Version.Parse).Min())
+            .ThenBy(item => item.Descriptor.ArtifactId,
+                StringComparer.OrdinalIgnoreCase).ToArray(), issues);
     }
 
     public async Task<WindowsBugfixFileArtifact?> GetWindowsBugfixArtifactAsync(
         string artifactId, CancellationToken cancellationToken)
     {
-        if (artifactId is not (WindowsRemediationPaths.ArtifactId
-            or WindowsHelloSamplePaths.ArtifactId)) return null;
+        if (!ArtifactIdPattern().IsMatch(artifactId ?? string.Empty)) return null;
         var catalog = await GetWindowsBugfixCatalogAsync(cancellationToken);
         return catalog.Artifacts.SingleOrDefault(item =>
             item.Descriptor.ArtifactId == artifactId);
     }
+
+    public async Task<FileArtifact?> GetWindowsBugfixSupportFileAsync(
+        string artifactId, string fileName, CancellationToken cancellationToken)
+    {
+        var artifact = await GetWindowsBugfixArtifactAsync(artifactId,
+            cancellationToken);
+        if (artifact?.Descriptor.SupportFiles?.Any(item =>
+                item.FileName == fileName) != true)
+            return null;
+        return await InspectFileAsync(Path.Combine(_windowsRootPath,
+                $"{artifactId}.files", fileName),
+            artifact.Descriptor.SupportFiles.Single(item =>
+                item.FileName == fileName).Sha256, cancellationToken);
+    }
+
+    private async Task<(IReadOnlyList<BatchSupportFile>? Files, string? Error)>
+        LoadSupportFilesAsync(string repositoryRoot, string artifactId,
+            IReadOnlyList<BatchSupportFileManifestEntry> entries,
+            string downloadPrefix, CancellationToken cancellationToken)
+    {
+        if (entries is null || entries.Count > 32
+            || entries.Any(entry => entry is null
+                || !BatchSupportFilePolicy.IsValidName(entry.FileName)
+                || entry.FileName.Equals($"{artifactId}.bat",
+                    StringComparison.OrdinalIgnoreCase)
+                || !BatchSupportFilePolicy.IsSha256(entry.Sha256))
+            || entries.Select(entry => entry.FileName)
+                .Distinct(StringComparer.OrdinalIgnoreCase).Count() != entries.Count)
+            return (null, "Supporting file names or hashes are invalid.");
+        if (entries.Count == 0) return ([], null);
+        var directory = Path.GetFullPath(Path.Combine(repositoryRoot,
+            $"{artifactId}.files"));
+        if (!IsWithinRoot(directory) || !Directory.Exists(directory)
+            || !PrepareTrustedDirectory(directory))
+            return (null, "The supporting file directory is missing or untrusted.");
+        var files = new List<BatchSupportFile>(entries.Count);
+        foreach (var entry in entries)
+        {
+            var file = await InspectFileAsync(Path.Combine(directory,
+                    entry.FileName), NormalizeSha256(entry.Sha256),
+                cancellationToken);
+            if (file is null)
+                return (null, $"Supporting file {entry.FileName} is missing or has a hash mismatch.");
+            files.Add(new BatchSupportFile(entry.FileName, file.Sha256,
+                $"{downloadPrefix}/{entry.FileName}"));
+        }
+        return (files, null);
+    }
+
+    private static bool TryValidateWindowsBugfixEntry(
+        WindowsBugfixManifestEntry entry, out BatchPlaybook? playbook,
+        out string? error)
+    {
+        playbook = null;
+        if (entry.ArtifactId is not { } id
+            || !ArtifactIdPattern().IsMatch(id)
+            || !char.IsAsciiLetterOrDigit(id[^1])
+            || id is WindowsRemediationPaths.ArtifactId
+                or WindowsHelloSamplePaths.ArtifactId)
+            return Fail("A unique Windows repair artifact ID is required.", out error);
+        if (string.IsNullOrWhiteSpace(entry.DisplayName)
+            || string.IsNullOrWhiteSpace(entry.Description))
+            return Fail("Display name and description are required.", out error);
+        if (entry.FileName != $"{id}.bat"
+            || NormalizeSha256(entry.Sha256) is null)
+            return Fail("BAT filename or SHA-256 is invalid.", out error);
+        if (!TryValidateWindowsCompatibility(new WindowsBugfixCompatibilityRange(
+                entry.MinWindowsVersion, entry.MaxWindowsVersionExclusive,
+                entry.EditionIds), out error))
+            return false;
+        if (entry.AdditionalCompatibility is null
+            || entry.AdditionalCompatibility.Count > 31
+            || entry.AdditionalCompatibility.Any(rule => rule is null
+                || !TryValidateWindowsCompatibility(rule, out _)))
+            return Fail("Additional Windows compatibility ranges are invalid.",
+                out error);
+        if (!BatchPlaybookPolicy.TryNormalize(entry.Playbook, out playbook,
+                out var playbookError))
+            return Fail($"Invalid playbook: {playbookError}", out error);
+        error = null;
+        return true;
+    }
+
+    private static bool TryValidateWindowsCompatibility(
+        WindowsBugfixCompatibilityRange rule, out string? error)
+    {
+        if (!Version.TryParse(rule.MinWindowsVersion, out var minimum)
+            || !Version.TryParse(rule.MaxWindowsVersionExclusive,
+                out var maximum) || minimum >= maximum)
+            return Fail("Windows version bounds are invalid.", out error);
+        if (rule.EditionIds is null || rule.EditionIds.Any(value =>
+                string.IsNullOrWhiteSpace(value) || value.Length > 64
+                || !value.All(character => char.IsAsciiLetterOrDigit(character)
+                    || character is '-' or '_'))
+            || rule.EditionIds.Distinct(StringComparer.OrdinalIgnoreCase).Count()
+                != rule.EditionIds.Count)
+            return Fail("Windows edition IDs must be unique identifiers.", out error);
+        error = null;
+        return true;
+    }
+
+    private static WindowsBugfixCompatibilityRange NormalizeWindowsCompatibility(
+        WindowsBugfixCompatibilityRange rule) => new(
+            Version.Parse(rule.MinWindowsVersion).ToString(),
+            Version.Parse(rule.MaxWindowsVersionExclusive).ToString(),
+            rule.EditionIds.ToArray());
 
     private async Task<FileArtifact?> InspectFileAsync(string path, string? expectedSha256,
         CancellationToken cancellationToken)
@@ -470,17 +716,62 @@ public sealed partial class FileArtifactRepository
             return Fail("Artifact filename must be the artifact ID followed by .bat.", out error);
         if (NormalizeSha256(entry.Sha256) is null)
             return Fail("Artifact SHA-256 must contain exactly 64 hexadecimal characters.", out error);
-        if (!Version.TryParse(entry.MinOfficeVersion, out var minimum)
-            || !Version.TryParse(entry.MaxOfficeVersionExclusive, out var maximum))
-            return Fail("Office version bounds must use numeric dotted versions.", out error);
-        if (minimum >= maximum)
-            return Fail("Minimum Office version must be lower than the exclusive maximum version.", out error);
+        if (!TryValidateOfficeCompatibility(new OfficeBugfixCompatibility(
+                entry.MinOfficeVersion, entry.MaxOfficeVersionExclusive,
+                entry.OfficeProductReleaseIds, entry.MinWindowsVersion,
+                entry.MaxWindowsVersionExclusive), out error))
+            return false;
+        if (entry.AdditionalCompatibility is null
+            || entry.AdditionalCompatibility.Count > 31
+            || entry.AdditionalCompatibility.Any(rule => rule is null
+                || !TryValidateOfficeCompatibility(rule, out _)))
+            return Fail("Additional Office compatibility ranges are invalid.",
+                out error);
         if (!BatchPlaybookPolicy.TryNormalize(entry.Playbook, out playbook,
                 out var playbookError))
             return Fail($"Invalid playbook: {playbookError}", out error);
         error = null;
         return true;
     }
+
+    private static bool TryValidateOfficeCompatibility(
+        OfficeBugfixCompatibility rule, out string? error)
+    {
+        if (!Version.TryParse(rule.MinOfficeVersion, out var minimum)
+            || !Version.TryParse(rule.MaxOfficeVersionExclusive, out var maximum))
+            return Fail("Office version bounds must use numeric dotted versions.", out error);
+        if (minimum >= maximum)
+            return Fail("Minimum Office version must be lower than the exclusive maximum version.", out error);
+        if (rule.OfficeProductReleaseIds is null
+            || rule.OfficeProductReleaseIds.Any(id => string.IsNullOrWhiteSpace(id)
+                || id.Length > 64 || !id.All(character =>
+                    char.IsAsciiLetterOrDigit(character) || character is '-' or '_' or '.'))
+            || rule.OfficeProductReleaseIds.Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count() != rule.OfficeProductReleaseIds.Count)
+            return Fail("Office product release IDs must be unique, non-empty identifiers.", out error);
+        if (rule.MinWindowsVersion is not null
+            && !Version.TryParse(rule.MinWindowsVersion, out _)
+            || rule.MaxWindowsVersionExclusive is not null
+            && !Version.TryParse(rule.MaxWindowsVersionExclusive, out _))
+            return Fail("Windows version bounds must use numeric dotted versions.", out error);
+        if (rule.MinWindowsVersion is not null
+            && rule.MaxWindowsVersionExclusive is not null
+            && Version.Parse(rule.MinWindowsVersion)
+                >= Version.Parse(rule.MaxWindowsVersionExclusive))
+            return Fail("Minimum Windows version must be lower than the exclusive maximum version.", out error);
+        error = null;
+        return true;
+    }
+
+    private static OfficeBugfixCompatibility NormalizeOfficeCompatibility(
+        OfficeBugfixCompatibility rule) => new(
+            Version.Parse(rule.MinOfficeVersion).ToString(),
+            Version.Parse(rule.MaxOfficeVersionExclusive).ToString(),
+            rule.OfficeProductReleaseIds.ToArray(),
+            rule.MinWindowsVersion is null ? null
+                : Version.Parse(rule.MinWindowsVersion).ToString(),
+            rule.MaxWindowsVersionExclusive is null ? null
+                : Version.Parse(rule.MaxWindowsVersionExclusive).ToString());
 
     private bool IsWithinOfficeRoot(string path)
     {

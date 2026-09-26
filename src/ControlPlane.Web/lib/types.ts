@@ -8,12 +8,25 @@ export type Activity = {
   requestId?: string; request?: RpcRequest; response?: RpcResponse; durationMs?: number; agent?: Agent;
 };
 export type ConnectionState = "connecting" | "live" | "reconnecting" | "offline";
+export type OfficeBugfixCompatibility = {
+  minOfficeVersion: string; maxOfficeVersionExclusive: string;
+  officeProductReleaseIds: string[]; minWindowsVersion?: string | null;
+  maxWindowsVersionExclusive?: string | null;
+};
+export type WindowsBugfixCompatibility = {
+  minWindowsVersion: string; maxWindowsVersionExclusive: string; editionIds: string[];
+};
 export type EndpointFile = {
   artifactId: string; fileName: string; sizeBytes: number; lastModifiedUtc: string;
   sha256: string; downloadPath: string;
   category: string; displayName?: string | null; description?: string | null; kind?: string | null;
   supportedProductFamilies?: string[] | null; minOfficeVersion?: string | null; maxOfficeVersion?: string | null;
-  maxOfficeVersionExclusive?: string | null;
+    maxOfficeVersionExclusive?: string | null;
+    officeProductReleaseIds?: string[] | null; minWindowsVersion?: string | null;
+    maxWindowsVersionExclusive?: string | null;
+    editionIds?: string[] | null;
+    additionalOfficeCompatibility?: OfficeBugfixCompatibility[] | null;
+    additionalWindowsCompatibility?: WindowsBugfixCompatibility[] | null;
   activationStates?: string[] | null; errorCodes?: string[] | null; requiresInteractiveUser?: boolean;
   requiresOfficeAppsClosed?: boolean; requiresRestart?: boolean;
 };
@@ -22,7 +35,8 @@ export type FileInventory = {
   issues: { source: string; message: string }[];
   repository: {
     expectedPattern: string; officeManifestPath: string;
-    officeBugfixManifestPath: string; windowsBugfixFilePath: string;
+      officeBugfixManifestPath: string; windowsBugfixFilePath: string;
+      windowsBugfixManifestPath?: string;
     windowsHelloSampleFilePath: string; protectedAclRequired: boolean;
     downloadMethod: string;
   };

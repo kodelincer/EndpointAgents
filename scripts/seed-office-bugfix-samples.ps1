@@ -2,7 +2,8 @@
 param(
     [string]$RepositoryRoot =
         "$env:ProgramData\EndpointAgents\ControlPlane\FileRepository",
-    [switch]$Force
+    [switch]$Force,
+    [switch]$Development
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,8 +11,16 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $artifactId = "office-activation-repair"
 $fileName = "$artifactId.bat"
 $source = Join-Path $repoRoot "deploy\control-plane\FileRepository\$fileName"
+if ($Development) {
+    if ($PSBoundParameters.ContainsKey("RepositoryRoot")) {
+        throw "-Development uses the repository's fixed development FileRepository path."
+    }
+    $RepositoryRoot = Join-Path $repoRoot "deploy\control-plane\FileRepository"
+}
 $destination = Join-Path $RepositoryRoot $fileName
 $manifestPath = Join-Path $RepositoryRoot "office-bugfix-managers.json"
+$sourceIsDestination = [IO.Path]::GetFullPath($source) -eq
+    [IO.Path]::GetFullPath($destination)
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -22,8 +31,8 @@ function Assert-Administrator {
     }
 }
 
-Assert-Administrator
-if (((Test-Path -LiteralPath $destination) `
+if (-not $Development) { Assert-Administrator }
+if ((((Test-Path -LiteralPath $destination) -and -not $sourceIsDestination) `
         -or (Test-Path -LiteralPath $manifestPath)) -and -not $Force) {
     throw "The Office test artifact or manifest already exists. Use -Force to back up and replace the manifest with the harmless 16.x sample."
 }
@@ -36,8 +45,20 @@ if (Test-Path -LiteralPath $manifestPath) {
     Write-Host "Backed up existing manifest: $backupPath"
 }
 
-Copy-Item -LiteralPath $source -Destination $destination -Force
+if (-not $sourceIsDestination) {
+    Copy-Item -LiteralPath $source -Destination $destination -Force
+}
 $hash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+$productReleaseIds = @()
+if ($Development) {
+    $configuration = Get-ItemProperty `
+        -Path "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration" `
+        -ErrorAction SilentlyContinue
+    if ($configuration.ProductReleaseIds) {
+        $productReleaseIds = @($configuration.ProductReleaseIds -split '[,;]' |
+            ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    }
+}
 $manifest = [ordered]@{
     version = 1
     artifacts = @(
@@ -49,6 +70,7 @@ $manifest = [ordered]@{
             sha256 = $hash
             minOfficeVersion = "16.0"
             maxOfficeVersionExclusive = "17.0"
+            officeProductReleaseIds = $productReleaseIds
             playbook = [ordered]@{
                 version = 1
                 steps = @(
@@ -82,6 +104,6 @@ finally {
     }
 }
 
-Write-Host "Seeded harmless Office 16.x sample: $destination"
+Write-Host "Seeded harmless Office 16.x menu demo (not a repair): $destination"
 Write-Host "Manifest: $manifestPath"
 Write-Host "SHA-256: $hash"

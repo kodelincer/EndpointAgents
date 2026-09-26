@@ -1,4 +1,6 @@
 using EndpointAgents.Shared.Windows;
+using EndpointAgents.Shared.Office;
+using EndpointAgents.Platform.Windows.Office;
 using EndpointAgents.Shared.Security;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
@@ -16,7 +18,7 @@ public sealed class WindowsBugfixRunner(
     private readonly WindowsRemediationOptions _options = options.Value;
 
     public async Task<WindowsBugfixRunResult> RunAsync(string path,
-        string expectedSha256, CancellationToken cancellationToken)
+        WindowsBugfixArtifactDescriptor descriptor, CancellationToken cancellationToken)
     {
         if (_options.RequireAdministrator)
         {
@@ -26,10 +28,36 @@ public sealed class WindowsBugfixRunner(
                 throw new InvalidOperationException(
                     "The EndpointAgents service does not have an administrative token.");
         }
-        if (!await IsApprovedAsync(path, expectedSha256, _options.StagingRoot,
-                _options.RequireProtectedAcl, cancellationToken))
+        if (!BatchSupportFilePolicy.IsValidBundle(descriptor.Sha256,
+                descriptor.SupportFiles, descriptor.BundleSha256,
+                $"/api/files/windows/bugfix/{descriptor.ArtifactId}/file"))
+            throw new InvalidDataException("The Windows repair bundle is not approved.");
+        if (!await IsApprovedAsync(path, descriptor.ArtifactId,
+                descriptor.FileName, descriptor.Sha256, _options.StagingRoot,
+                _options.RequireProtectedAcl, cancellationToken,
+                descriptor.BundleSha256)
+            || !await BatchSupportFileDownloader.AreApprovedAsync(path,
+                descriptor.SupportFiles, _options.RequireProtectedAcl,
+                cancellationToken))
             throw new InvalidDataException(
                 "The staged Windows remediation is not approved.");
+
+        if (descriptor.Playbook is not null)
+        {
+            if (!BatchPlaybookPolicy.TryNormalize(descriptor.Playbook,
+                    out var playbook, out _)
+                || descriptor.PlaybookSha256 is not { Length: 64 }
+                || !BatchPlaybookPolicy.ComputeSha256(playbook!).Equals(
+                    descriptor.PlaybookSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The Windows playbook is not approved.");
+            var menuResult = await OfficeBugfixRunner.RunProcessAsync(
+                OfficeBugfixRunner.CreateStartInfo(Path.GetFullPath(path)),
+                playbook!, cancellationToken, Timeout);
+            return new WindowsBugfixRunResult(menuResult.ExitCode,
+                menuResult.State == OfficeBugfixRunStates.PromptTimedOut,
+                menuResult.State, menuResult.CompletedStepCount,
+                menuResult.FailedStepIndex);
+        }
 
         var fullPath = Path.GetFullPath(path);
         using var process = new Process { StartInfo = CreateStartInfo(fullPath) };
@@ -58,8 +86,24 @@ public sealed class WindowsBugfixRunner(
     internal static async Task<bool> IsApprovedAsync(string path,
         string expectedSha256, string stagingRoot, bool requireProtectedAcl,
         CancellationToken cancellationToken)
+        => await IsApprovedAsync(path, WindowsRemediationPaths.ArtifactId,
+            WindowsRemediationPaths.FileName, expectedSha256, stagingRoot,
+            requireProtectedAcl, cancellationToken);
+
+    internal static async Task<bool> IsApprovedAsync(string path,
+        string artifactId, string fileName, string expectedSha256,
+        string stagingRoot, bool requireProtectedAcl,
+        CancellationToken cancellationToken, string? revisionSha256 = null)
     {
-        if (expectedSha256.Length != 64 || !expectedSha256.All(Uri.IsHexDigit))
+        if (artifactId.Length is < 1 or > 64
+            || artifactId.Any(character =>
+                !(character is >= 'a' and <= 'z' or >= '0' and <= '9'
+                    or '-' or '_' or '.'))
+            || fileName != $"{artifactId}.bat"
+            && !(artifactId == WindowsRemediationPaths.ArtifactId
+                && fileName == WindowsRemediationPaths.FileName)
+            || expectedSha256.Length != 64
+            || !expectedSha256.All(Uri.IsHexDigit))
             return false;
         var fullPath = Path.GetFullPath(path);
         var rootPath = Path.GetFullPath(stagingRoot);
@@ -67,8 +111,8 @@ public sealed class WindowsBugfixRunner(
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
         var expectedPath = Path.GetFullPath(Path.Combine(root,
-            WindowsRemediationPaths.ArtifactId, expectedSha256.ToUpperInvariant(),
-            WindowsRemediationPaths.FileName));
+            artifactId, (revisionSha256 ?? expectedSha256).ToUpperInvariant(),
+            fileName));
         var directory = Path.GetDirectoryName(fullPath)!;
         var trustedPath = requireProtectedAcl
             ? ProtectedWindowsPath.IsDirectorySecure(rootPath,
@@ -117,4 +161,5 @@ public sealed class WindowsBugfixRunner(
     }
 }
 
-public sealed record WindowsBugfixRunResult(int? ExitCode, bool TimedOut);
+public sealed record WindowsBugfixRunResult(int? ExitCode, bool TimedOut,
+    string? State = null, int CompletedStepCount = 0, int? FailedStepIndex = null);

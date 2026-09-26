@@ -176,11 +176,30 @@ public sealed class FileArtifactRepositoryTests
                 firstBytes, TestContext.Current.CancellationToken);
             await File.WriteAllBytesAsync(Path.Combine(root, "office-repair-16.bat"),
                 secondBytes, TestContext.Current.CancellationToken);
+            var office16 = BugfixEntry("office-repair-16", "office-repair-16.bat",
+                Convert.ToHexString(SHA256.HashData(secondBytes)), "16.0", "17.0");
+            office16.OfficeProductReleaseIds = ["ProPlus2021Volume"];
+            office16.MinWindowsVersion = "10.0.22000";
+            office16.MaxWindowsVersionExclusive = "10.0.30000";
+            office16.AdditionalCompatibility =
+            [
+                new OfficeBugfixCompatibility("16.0", "17.0",
+                    ["ProPlus2024Volume"], "10.0.30000", "10.0.31000")
+            ];
+            var helperDirectory = Directory.CreateDirectory(Path.Combine(root,
+                "office-repair-16.files")).FullName;
+            var helperBytes = "sample helper"u8.ToArray();
+            await File.WriteAllBytesAsync(Path.Combine(helperDirectory, "helper.txt"),
+                helperBytes, TestContext.Current.CancellationToken);
+            office16.SupportFiles = [new BatchSupportFileManifestEntry
+            {
+                FileName = "helper.txt",
+                Sha256 = Convert.ToHexString(SHA256.HashData(helperBytes))
+            }];
             await WriteBugfixManifestAsync(root,
+                office16,
                 BugfixEntry("office-repair-15", "office-repair-15.bat",
-                    Convert.ToHexString(SHA256.HashData(firstBytes)), "15.0", "16.0"),
-                BugfixEntry("office-repair-16", "office-repair-16.bat",
-                    Convert.ToHexString(SHA256.HashData(secondBytes)), "16.0", "17.0"));
+                    Convert.ToHexString(SHA256.HashData(firstBytes)), "15.0", "16.0"));
 
             var catalog = await CreateRepository(root).GetOfficeBugfixCatalogAsync(
                 TestContext.Current.CancellationToken);
@@ -190,6 +209,20 @@ public sealed class FileArtifactRepositoryTests
             Assert.Equal("office-repair-16", catalog.Artifacts[1].Descriptor.ArtifactId);
             Assert.Equal("/api/files/office/bugfix/office-repair-16",
                 catalog.Artifacts[1].Descriptor.DownloadPath);
+            Assert.Equal(["ProPlus2021Volume"],
+                catalog.Artifacts[1].Descriptor.OfficeProductReleaseIds);
+            Assert.Equal("10.0.22000",
+                catalog.Artifacts[1].Descriptor.MinWindowsVersion);
+            Assert.Equal("ProPlus2024Volume", Assert.Single(
+                catalog.Artifacts[1].Descriptor.AdditionalCompatibility!)
+                .OfficeProductReleaseIds.Single());
+            Assert.Equal("helper.txt", Assert.Single(
+                catalog.Artifacts[1].Descriptor.SupportFiles!).FileName);
+            Assert.True(BatchSupportFilePolicy.IsValidBundle(
+                catalog.Artifacts[1].Descriptor.Sha256,
+                catalog.Artifacts[1].Descriptor.SupportFiles,
+                catalog.Artifacts[1].Descriptor.BundleSha256,
+                "/api/files/office/bugfix/office-repair-16/file"));
             Assert.Equal(2, catalog.Artifacts[1].Descriptor.Playbook.Steps.Count);
             Assert.Equal(BatchPlaybookPolicy.ComputeSha256(
                 catalog.Artifacts[1].Descriptor.Playbook),
@@ -293,6 +326,36 @@ public sealed class FileArtifactRepositoryTests
 
             Assert.Empty(catalog.Artifacts);
             Assert.Equal(2, catalog.Issues.Count);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task RejectsAmbiguousProductIdsAndWindowsBounds()
+    {
+        var root = CreateRoot();
+        try
+        {
+            var duplicateIds = BugfixEntry("duplicate-ids", "duplicate-ids.bat",
+                new string('A', 64), "16.0", "17.0");
+            duplicateIds.OfficeProductReleaseIds =
+                ["ProPlus2021Volume", "proplus2021volume"];
+            var invalidWindows = BugfixEntry("invalid-windows",
+                "invalid-windows.bat", new string('B', 64), "16.0", "17.0");
+            invalidWindows.MinWindowsVersion = "10.0.30000";
+            invalidWindows.MaxWindowsVersionExclusive = "10.0.22000";
+            var invalidAdditional = BugfixEntry("invalid-additional",
+                "invalid-additional.bat", new string('C', 64), "16.0", "17.0");
+            invalidAdditional.AdditionalCompatibility =
+            [new OfficeBugfixCompatibility("17.0", "16.0", [])];
+            await WriteBugfixManifestAsync(root, duplicateIds, invalidWindows,
+                invalidAdditional);
+
+            var catalog = await CreateRepository(root).GetOfficeBugfixCatalogAsync(
+                TestContext.Current.CancellationToken);
+
+            Assert.Empty(catalog.Artifacts);
+            Assert.Equal(3, catalog.Issues.Count);
         }
         finally { Directory.Delete(root, recursive: true); }
     }
@@ -427,6 +490,70 @@ public sealed class FileArtifactRepositoryTests
                 artifact.Descriptor.Sha256);
             Assert.Equal("/api/files/windows/bugfix/windows-activation-repair",
                 artifact.Descriptor.DownloadPath);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
+    public async Task LoadsVersionedWindowsMenuAndItsSupportingFiles()
+    {
+        var root = CreateRoot();
+        try
+        {
+            const string id = "windows-menu-demo";
+            var windows = Directory.CreateDirectory(Path.Combine(root, "Windows"))
+                .FullName;
+            var batchBytes = "@echo off\r\nset /p value=Select: \r\n"u8.ToArray();
+            var batchHash = Convert.ToHexString(SHA256.HashData(batchBytes));
+            await File.WriteAllBytesAsync(Path.Combine(windows, $"{id}.bat"),
+                batchBytes, TestContext.Current.CancellationToken);
+            var supportDirectory = Directory.CreateDirectory(Path.Combine(windows,
+                $"{id}.files")).FullName;
+            var supportBytes = "data"u8.ToArray();
+            var supportHash = Convert.ToHexString(SHA256.HashData(supportBytes));
+            await File.WriteAllBytesAsync(Path.Combine(supportDirectory,
+                "helper.txt"), supportBytes, TestContext.Current.CancellationToken);
+            var manifest = new WindowsBugfixManifest
+            {
+                Artifacts = [new WindowsBugfixManifestEntry
+                {
+                    ArtifactId = id, DisplayName = "Menu demo",
+                    Description = "Harmless menu test", FileName = $"{id}.bat",
+                    Sha256 = batchHash, MinWindowsVersion = "10.0.22000",
+                    MaxWindowsVersionExclusive = "10.0.30000",
+                    EditionIds = ["Professional"],
+                    AdditionalCompatibility =
+                    [new WindowsBugfixCompatibilityRange("10.0.19041",
+                        "10.0.19046", ["Enterprise"])],
+                    SupportFiles = [new BatchSupportFileManifestEntry
+                    {
+                        FileName = "helper.txt", Sha256 = supportHash
+                    }],
+                    Playbook = new BatchPlaybook(1,
+                        [new BatchPlaybookStep("Select:", "1", "line", 30)])
+                }]
+            };
+            await File.WriteAllTextAsync(Path.Combine(windows,
+                "windows-bugfix-managers.json"),
+                JsonSerializer.Serialize(manifest),
+                TestContext.Current.CancellationToken);
+
+            var repository = CreateRepository(root);
+            var catalog = await repository.GetWindowsBugfixCatalogAsync(
+                TestContext.Current.CancellationToken);
+
+            var artifact = Assert.Single(catalog.Artifacts);
+            Assert.Equal(id, artifact.Descriptor.ArtifactId);
+            Assert.Equal(["Professional"], artifact.Descriptor.EditionIds);
+            Assert.Equal("10.0.19041", Assert.Single(
+                artifact.Descriptor.AdditionalCompatibility!).MinWindowsVersion);
+            Assert.True(BatchSupportFilePolicy.IsValidBundle(batchHash,
+                artifact.Descriptor.SupportFiles,
+                artifact.Descriptor.BundleSha256,
+                $"/api/files/windows/bugfix/{id}/file"));
+            Assert.NotNull(await repository.GetWindowsBugfixSupportFileAsync(id,
+                "helper.txt", TestContext.Current.CancellationToken));
+            Assert.Empty(catalog.Issues);
         }
         finally { Directory.Delete(root, recursive: true); }
     }

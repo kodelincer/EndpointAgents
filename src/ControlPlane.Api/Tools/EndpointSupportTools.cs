@@ -96,7 +96,7 @@ public sealed class EndpointSupportTools
             "software.office_runtime_status", parameters: null, cancellationToken);
 
     [McpServerTool(Name = "run_windows_activation_repair"), Description(
-        "Run the fixed administrator-approved Windows activation repair without user approval after an explicit activation request.")]
+        "Run a compatible administrator-approved Windows activation repair by artifact ID after an explicit activation request.")]
     public static Task<string> RunWindowsActivationRepair(
         ChatStore store,
         AgentRegistry registry,
@@ -104,9 +104,11 @@ public sealed class EndpointSupportTools
         FileArtifactRepository files,
         [Description("The random capability supplied in this run's instructions.")]
         string runCapability,
+        [Description("The exact approved artifact ID returned by Windows activation status.")]
+        string artifactId,
         CancellationToken cancellationToken) =>
         RunAutomaticRepairAsync(store, registry, catalog, files, runCapability,
-            "system.windows_activation_bugfix_run", WindowsRemediationPaths.ArtifactId,
+            "system.windows_activation_bugfix_run", artifactId,
             "Windows activation repair", "run_windows_activation_repair",
             ChatProgressActivity.WindowsActivationRepair, cancellationToken);
 
@@ -328,7 +330,6 @@ public sealed class EndpointSupportTools
 
         var requiredArtifact = method switch
         {
-            "system.windows_activation_bugfix_run" => "windows-activation-repair",
             "system.windows_hello_sample_run" => "windows-hello-sample",
             _ => null
         };
@@ -368,7 +369,8 @@ public sealed class EndpointSupportTools
                 artifactId, cancellationToken);
             return artifact is null ? null : PinArtifact(artifactId,
                 artifact.Descriptor.FileName, artifact.Descriptor.Sha256,
-                artifact.Descriptor.PlaybookSha256);
+                artifact.Descriptor.PlaybookSha256,
+                artifact.Descriptor.BundleSha256);
         }
         if (method == "software.office_remediation_run")
         {
@@ -383,13 +385,16 @@ public sealed class EndpointSupportTools
             var artifact = await files.GetWindowsBugfixArtifactAsync(
                 artifactId, cancellationToken);
             return artifact is null ? null : PinArtifact(artifactId,
-                artifact.Descriptor.FileName, artifact.Descriptor.Sha256);
+                artifact.Descriptor.FileName, artifact.Descriptor.Sha256,
+                artifact.Descriptor.PlaybookSha256,
+                artifact.Descriptor.BundleSha256);
         }
         return null;
     }
 
     private static JsonElement PinArtifact(string artifactId, string fileName,
-        string sha256, string? playbookSha256 = null)
+        string sha256, string? playbookSha256 = null,
+        string? bundleSha256 = null)
     {
         var pinned = new Dictionary<string, string>
         {
@@ -399,6 +404,8 @@ public sealed class EndpointSupportTools
         };
         if (playbookSha256 is not null)
             pinned[ChatActionApproval.PlaybookSha256ParameterName] = playbookSha256;
+        if (bundleSha256 is not null)
+            pinned[ChatActionApproval.BundleSha256ParameterName] = bundleSha256;
         return JsonSerializer.SerializeToElement(pinned);
     }
 }

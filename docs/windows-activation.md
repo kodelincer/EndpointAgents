@@ -1,65 +1,111 @@
 # Managed Windows activation repair
 
-`system.windows_activation_status` reads sanitized Windows version, edition, build,
-license status, grace state, and activation channel. It never returns product keys,
-partial keys, licensing IDs, device IDs, or raw PowerShell output.
+`system.windows_activation_status` checks the Windows edition, OS build, and license
+state. For an activation problem, Hermes selects a repair from
+`compatibleBugfixArtifactIds`. A licensed machine does not run an activation BAT.
+After execution, the endpoint checks the license again; exit code `0` alone does not
+mean the issue is resolved.
 
-After an explicit Windows activation-problem request, Hermes first checks this status.
-If Windows is already licensed or the status cannot be verified, it stops without
-changing the endpoint. Otherwise, the dedicated `run_windows_activation_repair` tool
-dispatches the fixed administrator-approved artifact automatically; it does not create
-an approval card. Direct operator dispatch retains its Tray consent check.
+## Versioned repair catalog
 
-Administrators provide the reviewed repair at:
+The protected Control Plane repository contains `Windows/windows-bugfix-managers.json`
+and one BAT per manifest entry in the same `Windows` directory. An entry is published
+only when the BAT and every declared support file match their SHA-256 values.
 
-```text
-C:\ProgramData\EndpointAgents\ControlPlane\FileRepository\Windows\windowsbugfixer.bat
+```json
+{
+  "version": 1,
+  "artifacts": [
+    {
+      "artifactId": "windows-11-pro-repair",
+      "displayName": "Windows 11 Pro activation repair",
+      "description": "Reviewed repair for this OS range and edition.",
+      "fileName": "windows-11-pro-repair.bat",
+      "sha256": "REPLACE_WITH_BAT_SHA256",
+      "minWindowsVersion": "10.0.22000",
+      "maxWindowsVersionExclusive": "10.0.30000",
+      "editionIds": ["Professional"],
+      "additionalCompatibility": [
+        {
+          "minWindowsVersion": "10.0.19041",
+          "maxWindowsVersionExclusive": "10.0.19046",
+          "editionIds": ["Professional"]
+        }
+      ],
+      "supportFiles": [
+        { "fileName": "helper.txt", "sha256": "REPLACE_WITH_HELPER_SHA256" }
+      ],
+      "playbook": {
+        "version": 1,
+        "steps": [
+          { "expect": "Select an item:", "send": "1", "submit": "line", "timeoutSeconds": 30 },
+          { "expect": "Continue [Y/N]:", "send": "Y", "submit": "key", "timeoutSeconds": 30 }
+        ]
+      }
+    }
+  ]
+}
 ```
 
-The file is not installed automatically. The endpoint must be enrolled and remote
-downloads require HTTPS. ControlPlane binds automatic chat execution to the explicit
-request's endpoint and user, pins the current filename and SHA-256, and supplies a
-request-scoped authorization marker. The endpoint downloads only the fixed artifact ID,
-verifies its SHA-256, rejects unexpected paths and reparse points, and runs it as
-LocalSystem with no arguments. A zero exit code is followed by another activation probe;
-only a licensed post-check is reported as `Resolved`.
+Store the example's helper at
+`Windows/windows-11-pro-repair.files/helper.txt`. Support files are flat names in a
+dedicated directory; the endpoint downloads them beside the BAT and verifies each
+hash before execution. The `supportFiles` array may be empty. Version minimums are
+inclusive and maximums exclusive. An empty `editionIds` list accepts any edition in
+the OS range. Use an exact edition ID when a repair is edition-specific.
+`additionalCompatibility` adds up to 31 more build/edition rules to the primary
+rule. One complete rule must match; the same BAT, support files, and playbook are
+used for every rule. These bounds are illustrative and require validation for the
+specific reviewed BAT. Catalog rows are sorted by their earliest supported Windows
+version. Older endpoint binaries see only the primary rule, so update them before
+relying on the added ranges.
 
-Keep the seller-provided BAT outside Git. After reviewing it and recording its
-SHA-256 through an independent handoff, install it from an elevated PowerShell
-session with:
+For every BAT, record a separate ordered playbook of literal prompt fragments and
+fixed responses. `submit: "line"` sends the response and Enter to `set /p`;
+`submit: "key"` sends one character to `choice`. The prompt must appear before the
+BAT reads stdin. For reliable `set /p` automation, emit the prompt first:
+
+```bat
+<nul set /p "=Select an item: "
+>nul ping -n 2 127.0.0.1
+set /p "item="
+```
+
+An inline `set /p "item=Select an item: "` prompt can read an empty response through
+redirected input before the agent writes to the pipe. A short pause after the prompt
+gives the runner time to deliver its response. Test each menu transition in a
+disposable Windows VM before publishing its manifest entry. BATs that demand UAC,
+credentials, GUI input, or detached console windows are outside this playbook runner.
+
+Hermes chooses from the endpoint's compatible IDs. If more than one ID matches, the
+Windows support skill stops for an administrator selection rule. If versioned entries
+exist but none match, the legacy unversioned BAT is not offered or run. The old
+`Windows/windowsbugfixer.bat` path remains a migration fallback only when the catalog
+has no valid versioned repair.
+
+The service downloads the selected BAT and support files through its authenticated
+Control Plane connection, stages them under protected, content-addressed paths, and
+runs the approved playbook as LocalSystem. Automatic chat dispatch is pinned to the
+current BAT, bundle, and playbook hashes. Direct operator dispatch still requires Tray
+consent. The Windows support skill is currently limited to **activation problems**;
+other Windows problems need their own diagnosis, selection policy, and post-check.
+
+## Local test
+
+The harmless two-menu Windows fixture and support-file check run on this PC with:
 
 ```powershell
-.\scripts\install-windows-activation-repair.ps1 `
-  -SourcePath 'C:\ApprovedArtifacts\seller-windows-repair.bat' `
-  -ExpectedSha256 '64_HEXADECIMAL_CHARACTERS'
+dotnet test .\src\EndpointAgents.Platform.Windows.Tests\EndpointAgents.Platform.Windows.Tests.csproj -c Release --filter FullyQualifiedName~WindowsRunnerAnswersMenuAndVerifiesSupportingFile
 ```
 
-The installer rejects a mismatched hash, reparse point, unprotected repository,
-or non-BAT input. It stages the file under a protected ACL and atomically replaces
-the fixed runtime filename. Its output is the deployed SHA-256 to record with the
-change approval. If the ControlPlane installer finds an exact copy of the development
-sample at the runtime filename, it moves that copy out of the catalog before starting
-the service.
+This runs a temporary BAT that only checks its inputs and adjacent helper file. To
+pilot an actual versioned repair, install the updated API and endpoint binaries, put
+the reviewed BAT and support files in the protected repository, add their exact hashes
+and compatibility range to the manifest, and check the endpoint's reported compatible
+IDs before allowing Hermes to call `run_windows_activation_repair`.
 
-A conservative development sample is stored at
-`deploy\control-plane\FileRepository\Windows\windowsbugfixer.bat`. It must not be
-promoted as the seller artifact. The sample only starts the Windows licensing service
-and asks Microsoft's built-in `slmgr.vbs /ato` to activate the license already
-installed on the machine.
-
-This workflow is for legitimate repair of an existing Windows license. Licensing
-bypasses, unauthorized keys, KMS emulators, and activation circumvention are prohibited.
-
-## Development-only non-administrator test
-
-When both ControlPlane and the endpoint run with the Development environment, the
-ControlPlane repository is the workspace folder
-`deploy\control-plane\FileRepository`, and endpoint staging relaxes only the
-administrator and protected-ACL requirements. The fixed filename, artifact ID, download
-route, path containment, reparse-point rejection, SHA-256 verification, pre-check, and
-post-check remain enforced. This permits an ordinary developer account to test a reviewed
-BAT; it does not enable the relaxation in production.
-
-A licensed development machine still refuses the activation repair because no repair is
-needed. Use the harmless Windows Hello workflow to test execution on a licensed machine,
-or use a legitimate unlicensed lab VM to exercise the activation-repair branch.
+The existing `deploy/control-plane/FileRepository/Windows/windowsbugfixer.bat` is a
+legacy development sample. It starts the licensing service and invokes Microsoft's
+activation command for an already-installed license. It is not the harmless menu
+fixture. The production installer script for the legacy BAT remains
+`scripts/install-windows-activation-repair.ps1`.

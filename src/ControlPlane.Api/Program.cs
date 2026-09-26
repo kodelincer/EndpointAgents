@@ -106,6 +106,9 @@ builder.Services.AddOptions<FileRepositoryOptions>()
     .Validate(options => options.WindowsBugfixFileName.Equals(
             WindowsRemediationPaths.FileName, StringComparison.Ordinal),
         "FileRepository:WindowsBugfixFileName must be windowsbugfixer.bat.")
+    .Validate(options => options.WindowsBugfixManifestFileName.Equals(
+            "windows-bugfix-managers.json", StringComparison.Ordinal),
+        "FileRepository:WindowsBugfixManifestFileName must be windows-bugfix-managers.json.")
     .Validate(options => options.WindowsHelloSampleFileName.Equals(
             WindowsHelloSamplePaths.FileName, StringComparison.Ordinal),
         "FileRepository:WindowsHelloSampleFileName must be windows-hello-sample.bat.")
@@ -276,6 +279,7 @@ app.MapGet("/api/files", async (FileArtifactRepository repository,
             officeManifestPath = repository.OfficeManifestPath,
             officeBugfixManifestPath = repository.OfficeBugfixManifestPath,
             windowsBugfixFilePath = repository.WindowsBugfixFilePath,
+            windowsBugfixManifestPath = repository.WindowsBugfixManifestPath,
             windowsHelloSampleFilePath = repository.WindowsHelloSampleFilePath,
             protectedAclRequired = repository.ProtectedAclRequired,
             downloadMethod = "GET"
@@ -312,6 +316,18 @@ app.MapGet("/api/files/office/bugfix/catalog", async (
     return Results.Ok(new OfficeBugfixCatalog(
         catalog.Artifacts.Select(item => item.Descriptor).ToArray()));
 }).RequireAuthorization();
+app.MapGet("/api/files/office/bugfix/{artifactId}/file/{fileName}",
+    async (string artifactId, string fileName, HttpContext context,
+        FileArtifactRepository repository, CancellationToken cancellationToken) =>
+    {
+        var file = await repository.GetOfficeBugfixSupportFileAsync(artifactId,
+            fileName, cancellationToken);
+        if (file is null) return Results.NotFound();
+        context.Response.Headers["X-Artifact-Sha256"] = file.Sha256;
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        return Results.File(file.FullPath, "application/octet-stream",
+            file.FileName);
+    }).RequireAuthorization();
 app.MapGet("/api/files/office/bugfix/{artifactId}", async (string artifactId,
     HttpContext context, FileArtifactRepository repository,
     CancellationToken cancellationToken) =>
@@ -337,6 +353,18 @@ app.MapGet("/api/files/windows/bugfix/catalog", async (
     return Results.Ok(new WindowsBugfixCatalog(
         catalog.Artifacts.Select(item => item.Descriptor).ToArray()));
 }).RequireAuthorization();
+app.MapGet("/api/files/windows/bugfix/{artifactId}/file/{fileName}",
+    async (string artifactId, string fileName, HttpContext context,
+        FileArtifactRepository repository, CancellationToken cancellationToken) =>
+    {
+        var file = await repository.GetWindowsBugfixSupportFileAsync(artifactId,
+            fileName, cancellationToken);
+        if (file is null) return Results.NotFound();
+        context.Response.Headers["X-Artifact-Sha256"] = file.Sha256;
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        return Results.File(file.FullPath, "application/octet-stream",
+            file.FileName);
+    }).RequireAuthorization();
 app.MapGet("/api/files/windows/bugfix/{artifactId}", async (string artifactId,
     HttpContext context, FileArtifactRepository repository,
     CancellationToken cancellationToken) =>
@@ -549,7 +577,11 @@ static FileRepositoryItem ToBugfixRepositoryItem(OfficeBugfixFileArtifact artifa
     artifact.Descriptor.MaxOfficeVersionExclusive,
     null,
     null,
-    true);
+    true,
+    OfficeProductReleaseIds: artifact.Descriptor.OfficeProductReleaseIds,
+    MinWindowsVersion: artifact.Descriptor.MinWindowsVersion,
+    MaxWindowsVersionExclusive: artifact.Descriptor.MaxWindowsVersionExclusive,
+    AdditionalOfficeCompatibility: artifact.Descriptor.AdditionalCompatibility);
 
 static FileRepositoryItem ToWindowsBugfixRepositoryItem(
     WindowsBugfixFileArtifact artifact) => new(
@@ -563,6 +595,10 @@ static FileRepositoryItem ToWindowsBugfixRepositoryItem(
     artifact.Descriptor.DisplayName,
     artifact.Descriptor.Description,
     "AdministratorApprovedSha256",
-    RequiresInteractiveUser: true);
+    RequiresInteractiveUser: true,
+    MinWindowsVersion: artifact.Descriptor.MinWindowsVersion,
+    MaxWindowsVersionExclusive: artifact.Descriptor.MaxWindowsVersionExclusive,
+    EditionIds: artifact.Descriptor.EditionIds,
+    AdditionalWindowsCompatibility: artifact.Descriptor.AdditionalCompatibility);
 
 public partial class Program;

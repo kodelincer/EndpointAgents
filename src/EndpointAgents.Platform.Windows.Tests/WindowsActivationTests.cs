@@ -3,7 +3,9 @@ using EndpointAgents.Core.Commands;
 using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Windows;
 using EndpointAgents.Shared.Chat;
+using EndpointAgents.Shared.Office;
 using EndpointAgents.Tray;
+using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -41,18 +43,152 @@ public sealed class WindowsActivationTests
     }
 
     [Fact]
-    public void CommandAcceptsOnlyFixedArtifactAndOptionalUserScope()
+    public void CommandAcceptsCatalogArtifactAndOptionalUserScope()
     {
         var valid = JsonSerializer.SerializeToElement(new
         {
             artifactId = WindowsRemediationPaths.ArtifactId,
             userSid = "S-1-5-21-111-222-333-1001"
         });
-        var wrong = JsonSerializer.SerializeToElement(new { artifactId = "other" });
+        var alternate = JsonSerializer.SerializeToElement(new
+        {
+            artifactId = "windows-11-repair"
+        });
+        var wrong = JsonSerializer.SerializeToElement(new
+        {
+            artifactId = "../other"
+        });
 
         Assert.True(WindowsActivationBugfixCommandHandler.TryParse(valid, out var sid));
         Assert.Equal("S-1-5-21-111-222-333-1001", sid);
+        Assert.True(WindowsActivationBugfixCommandHandler.TryParse(alternate,
+            out _));
         Assert.False(WindowsActivationBugfixCommandHandler.TryParse(wrong, out _));
+    }
+
+    [Fact]
+    public void WindowsRepairCompatibilityChecksBuildAndEdition()
+    {
+        var artifact = new WindowsBugfixArtifactDescriptor("windows-11-repair",
+            "Windows 11 repair", "Test", "windows-11-repair.bat",
+            new string('A', 64),
+            "/api/files/windows/bugfix/windows-11-repair",
+            "10.0.22000", "10.0.30000", ["Professional"]);
+        var report = new WindowsActivationReport("Windows 11 Pro",
+            "Professional", "24H2", "26100", "X64",
+            WindowsActivationStates.Unlicensed, 0, null, null, null, true);
+
+        Assert.True(WindowsBugfixCompatibility.IsCompatible(artifact, report,
+            new Version(10, 0, 26100)));
+        Assert.False(WindowsBugfixCompatibility.IsCompatible(artifact, report,
+            new Version(10, 0, 19045)));
+        Assert.False(WindowsBugfixCompatibility.IsCompatible(artifact,
+            report with { EditionId = "Enterprise" },
+            new Version(10, 0, 26100)));
+        var legacy = artifact with
+        {
+            ArtifactId = WindowsRemediationPaths.ArtifactId,
+            MinWindowsVersion = null,
+            MaxWindowsVersionExclusive = null
+        };
+        Assert.Equal([artifact.ArtifactId],
+            WindowsBugfixCompatibility.SelectCompatibleArtifactIds(
+                [legacy, artifact], report, new Version(10, 0, 26100)));
+        Assert.Empty(WindowsBugfixCompatibility.SelectCompatibleArtifactIds(
+            [legacy, artifact], report, new Version(10, 0, 19045)));
+        Assert.Equal([legacy.ArtifactId],
+            WindowsBugfixCompatibility.SelectCompatibleArtifactIds(
+                [legacy], report, new Version(10, 0, 19045)));
+        var shared = artifact with
+        {
+            AdditionalCompatibility =
+            [
+                new WindowsBugfixCompatibilityRange("10.0.19041",
+                    "10.0.19046", ["Enterprise"]),
+                new WindowsBugfixCompatibilityRange("10.0.30000",
+                    "10.0.31000", ["Professional"])
+            ]
+        };
+        Assert.True(WindowsBugfixCompatibility.IsCompatible(shared,
+            report with { EditionId = "Enterprise" },
+            new Version(10, 0, 19045)));
+        Assert.False(WindowsBugfixCompatibility.IsCompatible(shared,
+            report with { EditionId = "Enterprise" },
+            new Version(10, 0, 19046)));
+        Assert.True(WindowsBugfixCompatibility.IsCompatible(shared, report,
+            new Version(10, 0, 30000)));
+        Assert.False(WindowsBugfixCompatibility.IsCompatible(shared,
+            report with { EditionId = "Enterprise" },
+            new Version(10, 0, 30000)));
+    }
+
+    [Fact]
+    public async Task WindowsRunnerAnswersMenuAndVerifiesSupportingFile()
+    {
+        const string artifactId = "windows-menu-demo";
+        var root = Path.Combine(Path.GetTempPath(),
+            $"EndpointAgents-Windows-menu-{Guid.NewGuid():N}");
+        var batch = """
+            @echo off
+            <nul set /p "=Select an item: "
+            >nul ping -n 2 127.0.0.1
+            set /p "first="
+            if not "%first%"=="1" exit /b 11
+            <nul set /p "=Select mode: "
+            >nul ping -n 2 127.0.0.1
+            set /p "second="
+            if not "%second%"=="A" exit /b 12
+            if not exist "%~dp0helper.txt" exit /b 13
+            exit /b 0
+            """.Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace("\n", "\r\n", StringComparison.Ordinal);
+        var batchBytes = System.Text.Encoding.ASCII.GetBytes(batch);
+        var batchHash = Convert.ToHexString(SHA256.HashData(batchBytes));
+        var helperBytes = "harmless helper"u8.ToArray();
+        var helperHash = Convert.ToHexString(SHA256.HashData(helperBytes));
+        var support = new BatchSupportFile("helper.txt", helperHash,
+            $"/api/files/windows/bugfix/{artifactId}/file/helper.txt");
+        var bundleHash = BatchSupportFilePolicy.ComputeBundleSha256(batchHash,
+            [support]);
+        var directory = Path.Combine(root, artifactId, bundleHash);
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, $"{artifactId}.bat");
+        await File.WriteAllBytesAsync(path, batchBytes,
+            TestContext.Current.CancellationToken);
+        var helperPath = Path.Combine(directory, "helper.txt");
+        await File.WriteAllBytesAsync(helperPath, helperBytes,
+            TestContext.Current.CancellationToken);
+        var playbook = new BatchPlaybook(1,
+        [
+            new BatchPlaybookStep("Select an item:", "1", "line", 5),
+            new BatchPlaybookStep("Select mode:", "A", "line", 5)
+        ]);
+        var descriptor = new WindowsBugfixArtifactDescriptor(artifactId,
+            "Menu demo", "Harmless test", $"{artifactId}.bat", batchHash,
+            $"/api/files/windows/bugfix/{artifactId}", "10.0.22000",
+            "10.0.30000", [], playbook,
+            BatchPlaybookPolicy.ComputeSha256(playbook), [support], bundleHash);
+        var runner = new WindowsBugfixRunner(Options.Create(
+            new WindowsRemediationOptions
+            {
+                StagingRoot = root, RequireAdministrator = false,
+                RequireProtectedAcl = false
+            }));
+        try
+        {
+            var result = await runner.RunAsync(path, descriptor,
+                TestContext.Current.CancellationToken);
+            Assert.Equal(0, result.ExitCode);
+            Assert.Equal("Completed", result.State);
+            Assert.Equal(2, result.CompletedStepCount);
+
+            await File.WriteAllTextAsync(helperPath, "changed",
+                TestContext.Current.CancellationToken);
+            await Assert.ThrowsAsync<InvalidDataException>(() =>
+                runner.RunAsync(path, descriptor,
+                    TestContext.Current.CancellationToken));
+        }
+        finally { Directory.Delete(root, recursive: true); }
     }
 
     [Fact]

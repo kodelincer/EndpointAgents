@@ -100,7 +100,15 @@ public sealed record OfficeRemediationArtifactDescriptor(
 public sealed record OfficeRemediationCatalog(
     IReadOnlyList<OfficeRemediationArtifactDescriptor> Artifacts);
 
-/// <summary>One retailer bugfix executable approved for an Office version range.</summary>
+/// <summary>One additional Office/Windows target for the same BAT and playbook.</summary>
+public sealed record OfficeBugfixCompatibility(
+    string MinOfficeVersion,
+    string MaxOfficeVersionExclusive,
+    IReadOnlyList<string> OfficeProductReleaseIds,
+    string? MinWindowsVersion = null,
+    string? MaxWindowsVersionExclusive = null);
+
+/// <summary>One retailer bugfix executable approved for one or more targets.</summary>
 public sealed record OfficeBugfixArtifactDescriptor(
     string ArtifactId,
     string DisplayName,
@@ -111,7 +119,13 @@ public sealed record OfficeBugfixArtifactDescriptor(
     string MaxOfficeVersionExclusive,
     BatchPlaybook Playbook,
     string PlaybookSha256,
-    string DownloadPath);
+    string DownloadPath,
+    IReadOnlyList<string>? OfficeProductReleaseIds = null,
+    string? MinWindowsVersion = null,
+    string? MaxWindowsVersionExclusive = null,
+    IReadOnlyList<BatchSupportFile>? SupportFiles = null,
+    string? BundleSha256 = null,
+    IReadOnlyList<OfficeBugfixCompatibility>? AdditionalCompatibility = null);
 
 public sealed record OfficeBugfixCatalog(
     IReadOnlyList<OfficeBugfixArtifactDescriptor> Artifacts);

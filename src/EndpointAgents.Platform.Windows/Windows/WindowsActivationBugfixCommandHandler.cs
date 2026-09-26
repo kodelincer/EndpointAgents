@@ -25,9 +25,9 @@ public sealed class WindowsActivationBugfixCommandHandler(
     public async Task<RpcResponse> HandleAsync(RpcRequest request,
         CommandExecutionContext context, CancellationToken cancellationToken)
     {
-        if (!TryParse(request.Params, out var userSid))
+        if (!TryParse(request.Params, out var artifactId, out var userSid))
             return RpcResponse.Failure(request.Id, 400,
-                "Only the approved windows-activation-repair artifactId is accepted.");
+                "An approved Windows repair artifactId is required.");
         var hasChatApproval = ChatActionApproval.HasMarker(request.Params);
         var chatApproved = ChatActionApproval.MatchesRequest(request.Params, request.Id);
         if (hasChatApproval && !chatApproved)
@@ -57,12 +57,28 @@ public sealed class WindowsActivationBugfixCommandHandler(
 
         try
         {
-            var descriptor = await artifacts.GetArtifactAsync(cancellationToken);
+            var descriptor = await artifacts.GetArtifactAsync(artifactId!,
+                cancellationToken);
             if (descriptor is null)
                 return RpcResponse.Failure(request.Id, 404,
                     "The approved Windows activation remediation is not available.");
-            if (authorized && !ChatActionApproval.MatchesArtifact(request.Params,
-                    descriptor.FileName, descriptor.Sha256))
+            if (artifactId == WindowsRemediationPaths.ArtifactId
+                && (await artifacts.GetArtifactsAsync(cancellationToken))
+                    .Any(item => item.MinWindowsVersion is not null))
+                return RpcResponse.Failure(request.Id, 409,
+                    "The legacy Windows repair is unavailable while versioned repairs are configured.");
+            if (!WindowsBugfixCompatibility.IsCompatible(descriptor, before,
+                    Environment.OSVersion.Version))
+                return RpcResponse.Failure(request.Id, 409,
+                    "The requested Windows repair is not compatible with this Windows installation.");
+            if (authorized && !(descriptor.Playbook is null
+                    ? ChatActionApproval.MatchesArtifact(request.Params,
+                        descriptor.FileName, descriptor.Sha256)
+                    : ChatActionApproval.MatchesArtifactAndPlaybook(
+                        request.Params, descriptor.FileName, descriptor.Sha256,
+                        descriptor.PlaybookSha256!))
+                || authorized && !ChatActionApproval.MatchesBundle(request.Params,
+                    descriptor.BundleSha256))
                 return RpcResponse.Failure(request.Id, 412,
                     "The approved Windows remediation revision has changed; request the current repair again.");
 
@@ -82,7 +98,7 @@ public sealed class WindowsActivationBugfixCommandHandler(
             }
 
             var download = await artifacts.EnsureAsync(descriptor, cancellationToken);
-            var execution = await runner.RunAsync(download.Path, descriptor.Sha256,
+            var execution = await runner.RunAsync(download.Path, descriptor,
                 cancellationToken);
             if (execution.TimedOut)
                 return RpcResponse.Failure(request.Id, 408,
@@ -90,7 +106,8 @@ public sealed class WindowsActivationBugfixCommandHandler(
             if (execution.ExitCode != 0)
                 return RpcResponse.Failure(request.Id, 500,
                     "The Windows activation remediation returned a failure exit code.",
-                    new { execution.ExitCode });
+                    new { execution.ExitCode, execution.State,
+                        execution.CompletedStepCount, execution.FailedStepIndex });
 
             var after = await probe.ProbeAsync(cancellationToken);
             var state = after.ProbeSucceeded
@@ -118,7 +135,12 @@ public sealed class WindowsActivationBugfixCommandHandler(
     }
 
     internal static bool TryParse(JsonElement? parameters, out string? userSid)
+        => TryParse(parameters, out _, out userSid);
+
+    internal static bool TryParse(JsonElement? parameters,
+        out string? artifactId, out string? userSid)
     {
+        artifactId = null;
         userSid = null;
         if (parameters is not { ValueKind: JsonValueKind.Object } value)
             return false;
@@ -126,8 +148,16 @@ public sealed class WindowsActivationBugfixCommandHandler(
         {
             if (property.NameEquals("artifactId"))
             {
-                if (property.Value.ValueKind != JsonValueKind.String
-                    || property.Value.GetString() != WindowsRemediationPaths.ArtifactId)
+                if (property.Value.ValueKind != JsonValueKind.String)
+                    return false;
+                artifactId = property.Value.GetString();
+                if (artifactId is null || artifactId.Length is < 1 or > 64
+                    || artifactId == WindowsHelloSamplePaths.ArtifactId
+                    || !char.IsAsciiLetterOrDigit(artifactId[0])
+                    || !char.IsAsciiLetterOrDigit(artifactId[^1])
+                    || artifactId.Any(character =>
+                        !(character is >= 'a' and <= 'z' or >= '0' and <= '9'
+                            or '-' or '_' or '.')))
                     return false;
             }
             else if (property.NameEquals("userSid"))
@@ -149,7 +179,7 @@ public sealed class WindowsActivationBugfixCommandHandler(
             }
             else return false;
         }
-        return value.TryGetProperty("artifactId", out _)
+        return artifactId is not null
             && OfficeRemediationCommandHandler.TryParseUserSid(parameters,
                 out userSid);
     }

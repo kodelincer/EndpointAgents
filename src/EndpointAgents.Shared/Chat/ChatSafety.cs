@@ -55,6 +55,7 @@ public static class ChatActionApproval
     public const string ArtifactFileNameParameterName = "_approvedArtifactFileName";
     public const string ArtifactSha256ParameterName = "_approvedArtifactSha256";
     public const string PlaybookSha256ParameterName = "_approvedPlaybookSha256";
+    public const string BundleSha256ParameterName = "_approvedBundleSha256";
 
     public static bool TryRead(JsonElement? parameters, out string approvalId)
     {
@@ -109,12 +110,27 @@ public static class ChatActionApproval
             StringComparison.OrdinalIgnoreCase);
     }
 
+    public static bool MatchesBundle(JsonElement? parameters, string? bundleSha256)
+    {
+        if (bundleSha256 is null)
+            return parameters is not { ValueKind: JsonValueKind.Object } value
+                || !value.TryGetProperty(BundleSha256ParameterName, out _);
+        return parameters is { ValueKind: JsonValueKind.Object } objectValue
+            && objectValue.TryGetProperty(BundleSha256ParameterName,
+                out var property)
+            && property.ValueKind == JsonValueKind.String
+            && string.Equals(property.GetString(), bundleSha256,
+                StringComparison.OrdinalIgnoreCase);
+    }
+
     public static bool IsArtifactPin(string propertyName) =>
         string.Equals(propertyName, ArtifactFileNameParameterName,
             StringComparison.Ordinal)
         || string.Equals(propertyName, ArtifactSha256ParameterName,
             StringComparison.Ordinal)
         || string.Equals(propertyName, PlaybookSha256ParameterName,
+            StringComparison.Ordinal)
+        || string.Equals(propertyName, BundleSha256ParameterName,
             StringComparison.Ordinal);
 
     public static bool IsReserved(string propertyName) =>

@@ -30,8 +30,16 @@ public sealed class OfficeBugfixRunner
             || !BatchPlaybookPolicy.ComputeSha256(playbook!).Equals(
                 descriptor.PlaybookSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The Office repair playbook is not approved.");
+        if (!BatchSupportFilePolicy.IsValidBundle(descriptor.Sha256,
+                descriptor.SupportFiles, descriptor.BundleSha256,
+                $"/api/files/office/bugfix/{descriptor.ArtifactId}/file"))
+            throw new InvalidDataException("The Office repair bundle is not approved.");
         if (!await IsApprovedAsync(path, descriptor.ArtifactId,
-                descriptor.FileName, descriptor.Sha256, cancellationToken))
+                descriptor.FileName, descriptor.Sha256, cancellationToken,
+                descriptor.BundleSha256)
+            || !await BatchSupportFileDownloader.AreApprovedAsync(path,
+                descriptor.SupportFiles, requireProtectedAcl: true,
+                cancellationToken))
             throw new InvalidDataException("The staged Office repair is not approved.");
 
         return await RunProcessAsync(CreateStartInfo(path), playbook!,
@@ -85,6 +93,8 @@ public sealed class OfficeBugfixRunner
                 return Result(null, null, OfficeBugfixRunStates.ProcessFailed,
                     completedSteps, 0);
             processId = process.Id;
+            // cmd's set /p can leave the LF of CRLF queued for the next prompt.
+            process.StandardInput.NewLine = "\r";
             pumps =
             [
                 PumpAsync(process.StandardOutput, collector),
@@ -167,7 +177,6 @@ public sealed class OfficeBugfixRunner
                 }
             }
 
-            process.StandardInput.Close();
             var exitTask = process.WaitForExitAsync(overall.Token);
             var winner = await Task.WhenAny(exitTask, collector.OutputLimitTask,
                 collector.ReaderFailureTask);
@@ -221,7 +230,8 @@ public sealed class OfficeBugfixRunner
     }
 
     internal static async Task<bool> IsApprovedAsync(string path, string artifactId,
-        string fileName, string expectedSha256, CancellationToken cancellationToken)
+        string fileName, string expectedSha256, CancellationToken cancellationToken,
+        string? revisionSha256 = null)
     {
         if (artifactId.Length is < 1 or > 64
             || artifactId.Any(character =>
@@ -237,7 +247,7 @@ public sealed class OfficeBugfixRunner
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
         var expected = Path.GetFullPath(Path.Combine(root, artifactId,
-            expectedSha256.ToUpperInvariant(), fileName));
+            (revisionSha256 ?? expectedSha256).ToUpperInvariant(), fileName));
         var fullPath = Path.GetFullPath(path);
         var directory = Path.GetDirectoryName(fullPath)!;
         if (!fullPath.Equals(expected, StringComparison.OrdinalIgnoreCase)

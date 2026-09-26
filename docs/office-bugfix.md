@@ -34,6 +34,26 @@ exclude the maximum.
       "sha256": "REPLACE_WITH_64_HEXADECIMAL_CHARACTERS",
       "minOfficeVersion": "16.0",
       "maxOfficeVersionExclusive": "17.0",
+      "officeProductReleaseIds": ["ProPlus2021Volume"],
+      "minWindowsVersion": "10.0.22000",
+      "maxWindowsVersionExclusive": "10.0.30000",
+      "additionalCompatibility": [
+        {
+          "minOfficeVersion": "16.0",
+          "maxOfficeVersionExclusive": "17.0",
+          "officeProductReleaseIds": ["ProPlus2019Volume"],
+          "minWindowsVersion": "10.0.19041",
+          "maxWindowsVersionExclusive": "10.0.22000"
+        },
+        {
+          "minOfficeVersion": "16.0",
+          "maxOfficeVersionExclusive": "17.0",
+          "officeProductReleaseIds": ["ProPlus2024Volume"],
+          "minWindowsVersion": "10.0.26000",
+          "maxWindowsVersionExclusive": "10.0.30000"
+        }
+      ],
+      "supportFiles": [],
       "playbook": {
         "version": 1,
         "steps": [
@@ -62,6 +82,36 @@ response. `submit: "key"` requires exactly one printable character and does not 
 Enter; `submit: "line"` sends up to 64 printable characters followed by Enter. Step
 timeouts must be 5–300 seconds. Responses cannot contain control characters,
 credentials, tokens, secrets, or product keys.
+
+Office 2016, 2019, 2021, 2024, and Microsoft 365 all report version `16.0`, so a
+`16.0`–`17.0` range alone does **not** identify a release year. For a release-specific
+BAT, list its reviewed Click-to-Run `ProductReleaseIds` in
+`officeProductReleaseIds`. Every installed Click-to-Run ID must be in that list;
+missing IDs or a mixed installation with an unlisted ID make the BAT incompatible.
+Leave the list empty only for a repair reviewed for every product in the numeric range.
+The optional Windows bounds use the endpoint OS version, including its build number;
+the minimum is included and the maximum is excluded. Omit both for all supported
+Windows builds. `additionalCompatibility` adds up to 31 more Office/Windows target
+rules to the primary rule above it. The rules have OR semantics: one complete rule
+must match the installed Office version, all detected Click-to-Run product IDs, and
+the Windows build. All rules use the same BAT, support files, and playbook; no BAT
+copy is needed per Office release. The example product IDs and bounds are illustrative,
+not a claim that any particular reseller BAT supports them. Catalog entries are
+listed by their earliest minimum Office version, then artifact ID. The endpoint
+checks the rules again immediately before downloading the BAT.
+
+When several Office releases have identical Windows bounds and menu behavior, put
+all their `ProductReleaseIds` in the primary `officeProductReleaseIds` array instead
+of repeating equivalent rules.
+
+Keep the first rule for an older endpoint during rollout. Older binaries ignore
+`additionalCompatibility` and can run only the primary range; deploy updated
+endpoint binaries before expecting the extra ranges to be available.
+
+For a BAT with adjacent files, list each flat filename and SHA-256 in `supportFiles`
+and place it under `<artifactId>.files/<fileName>` in the same repository. The
+endpoint downloads each declared file beside the BAT, verifies every hash, and pins
+the combined bundle revision. Nested directories are not supported.
 
 The control plane normalizes and hashes the complete ordered playbook. Action approval
 pins the filename, BAT SHA-256, and playbook SHA-256, so a meaningful prompt, response,
@@ -97,8 +147,10 @@ before the endpoint command's ten-minute outer timeout.
    verifies SHA-256, and stages it in the content-addressed path
    `<artifactId>\<SHA-256>\<artifactId>.bat` under the protected remediation tree.
    Different approved revisions therefore never share a runnable pathname.
-8. The service opens the protected source first, impersonates the verified interactive
-   user's Windows token, and writes a verified convenience copy to that user's Desktop.
+8. For a standalone BAT, the service opens the protected source first, impersonates the
+   verified interactive user's Windows token, and writes a convenience copy to that
+   user's Desktop. Bundles with supporting files stay together in protected staging
+   and are not copied to the Desktop.
 9. The LocalSystem service runs only the protected staged copy in session 0. It waits for
    and answers each approved playbook prompt, never executes the user-writable Desktop
    copy, and never requests a UAC password.
@@ -135,8 +187,40 @@ GUI interaction, arrow keys, a signed-in user's profile, new console windows, or
 processes are unsupported. ConPTY, branching, transcript storage, live input, and
 automatic response selection are intentionally not part of this release.
 
-`KMS_mng.bat` remains excluded until its embedded payload, provenance, behavior, and
-licensing purpose are independently approved.
+For reliable `set /p` menus, emit the prompt with `<nul set /p "=Prompt: "` before
+calling `set /p "answer="`, and leave a short pause between them. An inline
+`set /p "answer=Prompt: "` may read an empty
+response through redirected input before the agent can answer. Verify each menu
+transition with the playbook runner before deploying a BAT.
+
+The current `tmpfiles/office_bug_fixer.bat` and
+`tmpfiles/windows_bug_fixer.bat` are identical copies of a large `KMS Suite` BAT.
+Their wrapper requests elevation, extracts an embedded PowerShell payload, and
+starts another BAT from `%TEMP%`. They remain excluded from the catalog until the
+payload, provenance, behavior, licensing purpose, and unattended menu path are
+independently reviewed. This runner cannot safely automate that wrapper as-is.
+
+## Test the harmless menu BAT locally
+
+From the repository root, run `dotnet test` on
+`src\EndpointAgents.Platform.Windows.Tests\EndpointAgents.Platform.Windows.Tests.csproj`
+with `--filter FullyQualifiedName~CheckedInSampleBatCompletesApprovedMenuPlaybook`.
+This executes the checked-in sample's `set /p` and `choice` prompts through the
+endpoint's hidden runner. It does not change Office settings.
+
+To show the sample in the **development** Control Plane catalog, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\seed-office-bugfix-samples.ps1 -Development
+```
+
+The script writes a hash-pinned manifest to the development FileRepository and pins
+the host's detected Click-to-Run product IDs when available. It refuses to replace an
+existing manifest unless explicitly run with `-Force` (and backs that manifest up
+first). The sample is only for testing Office `16.x` menus; it does not repair
+activation or establish compatibility for any reseller BAT. Production seeding still
+requires an elevated PowerShell session and a protected repository.
 
 The privileged path is available only after the elevated production installers have
 created the protected repository and installed `EndpointAgents.Service` as LocalSystem.

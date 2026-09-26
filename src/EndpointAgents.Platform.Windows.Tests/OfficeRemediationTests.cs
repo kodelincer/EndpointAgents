@@ -350,7 +350,68 @@ public sealed class OfficeRemediationTests
             "/api/files/office/bugfix/office-bugfix-14");
 
         Assert.Equal(expected, OfficeBugfixCommandHandler.IsCompatible(
-            artifact, Version.Parse(officeVersion)));
+            artifact, Inventory(officeVersion, "ProPlus2021Volume"),
+            new Version(10, 0, 22631)));
+    }
+
+    [Fact]
+    public void BugfixCompatibilityChecksExactOfficeProductIdsAndWindowsBuild()
+    {
+        var artifact = new OfficeBugfixArtifactDescriptor("office-2021-repair",
+            "Office 2021 repair", "Approved batch tool", "office-2021-repair.bat",
+            new string('A', 64), "16.0", "17.0", TestPlaybook(),
+            BatchPlaybookPolicy.ComputeSha256(TestPlaybook()),
+            "/api/files/office/bugfix/office-2021-repair",
+            ["ProPlus2021Volume", "VisioPro2021Volume"], "10.0.22000", "10.0.30000");
+
+        Assert.True(OfficeBugfixCommandHandler.IsCompatible(artifact,
+            Inventory("16.0.14332", "ProPlus2021Volume,VisioPro2021Volume"),
+            new Version(10, 0, 22631)));
+        Assert.False(OfficeBugfixCommandHandler.IsCompatible(artifact,
+            Inventory("16.0.14332", "ProPlus2019Volume"),
+            new Version(10, 0, 22631)));
+        Assert.False(OfficeBugfixCommandHandler.IsCompatible(artifact,
+            Inventory("16.0.14332", "ProPlus2021Volume,VisioPro2019Volume"),
+            new Version(10, 0, 22631)));
+        Assert.False(OfficeBugfixCommandHandler.IsCompatible(artifact,
+            Inventory("16.0.14332", null), new Version(10, 0, 22631)));
+        Assert.False(OfficeBugfixCommandHandler.IsCompatible(artifact,
+            Inventory("16.0.14332", "ProPlus2021Volume"),
+            new Version(10, 0, 19045)));
+    }
+
+    [Fact]
+    public void OneOfficeBatchCanCoverSeveralProductAndWindowsRanges()
+    {
+        var artifact = new OfficeBugfixArtifactDescriptor("office-shared-repair",
+            "Shared repair", "Approved batch tool", "office-shared-repair.bat",
+            new string('A', 64), "16.0", "17.0", TestPlaybook(),
+            BatchPlaybookPolicy.ComputeSha256(TestPlaybook()),
+            "/api/files/office/bugfix/office-shared-repair",
+            ["ProPlus2019Volume"], "10.0.19041", "10.0.22000",
+            AdditionalCompatibility:
+            [
+                new OfficeBugfixCompatibility("16.0", "17.0",
+                    ["ProPlus2021Volume"], "10.0.22000", "10.0.26000"),
+                new OfficeBugfixCompatibility("16.0", "17.0",
+                    ["ProPlus2024Volume"], "10.0.26000", "10.0.30000")
+            ]);
+
+        Assert.True(OfficeBugfixCommandHandler.IsCompatible(artifact,
+            Inventory("16.0.1", "ProPlus2019Volume"),
+            new Version(10, 0, 19045)));
+        Assert.True(OfficeBugfixCommandHandler.IsCompatible(artifact,
+            Inventory("16.0.1", "ProPlus2021Volume"),
+            new Version(10, 0, 22631)));
+        Assert.True(OfficeBugfixCommandHandler.IsCompatible(artifact,
+            Inventory("16.0.1", "ProPlus2024Volume"),
+            new Version(10, 0, 26100)));
+        Assert.False(OfficeBugfixCommandHandler.IsCompatible(artifact,
+            Inventory("16.0.1", "ProPlus2021Volume"),
+            new Version(10, 0, 19045)));
+        Assert.False(OfficeBugfixCommandHandler.IsCompatible(artifact,
+            Inventory("16.0.1", "ProPlus2019Volume,ProPlus2021Volume"),
+            new Version(10, 0, 22631)));
     }
 
     [Fact]
@@ -449,8 +510,7 @@ public sealed class OfficeRemediationTests
             >&2 <nul set /p "=Select Office operation: "
             set /p "second="
             if not "%second%"=="2" exit /b 12
-            <nul set /p "=Continue [Y/N]: "
-            choice /c YN /n
+            choice /c YN /n /m "Continue [Y/N]: "
             if errorlevel 2 exit /b 13
             exit /b 0
             """, playbook,
@@ -461,6 +521,27 @@ public sealed class OfficeRemediationTests
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(3, result.CompletedStepCount);
         Assert.Null(result.FailedStepIndex);
+    }
+
+    [Fact]
+    public async Task CheckedInSampleBatCompletesApprovedMenuPlaybook()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory,
+            "office-activation-repair.bat");
+        var playbook = new BatchPlaybook(1,
+        [
+            new BatchPlaybookStep("Select an item:", "1", "line", 5),
+            new BatchPlaybookStep("Continue with harmless sample? [Y/N]:",
+                "Y", "key", 5)
+        ]);
+
+        var result = await OfficeBugfixRunner.RunProcessAsync(
+            OfficeBugfixRunner.CreateStartInfo(path), playbook,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(OfficeBugfixRunStates.Completed, result.State);
+        Assert.Equal(0, result.ExitCode);
+        Assert.Equal(2, result.CompletedStepCount);
     }
 
     [Fact]
@@ -622,6 +703,11 @@ public sealed class OfficeRemediationTests
         new BatchPlaybookStep("Select an item", "1", "line", 30),
         new BatchPlaybookStep("Continue", "Y", "key", 30)
     ]);
+
+    private static OfficeInventory Inventory(string version, string? productReleaseIds) =>
+        new(true, version, "x64", [], productReleaseIds is null ? [] :
+        [new OfficeClickToRunInstallation("Registry64", version, "x64",
+            null, null, productReleaseIds, null)], [], []);
 
     private sealed class FakeArtifactAuthorization(string? token)
         : IEndpointArtifactAuthorizationProvider

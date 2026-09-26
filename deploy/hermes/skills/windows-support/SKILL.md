@@ -11,11 +11,14 @@ For a Windows activation, license, unlicensed, or activation-warning problem:
 2. Briefly summarize only the sanitized activation state. Never expose raw diagnostic data.
 3. If the result is `Licensed`, explain that Windows reports as activated and stop.
 4. If the probe failed, explain that activation could not be verified and stop.
-5. Otherwise call `mcp_controlplane_run_windows_activation_repair` once with exactly
-   `{ "runCapability": "<the supplied run capability>" }`. Do not ask for confirmation.
-   ControlPlane supplies the fixed administrator-approved artifact and binds the action
-   to the endpoint and user for this explicit activation request.
-6. After the repair attempt returns, call `mcp_controlplane_windows_activation_status`
+5. Select one ID from `compatibleBugfixArtifactIds` in the status result. If the list
+   is empty, explain that no compatible approved repair is available. If multiple IDs
+   remain, stop for administrator selection rather than guessing.
+6. Call `mcp_controlplane_run_windows_activation_repair` once with exactly
+   `{ "runCapability": "<the supplied run capability>", "artifactId": "<selected compatible ID>" }`.
+   ControlPlane pins the BAT and playbook revisions and binds the action to the endpoint
+   and user for this explicit activation request.
+7. After the repair attempt returns, call `mcp_controlplane_windows_activation_status`
    again even when execution reported an error. Say that Windows is fixed only when this
    fresh result is `Licensed`. If execution completed but Windows remains unlicensed,
    report both facts. If execution failed and Windows remains unlicensed, report both

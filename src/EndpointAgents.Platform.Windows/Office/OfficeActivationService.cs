@@ -34,15 +34,15 @@ public sealed class OfficeActivationService(
             && OfficeActivationRecommendation.IsHealthyKms(volumeResult);
         IReadOnlyList<string> compatibleBugfixIds = [];
 
-        if (!kmsHealthy && Version.TryParse(inventory.Version,
-                out var officeVersion))
+        if (!kmsHealthy && Version.TryParse(inventory.Version, out _))
         {
             try
             {
                 var bugfixes = await bugfixCatalogClient.GetArtifactsAsync(
                     cancellationToken);
                 compatibleBugfixIds = bugfixes.Where(item =>
-                        OfficeBugfixCommandHandler.IsCompatible(item, officeVersion))
+                        OfficeBugfixCommandHandler.IsCompatible(item, inventory,
+                            Environment.OSVersion.Version))
                     .Select(item => item.ArtifactId)
                     .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
                     .ToArray();

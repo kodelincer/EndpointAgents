@@ -19,6 +19,9 @@ public sealed class FileRepositoryOptions
 
     public string WindowsBugfixFileName { get; set; } = "windowsbugfixer.bat";
 
+    public string WindowsBugfixManifestFileName { get; set; } =
+        "windows-bugfix-managers.json";
+
     public string WindowsHelloSampleFileName { get; set; } = "windows-hello-sample.bat";
 
     public bool RequireProtectedAcl { get; set; } = true;

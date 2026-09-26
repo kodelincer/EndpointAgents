@@ -18,4 +18,8 @@
     <ProjectReference Include="..\EndpointAgents.Shared\EndpointAgents.Shared.csproj" />
     <ProjectReference Include="..\EndpointAgents.Tray\EndpointAgents.Tray.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\deploy\control-plane\FileRepository\office-activation-repair.bat"
+          Link="office-activation-repair.bat" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

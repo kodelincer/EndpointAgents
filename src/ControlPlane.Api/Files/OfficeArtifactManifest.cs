@@ -41,6 +41,11 @@ public sealed class OfficeBugfixManifestEntry
     public string Sha256 { get; set; } = string.Empty;
     public string MinOfficeVersion { get; set; } = string.Empty;
     public string MaxOfficeVersionExclusive { get; set; } = string.Empty;
+    public List<string> OfficeProductReleaseIds { get; set; } = [];
+    public string? MinWindowsVersion { get; set; }
+    public string? MaxWindowsVersionExclusive { get; set; }
+    public List<OfficeBugfixCompatibility> AdditionalCompatibility { get; set; } = [];
+    public List<BatchSupportFileManifestEntry> SupportFiles { get; set; } = [];
     public BatchPlaybook? Playbook { get; set; }
 }
 

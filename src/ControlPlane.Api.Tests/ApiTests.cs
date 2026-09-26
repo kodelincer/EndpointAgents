@@ -288,7 +288,7 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
             .GetProperty("required").EnumerateArray()
             .Select(item => item.GetString()).ToArray();
         Assert.Contains("runCapability", windowsRepairRequired);
-        Assert.DoesNotContain("artifactId", windowsRepairRequired);
+        Assert.Contains("artifactId", windowsRepairRequired);
     }
 
     [Fact]

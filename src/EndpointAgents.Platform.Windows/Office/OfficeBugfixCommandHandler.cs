@@ -59,7 +59,7 @@ public sealed class OfficeBugfixCommandHandler(
         if (!snapshot.Inventory.Installed)
             return RpcResponse.Failure(request.Id, 409,
                 "No Microsoft Office installation was found on this endpoint.");
-        if (!Version.TryParse(snapshot.Inventory.Version, out var officeVersion))
+        if (!Version.TryParse(snapshot.Inventory.Version, out _))
             return RpcResponse.Failure(request.Id, 409,
                 "The installed Office version could not be determined.");
 
@@ -85,14 +85,19 @@ public sealed class OfficeBugfixCommandHandler(
         if (descriptor is null)
             return RpcResponse.Failure(request.Id, 404,
                 "The requested Office bugfix artifact is not available.");
-        if (!IsCompatible(descriptor, officeVersion))
+        if (!IsCompatible(descriptor, snapshot.Inventory,
+                Environment.OSVersion.Version))
             return RpcResponse.Failure(request.Id, 409,
-                "The requested Office bugfix is not compatible with the installed Office version.",
+                "The requested Office bugfix is not compatible with this Office or Windows installation.",
                 new
                 {
                     OfficeVersion = snapshot.Inventory.Version,
                     descriptor.MinOfficeVersion,
-                    descriptor.MaxOfficeVersionExclusive
+                    descriptor.MaxOfficeVersionExclusive,
+                    descriptor.OfficeProductReleaseIds,
+                    descriptor.MinWindowsVersion,
+                    descriptor.MaxWindowsVersionExclusive,
+                    descriptor.AdditionalCompatibility
                 });
         if (!descriptor.FileName.Equals($"{descriptor.ArtifactId}.bat",
                 StringComparison.OrdinalIgnoreCase))
@@ -106,10 +111,17 @@ public sealed class OfficeBugfixCommandHandler(
                 descriptor.PlaybookSha256, StringComparison.OrdinalIgnoreCase))
             return RpcResponse.Failure(request.Id, 412,
                 "The Office repair catalog returned an invalid playbook revision.");
+        if (!BatchSupportFilePolicy.IsValidBundle(descriptor.Sha256,
+                descriptor.SupportFiles, descriptor.BundleSha256,
+                $"/api/files/office/bugfix/{descriptor.ArtifactId}/file"))
+            return RpcResponse.Failure(request.Id, 412,
+                "The Office repair catalog returned an invalid supporting-file revision.");
         descriptor = descriptor with { Playbook = normalizedPlaybook! };
-        if (authorized && !ChatActionApproval.MatchesArtifactAndPlaybook(
+        if (authorized && (!ChatActionApproval.MatchesArtifactAndPlaybook(
                 request.Params, descriptor.FileName, descriptor.Sha256,
-                descriptor.PlaybookSha256))
+                descriptor.PlaybookSha256)
+            || !ChatActionApproval.MatchesBundle(request.Params,
+                descriptor.BundleSha256)))
             return RpcResponse.Failure(request.Id, 412,
                 "The authorized Office repair revision has changed; request the current catalog revision before running it.");
 
@@ -154,10 +166,15 @@ public sealed class OfficeBugfixCommandHandler(
 
             var download = await downloader.EnsureAsync(descriptor.ArtifactId,
                 descriptor.FileName, descriptor.Sha256, descriptor.DownloadPath,
-                cancellationToken, requirePortableExecutable: false);
-            var desktopPath = await DesktopArtifactFile.CopyForSessionAsync(
-                download.FilePath, session, descriptor.FileName, descriptor.Sha256,
-                cancellationToken);
+                cancellationToken, requirePortableExecutable: false,
+                revisionSha256: descriptor.BundleSha256);
+            await downloader.EnsureSupportFilesAsync(download.FilePath,
+                descriptor.SupportFiles, cancellationToken);
+            var desktopPath = descriptor.SupportFiles is { Count: > 0 }
+                ? null
+                : await DesktopArtifactFile.CopyForSessionAsync(
+                    download.FilePath, session, descriptor.FileName,
+                    descriptor.Sha256, cancellationToken);
             var execution = await runner.RunAsync(download.FilePath, descriptor,
                 cancellationToken);
             if (TryGetExecutionFailure(execution, out var executionCode,
@@ -219,11 +236,45 @@ public sealed class OfficeBugfixCommandHandler(
     }
 
     internal static bool IsCompatible(OfficeBugfixArtifactDescriptor artifact,
-        Version officeVersion) =>
-        Version.TryParse(artifact.MinOfficeVersion, out var minimum)
-        && Version.TryParse(artifact.MaxOfficeVersionExclusive, out var maximum)
-        && officeVersion >= minimum
-        && officeVersion < maximum;
+        OfficeInventory inventory, Version windowsVersion)
+    {
+        if (!Version.TryParse(inventory.Version, out var officeVersion))
+            return false;
+        var primary = new OfficeBugfixCompatibility(artifact.MinOfficeVersion,
+            artifact.MaxOfficeVersionExclusive, artifact.OfficeProductReleaseIds ?? [],
+            artifact.MinWindowsVersion, artifact.MaxWindowsVersionExclusive);
+        return IsCompatible(primary, inventory, officeVersion, windowsVersion)
+            || artifact.AdditionalCompatibility?.Any(rule =>
+                rule is not null && IsCompatible(rule, inventory, officeVersion,
+                    windowsVersion)) == true;
+    }
+
+    private static bool IsCompatible(OfficeBugfixCompatibility rule,
+        OfficeInventory inventory, Version officeVersion, Version windowsVersion)
+    {
+        if (!Version.TryParse(rule.MinOfficeVersion, out var minimum)
+            || !Version.TryParse(rule.MaxOfficeVersionExclusive, out var maximum)
+            || officeVersion < minimum || officeVersion >= maximum)
+            return false;
+
+        if (rule.MinWindowsVersion is not null
+            && (!Version.TryParse(rule.MinWindowsVersion, out var minWindows)
+                || windowsVersion < minWindows)
+            || rule.MaxWindowsVersionExclusive is not null
+            && (!Version.TryParse(rule.MaxWindowsVersionExclusive, out var maxWindows)
+                || windowsVersion >= maxWindows))
+            return false;
+
+        if (rule.OfficeProductReleaseIds is not { Count: > 0 } allowedIds)
+            return true;
+        var installedIds = inventory.ClickToRun
+            .SelectMany(item => (item.ProductReleaseIds ?? string.Empty).Split(
+                [',', ';'], StringSplitOptions.TrimEntries
+                    | StringSplitOptions.RemoveEmptyEntries))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return installedIds.Length > 0 && installedIds.All(id =>
+            allowedIds.Contains(id, StringComparer.OrdinalIgnoreCase));
+    }
 
     internal static bool HasOnlyApprovedParameters(JsonElement? parameters)
     {

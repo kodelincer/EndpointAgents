@@ -1,3 +1,5 @@
+using EndpointAgents.Shared.Office;
+
 namespace EndpointAgents.Shared.Windows;
 
 public static class WindowsActivationStates
@@ -34,7 +36,13 @@ public sealed record WindowsActivationReport(
     int? GracePeriodMinutes,
     string? Channel,
     bool ProbeSucceeded,
-    string? FailureCode = null);
+    string? FailureCode = null,
+    IReadOnlyList<string>? CompatibleBugfixArtifactIds = null);
+
+public sealed record WindowsBugfixCompatibilityRange(
+    string MinWindowsVersion,
+    string MaxWindowsVersionExclusive,
+    IReadOnlyList<string> EditionIds);
 
 public sealed record WindowsBugfixArtifactDescriptor(
     string ArtifactId,
@@ -42,7 +50,15 @@ public sealed record WindowsBugfixArtifactDescriptor(
     string Description,
     string FileName,
     string Sha256,
-    string DownloadPath);
+    string DownloadPath,
+    string? MinWindowsVersion = null,
+    string? MaxWindowsVersionExclusive = null,
+    IReadOnlyList<string>? EditionIds = null,
+    BatchPlaybook? Playbook = null,
+    string? PlaybookSha256 = null,
+    IReadOnlyList<BatchSupportFile>? SupportFiles = null,
+    string? BundleSha256 = null,
+    IReadOnlyList<WindowsBugfixCompatibilityRange>? AdditionalCompatibility = null);
 
 public sealed record WindowsBugfixCatalog(
     IReadOnlyList<WindowsBugfixArtifactDescriptor> Artifacts);
