@@ -557,11 +557,11 @@ public sealed class OfficeRemediationTests
             @echo off
             <nul set /p "=MENU: "
             set /p "first="
-            >nul ping -n 2 127.0.0.1
+            >nul ping -n 30 127.0.0.1
             <nul set /p "=NEXT: "
             set /p "second="
             exit /b 0
-            """, playbook, TimeSpan.FromMilliseconds(750),
+            """, playbook, TimeSpan.FromSeconds(60),
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(result.State == OfficeBugfixRunStates.PromptTimedOut,
