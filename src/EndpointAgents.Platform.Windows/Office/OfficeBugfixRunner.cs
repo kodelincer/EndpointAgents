@@ -1,5 +1,6 @@
 using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Security;
+using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
@@ -10,20 +11,24 @@ namespace EndpointAgents.Platform.Windows.Office;
 
 /// <summary>Runs one hash-pinned Office BAT from protected service staging.</summary>
 [SupportedOSPlatform("windows")]
-public sealed class OfficeBugfixRunner
+public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> options)
 {
     internal static readonly TimeSpan Timeout = TimeSpan.FromMinutes(8);
     internal const int OutputLimitBytes = 1024 * 1024;
+    private readonly OfficeRemediationOptions _options = options.Value;
 
     public async Task<OfficeBugfixRunResult> RunAsync(string path,
         OfficeBugfixArtifactDescriptor descriptor,
         CancellationToken cancellationToken)
     {
-        using var identity = WindowsIdentity.GetCurrent();
-        if (!new WindowsPrincipal(identity).IsInRole(
-                WindowsBuiltInRole.Administrator))
-            throw new InvalidOperationException(
-                "The EndpointAgents service does not have an administrative token.");
+        if (_options.RequireAdministrator)
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            if (!new WindowsPrincipal(identity).IsInRole(
+                    WindowsBuiltInRole.Administrator))
+                throw new InvalidOperationException(
+                    "The EndpointAgents service does not have an administrative token.");
+        }
         if (!BatchPlaybookPolicy.TryNormalize(descriptor.Playbook,
                 out var playbook, out _)
             || !IsSha256(descriptor.PlaybookSha256)
@@ -36,9 +41,10 @@ public sealed class OfficeBugfixRunner
             throw new InvalidDataException("The Office repair bundle is not approved.");
         if (!await IsApprovedAsync(path, descriptor.ArtifactId,
                 descriptor.FileName, descriptor.Sha256, cancellationToken,
-                descriptor.BundleSha256)
+                descriptor.BundleSha256, _options.StagingRoot,
+                _options.RequireProtectedAcl)
             || !await BatchSupportFileDownloader.AreApprovedAsync(path,
-                descriptor.SupportFiles, requireProtectedAcl: true,
+                descriptor.SupportFiles, _options.RequireProtectedAcl,
                 cancellationToken))
             throw new InvalidDataException("The staged Office repair is not approved.");
 
@@ -231,7 +237,8 @@ public sealed class OfficeBugfixRunner
 
     internal static async Task<bool> IsApprovedAsync(string path, string artifactId,
         string fileName, string expectedSha256, CancellationToken cancellationToken,
-        string? revisionSha256 = null)
+        string? revisionSha256 = null, string? stagingRoot = null,
+        bool requireProtectedAcl = true)
     {
         if (artifactId.Length is < 1 or > 64
             || artifactId.Any(character =>
@@ -243,19 +250,27 @@ public sealed class OfficeBugfixRunner
             return false;
 
         if (!IsSha256(expectedSha256)) return false;
-        var root = Path.GetFullPath(OfficeRemediationPaths.StagingRoot)
+        var rootPath = Path.GetFullPath(stagingRoot ?? OfficeRemediationPaths.StagingRoot);
+        var root = rootPath
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
         var expected = Path.GetFullPath(Path.Combine(root, artifactId,
             (revisionSha256 ?? expectedSha256).ToUpperInvariant(), fileName));
         var fullPath = Path.GetFullPath(path);
         var directory = Path.GetDirectoryName(fullPath)!;
+        var trustedPath = requireProtectedAcl
+            ? ProtectedWindowsPath.IsDirectorySecure(rootPath, requireProtectedAcl: true)
+              && ProtectedWindowsPath.IsDirectorySecure(directory,
+                  requireProtectedAcl: false)
+              && ProtectedWindowsPath.IsFileSecure(fullPath)
+            : Directory.Exists(rootPath)
+              && (File.GetAttributes(rootPath) & FileAttributes.ReparsePoint) == 0
+              && Directory.Exists(directory)
+              && (File.GetAttributes(directory) & FileAttributes.ReparsePoint) == 0
+              && File.Exists(fullPath)
+              && (File.GetAttributes(fullPath) & FileAttributes.ReparsePoint) == 0;
         if (!fullPath.Equals(expected, StringComparison.OrdinalIgnoreCase)
-            || !ProtectedWindowsPath.IsDirectorySecure(
-                OfficeRemediationPaths.StagingRoot, requireProtectedAcl: true)
-            || !ProtectedWindowsPath.IsDirectorySecure(directory,
-                requireProtectedAcl: false)
-            || !ProtectedWindowsPath.IsFileSecure(fullPath))
+            || !trustedPath)
             return false;
 
         await using var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read,

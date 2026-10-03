@@ -35,7 +35,7 @@ public sealed class OfficeArtifactDownloader(
             throw new InvalidDataException("The Office artifact download path is invalid.");
 
         var rootPath = Path.GetFullPath(_options.StagingRoot);
-        ProtectedWindowsPath.EnsureDirectory(rootPath, requireProtectedAcl: true);
+        EnsureDirectory(rootPath, requireProtectedAcl: true);
         var stagingRoot = rootPath
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
@@ -53,14 +53,14 @@ public sealed class OfficeArtifactDownloader(
             throw new InvalidDataException("The Office artifact revision path is invalid.");
 
         Directory.CreateDirectory(revisionDirectory);
-        ProtectedWindowsPath.EnsureDirectory(rootPath, requireProtectedAcl: true);
-        ProtectedWindowsPath.EnsureDirectory(artifactDirectory,
+        EnsureDirectory(rootPath, requireProtectedAcl: true);
+        EnsureDirectory(artifactDirectory,
             requireProtectedAcl: false);
-        ProtectedWindowsPath.EnsureDirectory(revisionDirectory,
+        EnsureDirectory(revisionDirectory,
             requireProtectedAcl: false);
         var destination = Path.Combine(revisionDirectory, fileName);
         if (File.Exists(destination))
-            ProtectedWindowsPath.EnsureFile(destination);
+            EnsureFile(destination);
         if (await IsApprovedLocalFileAsync(destination, sha256, cancellationToken,
                 requirePortableExecutable))
             return new OfficeArtifactDownload(destination, false);
@@ -106,9 +106,9 @@ public sealed class OfficeArtifactDownloader(
                     requirePortableExecutable))
                 throw new InvalidDataException(
                     "The downloaded Office artifact does not match its approved executable hash.");
-            ProtectedWindowsPath.EnsureFile(partial);
+            EnsureFile(partial);
             File.Move(partial, destination, overwrite: true);
-            ProtectedWindowsPath.EnsureFile(destination);
+            EnsureFile(destination);
             return new OfficeArtifactDownload(destination, true);
         }
         finally
@@ -121,7 +121,33 @@ public sealed class OfficeArtifactDownloader(
         IReadOnlyList<BatchSupportFile>? files,
         CancellationToken cancellationToken) =>
         BatchSupportFileDownloader.EnsureAsync(batchPath, files, transport,
-            requireProtectedAcl: true, cancellationToken);
+            _options.RequireProtectedAcl, cancellationToken);
+
+    private void EnsureDirectory(string path, bool requireProtectedAcl)
+    {
+        if (_options.RequireProtectedAcl)
+        {
+            ProtectedWindowsPath.EnsureDirectory(path, requireProtectedAcl);
+            return;
+        }
+        Directory.CreateDirectory(path);
+        if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException(
+                "The development Office remediation directory is redirected.");
+    }
+
+    private void EnsureFile(string path)
+    {
+        if (_options.RequireProtectedAcl)
+        {
+            ProtectedWindowsPath.EnsureFile(path);
+            return;
+        }
+        if (!File.Exists(path)
+            || (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException(
+                "The development Office remediation file is missing or redirected.");
+    }
 
     internal static async Task<bool> IsApprovedLocalFileAsync(string path,
         string expectedSha256, CancellationToken cancellationToken,

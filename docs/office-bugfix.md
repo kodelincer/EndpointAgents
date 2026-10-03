@@ -224,9 +224,13 @@ requires an elevated PowerShell session and a protected repository.
 
 The privileged path is available only after the elevated production installers have
 created the protected repository and installed `EndpointAgents.Service` as LocalSystem.
-Running the API, Service, or Tray directly as an ordinary development process is useful
-for diagnostics, but it deliberately cannot pass the production ACL and privilege gates.
-Do not weaken those gates to make a development sample run.
+Running the API, Service, or Tray directly as an ordinary development process cannot
+pass the production ACL and privilege gates. For local end-to-end testing only, the
+Service's `appsettings.Development.json` sets `Diagnostics:OfficeRemediation` to stage
+under `.local\OfficeRemediation` with `RequireProtectedAcl` and `RequireAdministrator`
+set to `false`; the BAT then runs with the current user's token. Filename, SHA-256,
+playbook-hash, and staging-path checks still apply. The Service refuses to start with
+these relaxations outside the Development environment, so production gates are unchanged.
 
 Both the Control Plane repository and endpoint staging roots must retain their installed,
 SYSTEM-owned protected ACLs. Non-admin users never receive write, delete, ownership, or

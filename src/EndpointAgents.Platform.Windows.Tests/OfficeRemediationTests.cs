@@ -545,6 +545,85 @@ public sealed class OfficeRemediationTests
     }
 
     [Fact]
+    public void OfficeRemediationOptionsDefaultToProtectedAdministratorStaging()
+    {
+        var options = new OfficeRemediationOptions();
+
+        Assert.Equal(OfficeRemediationPaths.StagingRoot, options.StagingRoot);
+        Assert.True(options.RequireProtectedAcl);
+        Assert.True(options.RequireAdministrator);
+        Assert.True(options.IsAllowedFor(isDevelopment: false));
+    }
+
+    [Theory]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    public void RelaxedOfficeRemediationIsAllowedOnlyInDevelopment(
+        bool requireProtectedAcl, bool requireAdministrator, bool protectedRoot)
+    {
+        var options = new OfficeRemediationOptions
+        {
+            StagingRoot = protectedRoot ? OfficeRemediationPaths.StagingRoot
+                : ".local\\OfficeRemediation",
+            RequireProtectedAcl = requireProtectedAcl,
+            RequireAdministrator = requireAdministrator
+        };
+
+        Assert.False(options.IsAllowedFor(isDevelopment: false));
+        Assert.True(options.IsAllowedFor(isDevelopment: true));
+    }
+
+    [Fact]
+    public async Task DevelopmentRunnerRunsHashPinnedSampleFromLocalStaging()
+    {
+        const string artifactId = "office-activation-repair";
+        var bytes = await File.ReadAllBytesAsync(Path.Combine(
+            AppContext.BaseDirectory, $"{artifactId}.bat"),
+            TestContext.Current.CancellationToken);
+        var sha256 = Convert.ToHexString(SHA256.HashData(bytes));
+        var root = Path.Combine(Path.GetTempPath(),
+            $"EndpointAgents-Office-dev-{Guid.NewGuid():N}");
+        var directory = Path.Combine(root, artifactId, sha256);
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, $"{artifactId}.bat");
+        await File.WriteAllBytesAsync(path, bytes,
+            TestContext.Current.CancellationToken);
+        var playbook = new BatchPlaybook(1,
+        [
+            new BatchPlaybookStep("Select an item:", "1", "line", 5),
+            new BatchPlaybookStep("Continue with harmless sample? [Y/N]:",
+                "Y", "key", 5)
+        ]);
+        var descriptor = new OfficeBugfixArtifactDescriptor(artifactId,
+            "Sample", "Harmless test", $"{artifactId}.bat", sha256, "16.0", "17.0",
+            playbook, BatchPlaybookPolicy.ComputeSha256(playbook),
+            $"/api/files/office/bugfix/{artifactId}");
+        var runner = new OfficeBugfixRunner(Microsoft.Extensions.Options.Options.Create(
+            new OfficeRemediationOptions
+            {
+                StagingRoot = root, RequireProtectedAcl = false,
+                RequireAdministrator = false
+            }));
+        try
+        {
+            var result = await runner.RunAsync(path, descriptor,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(OfficeBugfixRunStates.Completed, result.State);
+            Assert.Equal(0, result.ExitCode);
+            await File.WriteAllTextAsync(path, "@echo tampered",
+                TestContext.Current.CancellationToken);
+            await Assert.ThrowsAsync<InvalidDataException>(() => runner.RunAsync(
+                path, descriptor, TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task InteractiveRunnerDoesNotReuseStaleMenuText()
     {
         var playbook = new BatchPlaybook(1,

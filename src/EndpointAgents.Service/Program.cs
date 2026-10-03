@@ -87,10 +87,8 @@ builder.Services.AddOptions<IbsngOptions>()
 
 builder.Services.AddOptions<OfficeRemediationOptions>()
     .Bind(builder.Configuration.GetSection("Diagnostics:OfficeRemediation"))
-    .Validate(options => Path.GetFullPath(options.StagingRoot).Equals(
-            Path.GetFullPath(OfficeRemediationPaths.StagingRoot),
-            StringComparison.OrdinalIgnoreCase),
-        $"Diagnostics:OfficeRemediation:StagingRoot must be {OfficeRemediationPaths.StagingRoot}.")
+    .Validate(options => options.IsAllowedFor(builder.Environment.IsDevelopment()),
+        $"Diagnostics:OfficeRemediation:StagingRoot must be {OfficeRemediationPaths.StagingRoot} with ACL and administrator checks; relaxing them is allowed only in Development.")
     .Validate(options => options.MaxDownloadBytes is >= 1 and <= 1024L * 1024 * 1024,
         "Diagnostics:OfficeRemediation:MaxDownloadBytes must be between 1 byte and 1 GiB.")
     .ValidateOnStart();
