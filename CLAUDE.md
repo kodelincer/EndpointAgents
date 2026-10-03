@@ -1,9 +1,58 @@
-## graphify
+# EndpointAgents
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+Self-service IT helpdesk for Windows. A user describes a problem (in Persian) in the Tray app; the
+control plane hands it to an isolated Hermes agent, which uses ControlPlane MCP tools to diagnose and,
+within strict allow-lists, repair the user's PC through the endpoint service.
 
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+## Architecture
+
+| Project | Role |
+| --- | --- |
+| `src/EndpointAgents.Shared` | Contracts used by both endpoint and server (RpcRequest/Response/Error, AgentRegistration, command names, DTOs). |
+| `src/EndpointAgents.Core` | Endpoint engine: `IEndpointCommandHandler`, `CommandDispatcher`, execution context, result pattern, validation. |
+| `src/EndpointAgents.Platform.Windows` | Real Windows features (endpoint info, internet, IBSng, printers, services, registry, software, VPN, Office/Windows activation and repairs). Most feature work goes here. |
+| `src/EndpointAgents.Service` | Windows service (LocalSystem): owns the control-plane connection (SignalR + device token), reconnect, RPC -> `CommandDispatcher`, named-pipe server for the Tray. |
+| `src/EndpointAgents.Tray` | WinUI 3 (unpackaged) app in the interactive user session: helpdesk chat, Status & Control, Reports (Event Log). Runs only narrow user-session actions requested by the Service. |
+| `src/ControlPlane.Api` | ASP.NET Core Windows service on 5052: `AgentHub` (remote, authenticated) and `dashboard-hub` (loopback), REST, SQLite (WAL) chat/runs/audit, Hermes orchestration (`Hermes/`), loopback MCP at `/internal/mcp` (`Tools/`), hash-verified file repository (`Files/`). |
+| `src/ControlPlane.Web` | Next.js operator dashboard on 127.0.0.1:3000; loopback-only, never served by the API. |
+| `deploy/hermes/` | `SOUL.md` (agent identity/rules) and reviewed skills (`office-support`, `windows-support`, `ibsng-support`), promoted manually into the Hermes profile. |
+| `deploy/control-plane/FileRepository` | Development copy of repair artifacts and their manifests. |
+
+Flows:
+- Chat: Tray -> named pipe -> Service -> `AgentHub` -> ControlPlane.Api (SQLite) -> Hermes `/v1/runs` (127.0.0.1:8642) -> MCP tools -> allow-listed RPC -> Service -> handler.
+- Operator dispatch: dashboard -> API -> `IHubContext<AgentHub>` -> Service (Tray consent gate).
+
+Authority boundary: ControlPlane.Api, not Hermes, owns device/user identity, consent, command allow-listing
+and audit. Hermes never gets an `agentId`; a per-run capability resolves server-side to one device + user SID.
+Read-only diagnostics run automatically; Windows/Office activation repairs run automatically only via their
+dedicated pinned tools; anything else goes through `propose_endpoint_action` and needs the user's Tray approval.
+
+## Build, run, test (no Visual Studio needed: .NET 10 SDK + Node)
+
+```powershell
+dotnet build EndpointAgents.slnx
+dotnet test EndpointAgents.slnx
+dotnet run --project src\ControlPlane.Api\ControlPlane.Api.csproj --launch-profile http   # API on :5052
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-endpoint-dev.ps1        # Service + Tray
+```
+
+Dashboard: `cd src/ControlPlane.Web; npm install; npm run dev` (http://127.0.0.1:3000), `npm test` for vitest.
+Stop any installed `EndpointAgents.Service` and running Tray before the dev script.
+
+## Rules
+
+- Nothing Windows-specific in `Shared`; put something there only if both endpoint and server must understand it.
+- `EndpointAgents.Service` is rarely edited; add features in `Platform.Windows` (and `Core` only for reusable engine pieces).
+- The Tray never accepts credentials from the control-plane channel; the Service owns runtime state.
+- Every new fix ships as all of: an MCP tool in `ControlPlane.Api/Tools`, a hash-pinned (SHA-256) script in the
+  file-repository manifest, a Hermes skill update in `deploy/hermes/skills`, and tests. Skill text never grants a
+  tool permission; the ControlPlane and Hermes MCP allow-lists must agree.
+- User-facing agent replies: simple Persian, at most three short sentences, no tool names, IDs, paths or JSON (see `deploy/hermes/SOUL.md`).
+- Development keys in `appsettings.Development.json` are localhost-only test values; never commit real or production secrets, and never log run capabilities, device tokens or LLM keys.
+- UI: follow `DESIGN.md` (dashboard: dense, light-first, OKLCH tokens; Tray: native Fluent/WinUI, Persian RTL, no visible WinForms) and `PRODUCT.md`.
+
+## Docs
+
+- `docs/control-plane-operations.md` - ports, routes, dev and production install, troubleshooting
+- `docs/hermes-support-agent.md` - enrollment, Hermes install, MCP tools, consent lifecycle, verification checklist
+- `docs/windows-activation.md`, `docs/office-activation.md`, `docs/office-bugfix.md`, `docs/office-inventory.md`, `docs/ibsng-support.md` - feature specifics
