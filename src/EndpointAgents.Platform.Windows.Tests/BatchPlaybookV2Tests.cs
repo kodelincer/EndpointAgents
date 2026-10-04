@@ -227,6 +227,36 @@ public sealed class BatchPlaybookV2Tests
         Assert.Equal(OfficeBugfixRunStates.Completed, result.State);
     }
 
+    [Fact]
+    public async Task StoppedRunNeverFeedsAnEmptyAnswerToTheBat()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"EndpointAgents-stop-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var path = Path.Combine(root, "default-branch.bat");
+        var marker = Path.Combine(root, "default-ran.txt");
+        await File.WriteAllTextAsync(path, string.Join("\r\n",
+            "@echo off",
+            "set \"x=\"",
+            "set /p \"x=Press Enter for the default action: \"",
+            "if \"%x%\"==\"\" echo ran> \"%~dp0default-ran.txt\"",
+            "exit /b 0", ""), TestContext.Current.CancellationToken);
+        try
+        {
+            var result = await OfficeBugfixRunner.RunProcessAsync(
+                OfficeBugfixRunner.CreateStartInfo(path),
+                V2(new BatchPlaybookStep("Never shown", "1", "line", 5)),
+                TestContext.Current.CancellationToken);
+            await Task.Delay(500, TestContext.Current.CancellationToken);
+
+            Assert.Equal(OfficeBugfixRunStates.PromptTimedOut, result.State);
+            Assert.False(File.Exists(marker));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     // ---- Failure output tail ----
 
     [Fact]

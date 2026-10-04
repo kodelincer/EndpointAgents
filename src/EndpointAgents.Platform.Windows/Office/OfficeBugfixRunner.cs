@@ -203,9 +203,7 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                     // separate CR would be read later as an empty answer.
                     var response = match.Choice.Submit == BatchPlaybookSubmitKinds.Line
                         ? match.Choice.Send + "\r" : match.Choice.Send;
-                    await process.StandardInput.WriteAsync(response.AsMemory(),
-                        overall.Token);
-                    await process.StandardInput.FlushAsync(overall.Token);
+                    await WriteResponseAsync(process, response, overall.Token);
                     completedSteps++;
                     repeats++;
                 }
@@ -343,14 +341,26 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
         }
     }
 
+    /// <summary>Writes the encoded response and its terminator as one pipe write.</summary>
+    private static async Task WriteResponseAsync(Process process, string response,
+        CancellationToken cancellationToken)
+    {
+        var bytes = process.StartInfo.StandardInputEncoding!.GetBytes(response);
+        var stream = process.StandardInput.BaseStream;
+        await stream.WriteAsync(bytes, cancellationToken);
+        await stream.FlushAsync(cancellationToken);
+    }
+
     private static async Task StopAsync(Process process, IReadOnlyList<Task> pumps)
     {
-        try { process.StandardInput.Close(); } catch { }
+        // Kill before closing input: end-of-file answers every pending set /p with an
+        // empty line, which could let the BAT run a default menu branch.
         try
         {
             if (!process.HasExited) process.Kill(entireProcessTree: true);
         }
         catch { }
+        try { process.StandardInput.Close(); } catch { }
         try
         {
             if (!process.HasExited)
