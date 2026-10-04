@@ -120,11 +120,13 @@ public sealed partial class SupportWindow : Window
 
     private void UpdateTitleBarInsets()
     {
+        // Insets are physical, but the RTL title bar mirrors Padding: its Left is the
+        // physical right, where the caption buttons sit.
         var scale = WindowScale();
         TitleBarDragRegion.Padding = new Thickness(
-            16 + _appWindow.TitleBar.LeftInset / scale,
-            0,
             16 + _appWindow.TitleBar.RightInset / scale,
+            0,
+            16 + _appWindow.TitleBar.LeftInset / scale,
             0);
     }
 
