@@ -1,4 +1,4 @@
-namespace ControlPlane.Api.Files;
+namespace EndpointAgents.Shared.Office;
 
 /// <summary>
 /// Publish-time checks for BAT artifacts run unattended through a playbook. Errors

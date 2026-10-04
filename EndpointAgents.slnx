@@ -6,6 +6,7 @@
     <Project Path="src/ControlPlane.Web/ControlPlane.Web.esproj" />
     <Project Path="src/EndpointAgents.Core/EndpointAgents.Core.csproj" />
     <Project Path="src/EndpointAgents.Platform.Windows/EndpointAgents.Platform.Windows.csproj" />
+    <Project Path="src/EndpointAgents.PlaybookLab/EndpointAgents.PlaybookLab.csproj" />
     <Project Path="src/EndpointAgents.Platform.Windows.Tests/EndpointAgents.Platform.Windows.Tests.csproj" />
     <Project Path="src/EndpointAgents.Service/EndpointAgents.Service.csproj" />
     <Project Path="src/EndpointAgents.Shared/EndpointAgents.Shared.csproj" />

@@ -1,4 +1,4 @@
-using ControlPlane.Api.Files;
+using EndpointAgents.Shared.Office;
 
 namespace ControlPlane.Api.Tests;
 

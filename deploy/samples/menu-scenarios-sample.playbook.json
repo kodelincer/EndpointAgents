@@ -1,0 +1,44 @@
+{
+  "version": 2,
+  "steps": [
+    {
+      "expect": "Press N for the next page:",
+      "send": "N",
+      "submit": "line",
+      "timeoutSeconds": 30,
+      "optional": true,
+      "maxRepeats": 5
+    },
+    {
+      "expect": "Main menu choice:",
+      "send": "1",
+      "submit": "line",
+      "timeoutSeconds": 30
+    },
+    {
+      "expect": "Settings choice:",
+      "send": "A",
+      "submit": "line",
+      "timeoutSeconds": 30,
+      "alternatives": [
+        { "expect": "Reconfigure? [Y/N]", "send": "N", "submit": "key" }
+      ]
+    },
+    {
+      "expect": "Main menu choice:",
+      "send": "2",
+      "submit": "line",
+      "timeoutSeconds": 30
+    },
+    {
+      "expect": "Press any key",
+      "send": "x",
+      "submit": "key",
+      "timeoutSeconds": 30,
+      "optional": true
+    }
+  ],
+  "successExitCodes": [0],
+  "successMarker": "Task completed successfully",
+  "failureMarkers": ["Task FAILED", "Invalid choice", "Unexpected page answer", "Enter the server name"]
+}
