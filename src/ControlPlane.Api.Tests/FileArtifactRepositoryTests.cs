@@ -559,6 +559,51 @@ public sealed class FileArtifactRepositoryTests
     }
 
     [Fact]
+    public async Task LintRejectsUnreviewablePayloadsAndPublishesVersion2Playbooks()
+    {
+        var root = CreateRoot();
+        try
+        {
+            async Task<string> WriteBatAsync(string id, string body)
+            {
+                var bytes = global::System.Text.Encoding.ASCII.GetBytes(
+                    $"@echo off\r\n{body}\r\nset /p \"x=Select an option: \"\r\n");
+                await File.WriteAllBytesAsync(Path.Combine(root, $"{id}.bat"), bytes,
+                    TestContext.Current.CancellationToken);
+                return Convert.ToHexString(SHA256.HashData(bytes));
+            }
+            var v2 = new BatchPlaybook(2,
+                [new BatchPlaybookStep("Select an option", "1", "line", 30,
+                    [new BatchPlaybookChoice("Already done", "N", "key")], false, 2)],
+                SuccessExitCodes: [0, 3010], SuccessMarker: "Done",
+                FailureMarkers: ["FAILED"]);
+            var clean = BugfixEntry("clean-v2", "clean-v2.bat",
+                await WriteBatAsync("clean-v2", "echo ready"), "16.0", "17.0");
+            clean.Playbook = v2;
+            var warned = BugfixEntry("warned", "warned.bat",
+                await WriteBatAsync("warned", "timeout /t 2"), "16.0", "17.0");
+            var rejected = BugfixEntry("rejected", "rejected.bat",
+                await WriteBatAsync("rejected", "powershell -enc SQBFAFgA"), "16.0", "17.0");
+            await WriteBugfixManifestAsync(root, clean, warned, rejected);
+
+            var catalog = await CreateRepository(root).GetOfficeBugfixCatalogAsync(
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(["clean-v2", "warned"], catalog.Artifacts
+                .Select(item => item.Descriptor.ArtifactId).Order().ToArray());
+            var published = catalog.Artifacts.Single(item =>
+                item.Descriptor.ArtifactId == "clean-v2").Descriptor;
+            Assert.Equal(2, published.Playbook.Version);
+            Assert.Equal(BatchPlaybookPolicy.ComputeSha256(v2), published.PlaybookSha256);
+            Assert.Contains(catalog.Issues, issue => issue.Source == "office_bugfix.warned"
+                && issue.Message.StartsWith("Warning:"));
+            Assert.Contains(catalog.Issues, issue => issue.Source == "office_bugfix.rejected"
+                && issue.Message.StartsWith("Rejected:"));
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
+    [Fact]
     public async Task ExposesTheFixedHarmlessWindowsHelloSample()
     {
         var root = CreateRoot();

@@ -306,6 +306,9 @@ public sealed partial class FileArtifactRepository
                     $"office_bugfix.{entry.ArtifactId}", supportError));
                 continue;
             }
+            if (!await PassesLintAsync(file, $"office_bugfix.{entry.ArtifactId}",
+                    issues, cancellationToken))
+                continue;
 
             var descriptor = new OfficeBugfixArtifactDescriptor(entry.ArtifactId,
                 entry.DisplayName.Trim(), entry.Description.Trim(), entry.FileName,
@@ -449,6 +452,9 @@ public sealed partial class FileArtifactRepository
                         $"windows_bugfix.{entry.ArtifactId}", supportError));
                     continue;
                 }
+                if (!await PassesLintAsync(file, $"windows_bugfix.{entry.ArtifactId}",
+                        issues, cancellationToken))
+                    continue;
                 artifacts.Add(new WindowsBugfixFileArtifact(file,
                     new WindowsBugfixArtifactDescriptor(entry.ArtifactId,
                         entry.DisplayName.Trim(), entry.Description.Trim(),
@@ -611,6 +617,19 @@ public sealed partial class FileArtifactRepository
             Version.Parse(rule.MinWindowsVersion).ToString(),
             Version.Parse(rule.MaxWindowsVersionExclusive).ToString(),
             rule.EditionIds.ToArray());
+
+    /// <summary>Reports lint warnings and rejects BATs with lint errors.</summary>
+    private static async Task<bool> PassesLintAsync(FileArtifact file, string source,
+        List<FileRepositoryIssue> issues, CancellationToken cancellationToken)
+    {
+        var lint = BatScriptLint.Inspect(
+            await File.ReadAllTextAsync(file.FullPath, cancellationToken));
+        issues.AddRange(lint.Warnings.Select(warning =>
+            new FileRepositoryIssue(source, $"Warning: {warning}")));
+        issues.AddRange(lint.Errors.Select(error =>
+            new FileRepositoryIssue(source, $"Rejected: {error}")));
+        return lint.Errors.Count == 0;
+    }
 
     private async Task<FileArtifact?> InspectFileAsync(string path, string? expectedSha256,
         CancellationToken cancellationToken)
