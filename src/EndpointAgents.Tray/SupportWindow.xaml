@@ -1,4 +1,4 @@
-<Window
+﻿<Window
     x:Class="EndpointAgents.Tray.SupportWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -8,12 +8,9 @@
     mc:Ignorable="d">
 
     <!--
-    THESIS: Each support issue is a durable conversation; refuse the single endless transcript.
-    OWN-WORLD: Native Fluent Mica, quiet neutral surfaces, blue selection, compact Segoe UI controls, and a disciplined 280px conversation rail.
-    STORY: The user sees every recent issue, opens one without losing context, and starts a new issue only when current work can close safely.
-    FIRST VIEWPORT: Top navigation and status strip frame an RTL workspace; conversation rail on the right, timeline in the center, composer anchored below.
-    FORM: Approved composition C, Operate mode, seed tray-winui-c.
-    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+    Messenger layout (RTL): navigation rail and conversation history on the right,
+    the open chat in the middle, and a collapsible details pane on the far left.
+    FlowDirection mirrors the layout, so logical Left/Right below are physically reversed.
     -->
 
     <Window.SystemBackdrop>
@@ -23,64 +20,61 @@
     <Grid x:Name="WindowRoot" FlowDirection="RightToLeft" Background="Transparent">
         <Grid.Resources>
             <local:BidiFlowDirectionConverter x:Key="BidiFlowDirectionConverter" />
+            <local:ConversationStateBrushConverter x:Key="StateBrush" />
+            <local:BoolVisibilityConverter x:Key="BoolVisibility" />
             <CollectionViewSource x:Key="GroupedConversations"
                                   Source="{Binding ConversationGroups}"
                                   IsSourceGrouped="True" />
+
+            <!-- Incoming: physically left, small corner at the physical bottom-left. -->
             <DataTemplate x:Key="AssistantMessageTemplate">
-                <Border MaxWidth="620" Margin="80,6,28,6" Padding="16,11"
-                        HorizontalAlignment="Right" Background="{ThemeResource EndpointAssistantBubbleBrush}"
-                        BorderBrush="{ThemeResource EndpointLineBrush}" BorderThickness="1" CornerRadius="8">
-                    <Border.Resources>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="{ThemeResource EndpointAssistantBubbleForegroundBrush}" />
-                        </Style>
-                    </Border.Resources>
-                    <StackPanel Spacing="7">
-                        <Grid ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Author}" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="1" Text="{Binding Timestamp}"
-                                       FlowDirection="LeftToRight" FontSize="12"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        </Grid>
+                <Border MaxWidth="560" Margin="72,2,14,2" Padding="12,7,12,6"
+                        HorizontalAlignment="Right"
+                        Background="{ThemeResource EndpointAssistantBubbleBrush}"
+                        CornerRadius="14,14,4,14">
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="{Binding Author}" FontSize="13" FontWeight="SemiBold"
+                                   Foreground="{ThemeResource EndpointAccentTextBrush}" />
                         <TextBlock Text="{Binding Body}" TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                                   FontSize="14" LineHeight="22"
+                                   Foreground="{ThemeResource EndpointAssistantBubbleForegroundBrush}"
                                    FlowDirection="{Binding IsRightToLeft, Converter={StaticResource BidiFlowDirectionConverter}}" />
+                        <TextBlock Text="{Binding Timestamp}" HorizontalAlignment="Right"
+                                   FlowDirection="LeftToRight" FontSize="11"
+                                   Foreground="{ThemeResource EndpointBubbleMetadataBrush}" />
                     </StackPanel>
                 </Border>
             </DataTemplate>
+
+            <!-- Outgoing: physically right, small corner at the physical bottom-right. -->
             <DataTemplate x:Key="UserMessageTemplate">
-                <Border MaxWidth="620" Margin="28,6,80,6" Padding="16,11"
-                        HorizontalAlignment="Left" Background="{ThemeResource EndpointUserBubbleBrush}"
-                        BorderBrush="{ThemeResource EndpointLineBrush}" BorderThickness="1" CornerRadius="8">
-                    <Border.Resources>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="Foreground" Value="{ThemeResource EndpointUserBubbleForegroundBrush}" />
-                        </Style>
-                    </Border.Resources>
-                    <StackPanel Spacing="7">
-                        <Grid ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Author}" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="1" Text="{Binding Timestamp}"
-                                       FlowDirection="LeftToRight" FontSize="12"
-                                       Foreground="{ThemeResource EndpointUserBubbleMetadataForegroundBrush}" />
-                        </Grid>
+                <Border MaxWidth="560" Margin="14,2,72,2" Padding="12,7,12,6"
+                        HorizontalAlignment="Left"
+                        Background="{ThemeResource EndpointUserBubbleBrush}"
+                        CornerRadius="14,14,14,4">
+                    <StackPanel Spacing="2">
                         <TextBlock Text="{Binding Body}" TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                                   FontSize="14" LineHeight="22"
+                                   Foreground="{ThemeResource EndpointUserBubbleForegroundBrush}"
                                    FlowDirection="{Binding IsRightToLeft, Converter={StaticResource BidiFlowDirectionConverter}}" />
+                        <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="{Binding Timestamp}" FlowDirection="LeftToRight" FontSize="11"
+                                       Foreground="{ThemeResource EndpointUserBubbleMetadataForegroundBrush}" />
+                            <FontIcon Glyph="&#xE73E;" FontSize="11"
+                                      Foreground="{ThemeResource EndpointUserBubbleMetadataForegroundBrush}"
+                                      AutomationProperties.Name="ارسال شد" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
             </DataTemplate>
+
+            <!-- Run progress: a centred service card, like a messenger system notice. -->
             <DataTemplate x:Key="ProgressTemplate">
-                <Border MaxWidth="740" Margin="48,10" HorizontalAlignment="Center"
-                        Background="{ThemeResource EndpointSurfaceBrush}"
-                        BorderBrush="{ThemeResource AccentFillColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
-                    <Expander IsExpanded="True" Padding="12,5">
+                <Border MaxWidth="460" Margin="48,8" HorizontalAlignment="Center"
+                        Background="{ThemeResource EndpointServiceBubbleBrush}" CornerRadius="12">
+                    <Expander IsExpanded="False" HorizontalAlignment="Stretch"
+                              HorizontalContentAlignment="Stretch"
+                              Background="Transparent" BorderThickness="0">
                         <Expander.Header>
                             <Grid ColumnSpacing="10">
                                 <Grid.ColumnDefinitions>
@@ -88,158 +82,172 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <FontIcon Glyph="&#xE770;" FontSize="16"
-                                          Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                <TextBlock Grid.Column="1" Text="{Binding Summary}" FontWeight="SemiBold"
-                                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <Border Width="26" Height="26" CornerRadius="13"
+                                        Background="{ThemeResource EndpointAccentBrush}">
+                                    <FontIcon Glyph="&#xE9D9;" FontSize="13" Foreground="White" />
+                                </Border>
+                                <TextBlock Grid.Column="1" Text="{Binding Summary}" FontSize="13"
+                                           FontWeight="SemiBold" TextWrapping="Wrap"
+                                           VerticalAlignment="Center" />
                                 <ProgressRing Grid.Column="2" Width="16" Height="16"
                                               IsActive="{Binding IsRunning}"
                                               AutomationProperties.Name="در حال انجام بررسی" />
                             </Grid>
                         </Expander.Header>
-                        <StackPanel Padding="28,0,8,6" Spacing="3">
-                            <TextBlock Text="مراحل بررسی درخواست و وضعیت هر مرحله"
-                                       Style="{StaticResource MetadataTextStyle}" />
-                            <ItemsControl ItemsSource="{Binding Steps}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid MinHeight="30" ColumnSpacing="10">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="18" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <FontIcon Glyph="{Binding StatusGlyph}" FontSize="11"
-                                                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                            <TextBlock Grid.Column="1" Text="{Binding Label}" VerticalAlignment="Center" />
-                                            <TextBlock Grid.Column="2" Text="{Binding Time}" FlowDirection="LeftToRight"
-                                                       Style="{StaticResource MetadataTextStyle}"
-                                                       VerticalAlignment="Center" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
+                        <ItemsControl ItemsSource="{Binding Steps}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid MinHeight="28" ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="18" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="{Binding StatusGlyph}" FontSize="11"
+                                                  Foreground="{ThemeResource EndpointAccentTextBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Label}" FontSize="13"
+                                                   TextWrapping="Wrap" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Time}" FlowDirection="LeftToRight"
+                                                   Style="{StaticResource MetadataTextStyle}"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                     </Expander>
                 </Border>
             </DataTemplate>
         </Grid.Resources>
 
         <Grid.RowDefinitions>
-            <RowDefinition Height="48" />
+            <RowDefinition Height="40" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid x:Name="TitleBarDragRegion" Grid.Row="0" Padding="16,0"
+        <Grid x:Name="TitleBarDragRegion" Grid.Row="0" Padding="16,0" ColumnSpacing="10"
               Background="Transparent">
-            <TextBlock Text="عامل نقطه پایانی" FontWeight="SemiBold"
-                       VerticalAlignment="Center" />
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center"
+                    Background="{ThemeResource EndpointAccentBrush}">
+                <FontIcon Glyph="&#xE95B;" FontSize="12" Foreground="White" />
+            </Border>
+            <TextBlock Grid.Column="1" Text="پشتیبانی رایانه" FontWeight="SemiBold"
+                       FontSize="13" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0"
+                        VerticalAlignment="Center">
+                <Ellipse x:Name="TitleStatusDot" Width="8" Height="8" Fill="Gray" />
+                <TextBlock Text="{Binding StatusLabel}" FontSize="12"
+                           Style="{StaticResource MetadataTextStyle}" TextWrapping="NoWrap" />
+            </StackPanel>
         </Grid>
 
-        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="Top"
+        <NavigationView x:Name="Navigation" Grid.Row="1" PaneDisplayMode="LeftCompact"
+                         IsPaneToggleButtonVisible="False"
                          IsBackButtonVisible="Collapsed" IsSettingsVisible="False"
                          AlwaysShowHeader="False" SelectionChanged="Navigation_SelectionChanged"
                          AutomationProperties.AutomationId="PrimaryNavigation">
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="درخواست پشتیبانی" Tag="Helpdesk">
-                    <NavigationViewItem.Icon><SymbolIcon Symbol="Message" /></NavigationViewItem.Icon>
+                <NavigationViewItem Content="گفتگوها" Tag="Helpdesk"
+                                    ToolTipService.ToolTip="گفتگوها">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE8BD;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="وضعیت و کنترل" Tag="Status">
-                    <NavigationViewItem.Icon><SymbolIcon Symbol="Remote" /></NavigationViewItem.Icon>
+                <NavigationViewItem Content="وضعیت و کنترل" Tag="Status"
+                                    ToolTipService.ToolTip="وضعیت و کنترل">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE7F4;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="گزارش‌ها" Tag="Logs">
-                    <NavigationViewItem.Icon><SymbolIcon Symbol="Document" /></NavigationViewItem.Icon>
+                <NavigationViewItem Content="گزارش‌ها" Tag="Logs"
+                                    ToolTipService.ToolTip="گزارش‌ها">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE9F9;" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 
             <Grid Background="Transparent">
-                    <Grid x:Name="HelpdeskPage" SizeChanged="HelpdeskPage_SizeChanged">
-                        <!-- The RTL root mirrors SplitView placement; Left renders this pane physically right. -->
-                        <SplitView x:Name="ConversationSplitView" PanePlacement="Left"
-                                   OpenPaneLength="224" CompactPaneLength="0"
-                                   DisplayMode="Inline" IsPaneOpen="True">
-                            <SplitView.Pane>
-                                <Border Background="{ThemeResource EndpointConversationRailBrush}"
-                                        BorderBrush="{ThemeResource EndpointLineBrush}"
-                                        BorderThickness="1,0,0,0">
-                                    <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="*" />
-                                        </Grid.RowDefinitions>
-                                        <Grid MinHeight="52" Padding="16,8,12,8"
-                                              BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                                              BorderThickness="0,0,0,1">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="گفتگوها" FontSize="18" FontWeight="SemiBold"
-                                                       VerticalAlignment="Center" />
-                                            <Button x:Name="NewConversationButton" Grid.Column="1"
-                                                    Click="NewConversation_Click"
-                                                    Width="36" Height="36" Padding="0"
-                                                    Background="Transparent" BorderThickness="0"
-                                                    AutomationProperties.AutomationId="NewConversationButton"
-                                                    AutomationProperties.Name="شروع گفتگوی جدید"
-                                                    ToolTipService.ToolTip="شروع گفتگوی جدید">
-                                                <FontIcon Glyph="&#xE710;" FontSize="16" />
-                                            </Button>
-                                        </Grid>
-                                        <Grid Grid.Row="1" Margin="12,10,12,7" ColumnSpacing="8">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <ComboBox x:Name="ConversationFilter" SelectedIndex="0"
-                                                      HorizontalAlignment="Stretch"
-                                                      SelectionChanged="ConversationFilter_Changed"
-                                                      AutomationProperties.AutomationId="ConversationFilter"
-                                                      AutomationProperties.Name="فیلتر گفتگوها">
-                                                <ComboBoxItem Content="همه گفتگوها" Tag="All" />
-                                                <ComboBoxItem Content="گفتگوهای باز" Tag="Active" />
-                                                <ComboBoxItem Content="حل‌شده" Tag="Resolved" />
-                                                <ComboBoxItem Content="بسته‌شده" Tag="Closed" />
-                                            </ComboBox>
-                                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="2">
-                                                <ProgressRing Width="16" Height="16"
-                                                              IsActive="{Binding IsConversationListLoading}"
-                                                              AutomationProperties.Name="در حال دریافت گفتگوها" />
-                                                <Button Width="32" Height="32" Padding="0"
-                                                        Background="Transparent" BorderThickness="0"
-                                                        Click="ConversationFilterButton_Click"
-                                                        AutomationProperties.Name="باز کردن فیلتر گفتگوها"
-                                                        ToolTipService.ToolTip="فیلتر گفتگوها">
-                                                    <FontIcon Glyph="&#xE71C;" FontSize="14" />
-                                                </Button>
-                                            </StackPanel>
-                                        </Grid>
-                                        <InfoBar Grid.Row="2" Margin="10,4,10,6"
-                                                 IsOpen="{Binding HasConversationListError}"
-                                                 IsClosable="False" Severity="Error"
-                                                 Title="فهرست گفتگوها دریافت نشد"
-                                                 Message="{Binding ConversationListError}">
-                                            <InfoBar.ActionButton>
-                                                <Button Content="تلاش دوباره"
-                                                        Click="RefreshConversations_Click" />
-                                            </InfoBar.ActionButton>
-                                        </InfoBar>
-                                        <Grid Grid.Row="3">
+                <Grid x:Name="HelpdeskPage" SizeChanged="HelpdeskPage_SizeChanged">
+                    <!-- The RTL root mirrors SplitView placement; Left renders this pane physically right. -->
+                    <SplitView x:Name="ConversationSplitView" PanePlacement="Left"
+                               OpenPaneLength="320" CompactPaneLength="0"
+                               DisplayMode="Inline" IsPaneOpen="True"
+                               PaneBackground="{ThemeResource EndpointConversationRailBrush}">
+                        <SplitView.Pane>
+                            <Border BorderBrush="{ThemeResource EndpointLineBrush}" BorderThickness="0,0,1,0">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+
+                                    <Grid Padding="12,10,10,6" ColumnSpacing="6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <AutoSuggestBox x:Name="ConversationSearch"
+                                                        PlaceholderText="جستجو در گفتگوها"
+                                                        QueryIcon="Find" CornerRadius="18"
+                                                        TextChanged="ConversationSearch_TextChanged"
+                                                        AutomationProperties.AutomationId="ConversationSearch"
+                                                        AutomationProperties.Name="جستجو در گفتگوها" />
+                                        <Button x:Name="NewConversationButton" Grid.Column="1"
+                                                Click="NewConversation_Click"
+                                                Style="{StaticResource AccentButtonStyle}"
+                                                Width="36" Height="36" Padding="0" CornerRadius="18"
+                                                AutomationProperties.AutomationId="NewConversationButton"
+                                                AutomationProperties.Name="شروع گفتگوی جدید"
+                                                ToolTipService.ToolTip="گفتگوی جدید">
+                                            <FontIcon Glyph="&#xE70F;" FontSize="15" />
+                                        </Button>
+                                    </Grid>
+
+                                    <SelectorBar x:Name="ConversationFilter" Grid.Row="1" Margin="6,0,6,2"
+                                                 SelectionChanged="ConversationFilter_Changed"
+                                                 AutomationProperties.AutomationId="ConversationFilter"
+                                                 AutomationProperties.Name="فیلتر گفتگوها">
+                                        <SelectorBarItem Text="همه" Tag="All" IsSelected="True" />
+                                        <SelectorBarItem Text="باز" Tag="Active" />
+                                        <SelectorBarItem Text="حل‌شده" Tag="Resolved" />
+                                        <SelectorBarItem Text="بسته" Tag="Closed" />
+                                    </SelectorBar>
+
+                                    <InfoBar Grid.Row="2" Margin="10,4,10,6"
+                                             IsOpen="{Binding HasConversationListError}"
+                                             IsClosable="False" Severity="Error"
+                                             Title="فهرست گفتگوها دریافت نشد"
+                                             Message="{Binding ConversationListError}">
+                                        <InfoBar.ActionButton>
+                                            <Button Content="تلاش دوباره"
+                                                    Click="RefreshConversations_Click" />
+                                        </InfoBar.ActionButton>
+                                    </InfoBar>
+
+                                    <Grid Grid.Row="3">
                                         <ListView x:Name="ConversationIndex"
                                                   ItemsSource="{Binding Source={StaticResource GroupedConversations}}"
                                                   SelectionMode="Single"
                                                   SelectionChanged="ConversationIndex_SelectionChanged"
                                                   HorizontalContentAlignment="Stretch"
-                                                  Padding="6,0,6,8"
+                                                  Padding="0,0,0,8"
                                                   AutomationProperties.AutomationId="ConversationIndex"
                                                   AutomationProperties.Name="فهرست گفتگوهای پشتیبانی">
+                                            <ListView.ItemContainerStyle>
+                                                <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                                                    <Setter Property="Padding" Value="0" />
+                                                    <Setter Property="Margin" Value="6,1" />
+                                                    <Setter Property="MinHeight" Value="0" />
+                                                    <Setter Property="CornerRadius" Value="10" />
+                                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                </Style>
+                                            </ListView.ItemContainerStyle>
                                             <ListView.GroupStyle>
                                                 <GroupStyle>
                                                     <GroupStyle.HeaderTemplate>
                                                         <DataTemplate>
-                                                            <TextBlock Text="{Binding Label}" Margin="12,12,12,4"
+                                                            <TextBlock Text="{Binding Label}" Margin="10,8,10,2"
                                                                        FontSize="12" FontWeight="SemiBold"
                                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                         </DataTemplate>
@@ -248,146 +256,202 @@
                                             </ListView.GroupStyle>
                                             <ListView.ItemTemplate>
                                                 <DataTemplate>
-                                                    <Grid MinHeight="78" Padding="12,9" RowSpacing="4">
-                                                        <Grid.RowDefinitions>
-                                                            <RowDefinition Height="Auto" />
-                                                            <RowDefinition Height="Auto" />
-                                                            <RowDefinition Height="Auto" />
-                                                        </Grid.RowDefinitions>
-                                                        <Grid ColumnSpacing="8">
-                                                            <Grid.ColumnDefinitions>
-                                                                <ColumnDefinition Width="*" />
-                                                                <ColumnDefinition Width="Auto" />
-                                                            </Grid.ColumnDefinitions>
-                                                            <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
-                                                                       MaxLines="2" TextWrapping="Wrap"
-                                                                       TextTrimming="CharacterEllipsis" />
-                                                            <TextBlock Grid.Column="1" Text="{Binding UpdatedTime}"
-                                                                       FlowDirection="LeftToRight"
-                                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                    <Grid Padding="8,9" ColumnSpacing="12"
+                                                          AutomationProperties.Name="{Binding AccessibleName}">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Border Width="46" Height="46" CornerRadius="23"
+                                                                VerticalAlignment="Center"
+                                                                Background="{Binding State, Converter={StaticResource StateBrush}}"
+                                                                ToolTipService.ToolTip="{Binding StatusLabel}">
+                                                            <FontIcon Glyph="{Binding StatusGlyph}" FontSize="18"
+                                                                      Foreground="White" />
+                                                        </Border>
+                                                        <Grid Grid.Column="1" RowSpacing="3" VerticalAlignment="Center">
+                                                            <Grid.RowDefinitions>
+                                                                <RowDefinition Height="Auto" />
+                                                                <RowDefinition Height="Auto" />
+                                                            </Grid.RowDefinitions>
+                                                            <Grid ColumnSpacing="8">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{Binding Title}" FontWeight="SemiBold"
+                                                                           MaxLines="1" TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Grid.Column="1" Text="{Binding UpdatedTime}"
+                                                                           FontSize="12" VerticalAlignment="Center"
+                                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                            </Grid>
+                                                            <Grid Grid.Row="1" ColumnSpacing="8">
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="*" />
+                                                                    <ColumnDefinition Width="Auto" />
+                                                                </Grid.ColumnDefinitions>
+                                                                <TextBlock Text="{Binding Preview}" MaxLines="1"
+                                                                           FontSize="13" TextTrimming="CharacterEllipsis"
+                                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                                <Border Grid.Column="1" Padding="7,1" CornerRadius="9"
+                                                                        Visibility="{Binding NeedsAttention, Converter={StaticResource BoolVisibility}}"
+                                                                        Background="{Binding State, Converter={StaticResource StateBrush}}">
+                                                                    <TextBlock Text="{Binding StatusLabel}" FontSize="11"
+                                                                               Foreground="White" />
+                                                                </Border>
+                                                            </Grid>
                                                         </Grid>
-                                                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="7">
-                                                            <FontIcon Glyph="{Binding StatusGlyph}" FontSize="11"
-                                                                      Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                                                            <TextBlock Text="{Binding StatusLabel}"
-                                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                                        </StackPanel>
-                                                        <TextBlock Grid.Row="2" Text="{Binding Preview}" MaxLines="1"
-                                                                   FontSize="12" TextTrimming="CharacterEllipsis"
-                                                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                                     </Grid>
                                                 </DataTemplate>
                                             </ListView.ItemTemplate>
                                         </ListView>
-                                            <InfoBar Margin="12" HorizontalAlignment="Stretch"
-                                                     VerticalAlignment="Center"
-                                                     IsOpen="{Binding IsConversationListEmpty}"
-                                                     IsClosable="False" Severity="Informational"
-                                                     Title="هنوز گفتگویی وجود ندارد"
-                                                     Message="برای درخواست تازه، دکمه افزودن را انتخاب کنید." />
-                                        </Grid>
+                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                    Spacing="10" Margin="24"
+                                                    Visibility="{Binding IsConversationListEmpty, Converter={StaticResource BoolVisibility}}">
+                                            <FontIcon Glyph="&#xE8BD;" FontSize="34"
+                                                      Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                                            <TextBlock Text="{Binding EmptyConversationListText}"
+                                                       TextAlignment="Center" TextWrapping="Wrap"
+                                                       Style="{StaticResource QuietTextStyle}" />
+                                        </StackPanel>
                                     </Grid>
-                                </Border>
-                            </SplitView.Pane>
-                            <SplitView.Content>
-                                <Grid>
+                                </Grid>
+                            </Border>
+                        </SplitView.Pane>
+
+                        <SplitView.Content>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition x:Name="DetailsColumn" Width="300" />
+                                </Grid.ColumnDefinitions>
+
+                                <!-- Chat -->
+                                <Grid Background="{ThemeResource EndpointChatBackgroundBrush}">
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="*" />
                                         <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
-                                    <Grid Margin="12,8,12,6" ColumnSpacing="8">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <Button x:Name="ConversationPaneButton" Visibility="Collapsed"
-                                                Click="ConversationPaneButton_Click"
-                                                AutomationProperties.AutomationId="ConversationPaneButton"
-                                                AutomationProperties.Name="نمایش گفتگوها"
-                                                ToolTipService.ToolTip="نمایش گفتگوها">
-                                            <FontIcon Glyph="&#xE8BD;" FontSize="16" />
-                                        </Button>
-                                        <InfoBar x:Name="StatusBar" Grid.Column="1" IsOpen="True"
-                                                 IsClosable="False" Title="{Binding StatusLabel}"
-                                                 Message="{Binding StatusDetail}" Severity="Informational"
-                                                 Background="{ThemeResource EndpointStatusStripBrush}"
-                                                 BorderBrush="{ThemeResource EndpointStatusStripLineBrush}"
-                                                 BorderThickness="1" CornerRadius="8"
-                                                 AutomationProperties.AutomationId="ConnectionStatusBar">
-                                            <InfoBar.ActionButton>
-                                                <Button Content="به‌روزرسانی" Click="RefreshStatus_Click"
-                                                        AutomationProperties.AutomationId="RefreshStatusButton" />
-                                            </InfoBar.ActionButton>
-                                        </InfoBar>
-                                    </Grid>
+
+                                    <Border Background="{ThemeResource EndpointHeaderBrush}"
+                                            BorderBrush="{ThemeResource EndpointLineBrush}" BorderThickness="0,0,0,1">
+                                        <Grid MinHeight="58" Padding="12,8" ColumnSpacing="12">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Button x:Name="ConversationPaneButton" Visibility="Collapsed"
+                                                    Style="{StaticResource IconButtonStyle}"
+                                                    Click="ConversationPaneButton_Click"
+                                                    AutomationProperties.AutomationId="ConversationPaneButton"
+                                                    AutomationProperties.Name="نمایش گفتگوها"
+                                                    ToolTipService.ToolTip="نمایش گفتگوها">
+                                                <FontIcon Glyph="&#xE700;" FontSize="16" />
+                                            </Button>
+                                            <Border Grid.Column="1" Width="40" Height="40" CornerRadius="20"
+                                                    Background="{Binding AvatarState, Converter={StaticResource StateBrush}}">
+                                                <FontIcon Glyph="&#xE95B;" FontSize="18" Foreground="White" />
+                                            </Border>
+                                            <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="1">
+                                                <TextBlock Text="{Binding ConversationHeading}" FontSize="15"
+                                                           FontWeight="SemiBold" MaxLines="1"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding ChatState}" FontSize="12"
+                                                           Foreground="{ThemeResource EndpointAccentTextBrush}"
+                                                           AutomationProperties.LiveSetting="Polite" />
+                                            </StackPanel>
+                                            <Button x:Name="DetailsButton" Grid.Column="3"
+                                                    Style="{StaticResource IconButtonStyle}"
+                                                    Click="DetailsButton_Click"
+                                                    AutomationProperties.AutomationId="DetailsButton"
+                                                    AutomationProperties.Name="نمایش یا پنهان کردن جزئیات گفتگو"
+                                                    ToolTipService.ToolTip="جزئیات گفتگو">
+                                                <FontIcon Glyph="&#xE946;" FontSize="16" />
+                                            </Button>
+                                        </Grid>
+                                    </Border>
 
                                     <ListView x:Name="ConversationList" Grid.Row="1"
                                               ItemsSource="{Binding Conversation}"
                                               SelectionMode="None" IsItemClickEnabled="False"
                                               HorizontalContentAlignment="Stretch"
-                                              Background="Transparent" Padding="8,8,8,8"
+                                              Background="Transparent" Padding="0,10,0,10"
                                               AutomationProperties.AutomationId="ConversationTranscript"
-                                              AutomationProperties.Name="گفتگوی پشتیبانی" />
+                                              AutomationProperties.Name="گفتگوی پشتیبانی">
+                                        <ListView.Resources>
+                                            <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="Transparent" />
+                                            <SolidColorBrush x:Key="ListViewItemBackgroundPressed" Color="Transparent" />
+                                        </ListView.Resources>
+                                        <ListView.ItemContainerStyle>
+                                            <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
+                                                <Setter Property="Padding" Value="0" />
+                                                <Setter Property="MinHeight" Value="0" />
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            </Style>
+                                        </ListView.ItemContainerStyle>
+                                    </ListView>
 
-                                    <Border Grid.Row="2" Margin="16,8,16,16" Padding="10"
-                                            Background="{ThemeResource EndpointComposerBrush}"
-                                            BorderBrush="{ThemeResource EndpointLineBrush}"
-                                            BorderThickness="1" CornerRadius="10">
-                                        <Grid RowSpacing="5">
+                                    <Border Grid.Row="2" Background="{ThemeResource EndpointComposerBrush}"
+                                            BorderBrush="{ThemeResource EndpointLineBrush}" BorderThickness="0,1,0,0"
+                                            Padding="12,10,12,8">
+                                        <Grid RowSpacing="4">
                                             <Grid.RowDefinitions>
                                                 <RowDefinition Height="Auto" />
                                                 <RowDefinition Height="Auto" />
                                             </Grid.RowDefinitions>
-                                            <Grid ColumnSpacing="8">
+                                            <Grid ColumnSpacing="10">
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
                                                     <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
-                                                <Button x:Name="SubmitButton"
+                                                <TextBox x:Name="MessageInput"
+                                                         AcceptsReturn="True" TextWrapping="Wrap"
+                                                         MinHeight="44" MaxHeight="120" MaxLength="200"
+                                                         Padding="16,11" CornerRadius="22"
+                                                         VerticalContentAlignment="Center"
+                                                         PlaceholderText="پیام خود را بنویسید…"
+                                                         TextChanged="MessageInput_TextChanged"
+                                                         PreviewKeyDown="MessageInput_KeyDown"
+                                                         AutomationProperties.AutomationId="MessageInput"
+                                                         AutomationProperties.HelpText="حداکثر ۲۰۰ نویسه. Enter برای ارسال؛ Shift+Enter برای خط جدید"
+                                                         AutomationProperties.Name="متن درخواست پشتیبانی" />
+                                                <Button x:Name="SubmitButton" Grid.Column="1"
                                                         Click="Submit_Click"
                                                         Style="{StaticResource AccentButtonStyle}"
-                                                        MinWidth="112" MinHeight="46"
+                                                        Width="44" Height="44" Padding="0" CornerRadius="22"
+                                                        VerticalAlignment="Bottom"
                                                         AutomationProperties.AutomationId="SubmitMessageButton"
-                                                        AutomationProperties.Name="ارسال پیام">
-                                                    <Grid ColumnSpacing="10">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="Auto" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                            <ColumnDefinition Width="Auto" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <TextBlock x:Name="SubmitButtonText" Text="ارسال"
-                                                                   VerticalAlignment="Center" />
-                                                        <Rectangle Grid.Column="1" Width="1" Height="20"
-                                                                   Fill="{ThemeResource TextOnAccentFillColorSecondaryBrush}"
-                                                                   VerticalAlignment="Center" />
-                                                        <SymbolIcon Grid.Column="2" Symbol="Send" />
+                                                        AutomationProperties.Name="ارسال پیام"
+                                                        ToolTipService.ToolTip="ارسال (Enter)">
+                                                    <Grid>
+                                                        <FontIcon x:Name="SendIcon" Glyph="&#xE724;" FontSize="17"
+                                                                  MirroredWhenRightToLeft="True" />
+                                                        <ProgressRing x:Name="SendingRing" Width="18" Height="18"
+                                                                      IsActive="False" Foreground="White" />
                                                     </Grid>
                                                 </Button>
-                                                <Button x:Name="ClosedConversationButton"
-                                                        Content="گفتگوی جدید" Visibility="Collapsed"
+                                                <Button x:Name="ClosedConversationButton" Grid.ColumnSpan="2"
+                                                        Visibility="Collapsed" HorizontalAlignment="Stretch"
+                                                        MinHeight="44" CornerRadius="22"
+                                                        Style="{StaticResource AccentButtonStyle}"
                                                         Click="NewConversation_Click"
-                                                        MinWidth="104" MinHeight="46"
-                                                        AutomationProperties.AutomationId="ClosedConversationNewButton" />
-                                                <TextBox x:Name="MessageInput" Grid.Column="1"
-                                                      AcceptsReturn="True" TextWrapping="Wrap"
-                                                      MinHeight="46" MaxHeight="112" MaxLength="200"
-                                                      Padding="12,9" BorderThickness="1" CornerRadius="6"
-                                                      PlaceholderText="پیام خود را بنویسید…"
-                                                     TextChanged="MessageInput_TextChanged"
-                                                     PreviewKeyDown="MessageInput_KeyDown"
-                                                     AutomationProperties.AutomationId="MessageInput"
-                                                     AutomationProperties.HelpText="حداکثر ۲۰۰ نویسه. Enter برای ارسال؛ Shift+Enter برای خط جدید"
-                                                     AutomationProperties.Name="متن درخواست پشتیبانی" />
+                                                        AutomationProperties.AutomationId="ClosedConversationNewButton">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <FontIcon Glyph="&#xE70F;" FontSize="14" />
+                                                        <TextBlock Text="این گفتگو بسته شده است؛ شروع گفتگوی جدید" />
+                                                    </StackPanel>
+                                                </Button>
                                             </Grid>
-                                            <Grid Grid.Row="1" Margin="8,0">
+                                            <Grid Grid.Row="1" Margin="14,0" ColumnSpacing="12">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Text="{Binding SubmitResult}"
-                                                           VerticalAlignment="Center"
-                                                           TextWrapping="Wrap"
+                                                           VerticalAlignment="Center" TextWrapping="Wrap"
                                                            AutomationProperties.LiveSetting="Polite"
                                                            Style="{StaticResource MetadataTextStyle}" />
                                                 <TextBlock x:Name="CharacterCount" Grid.Column="1"
@@ -398,160 +462,294 @@
                                         </Grid>
                                     </Border>
                                 </Grid>
-                            </SplitView.Content>
-                        </SplitView>
-                    </Grid>
 
-                    <ScrollViewer x:Name="StatusPage" Visibility="Collapsed">
-                        <StackPanel MaxWidth="920" Margin="24,16,24,24" Spacing="24">
-                            <StackPanel>
-                                <TextBlock Text="وضعیت و کنترل" Style="{StaticResource PageTitleStyle}" />
-                                <TextBlock Text="وضعیت سرویس، اتصال و آخرین فعالیت عامل را مشاهده کنید."
-                                           Style="{StaticResource QuietTextStyle}" />
-                            </StackPanel>
-                            <Border Padding="20" Background="{ThemeResource EndpointSurfaceBrush}"
-                                    BorderBrush="{ThemeResource EndpointLineBrush}" BorderThickness="1" CornerRadius="12">
-                                <Grid RowSpacing="14" ColumnSpacing="24">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="168" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Text="سرویس" Style="{StaticResource MetadataTextStyle}" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Service}" />
-                                    <TextBlock Grid.Row="1" Text="اتصال" Style="{StaticResource MetadataTextStyle}" />
-                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding Connection}" />
-                                    <TextBlock Grid.Row="2" Text="عملکردها" Style="{StaticResource MetadataTextStyle}" />
-                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding FunctionMode}" />
-                                    <TextBlock Grid.Row="3" Text="آخرین اتصال" Style="{StaticResource MetadataTextStyle}" />
-                                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding LastConnected}" FlowDirection="LeftToRight" HorizontalAlignment="Right" />
-                                    <TextBlock Grid.Row="4" Text="آخرین عملکرد" Style="{StaticResource MetadataTextStyle}" />
-                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding LastCommand}" TextWrapping="Wrap"
-                                               FlowDirection="LeftToRight" HorizontalAlignment="Right" />
-                                    <TextBlock Grid.Row="5" Text="آخرین مشکل" Style="{StaticResource MetadataTextStyle}" />
-                                    <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding LastProblem}" TextWrapping="Wrap" />
-                                </Grid>
-                            </Border>
-                            <StackPanel Spacing="10">
-                                <TextBlock Text="کنترل سرویس" Style="{StaticResource CardTitleStyle}" />
-                                <Grid ColumnSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Button Content="راه‌اندازی" HorizontalAlignment="Stretch"
-                                            IsEnabled="{Binding CanStart}" Tag="start" Click="ServiceAction_Click" />
-                                    <Button Grid.Column="1" Content="مکث عملکردها" HorizontalAlignment="Stretch"
-                                            IsEnabled="{Binding CanPause}" Tag="pause" Click="ServiceAction_Click" />
-                                    <Button Grid.Column="2" Content="ادامه عملکردها" HorizontalAlignment="Stretch"
-                                            IsEnabled="{Binding CanResume}" Tag="resume" Click="ServiceAction_Click" />
-                                    <Button Grid.Column="3" Content="توقف سرویس" HorizontalAlignment="Stretch"
-                                            IsEnabled="{Binding CanStop}" Tag="stop" Click="ServiceAction_Click"
-                                            Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-                                </Grid>
-                            </StackPanel>
-                            <TextBlock Text="{Binding ActionResult}" Style="{StaticResource QuietTextStyle}"
-                                       AutomationProperties.LiveSetting="Polite" />
-                        </StackPanel>
-                    </ScrollViewer>
+                                <!-- Details (physically left) -->
+                                <Border x:Name="DetailsPane" Grid.Column="1"
+                                        Background="{ThemeResource EndpointSubtleFillBrush}"
+                                        BorderBrush="{ThemeResource EndpointLineBrush}" BorderThickness="0,0,1,0">
+                                    <ScrollViewer>
+                                        <StackPanel Padding="14,16" Spacing="12">
+                                            <StackPanel HorizontalAlignment="Center" Spacing="8" Margin="0,4,0,4">
+                                                <Border Width="76" Height="76" CornerRadius="38" HorizontalAlignment="Center"
+                                                        Background="{Binding AvatarState, Converter={StaticResource StateBrush}}">
+                                                    <FontIcon Glyph="&#xE95B;" FontSize="32" Foreground="White" />
+                                                </Border>
+                                                <TextBlock Text="{Binding ConversationHeading}" FontSize="16"
+                                                           FontWeight="SemiBold" TextAlignment="Center"
+                                                           TextWrapping="Wrap" MaxLines="3" />
+                                                <TextBlock Text="{Binding ConversationSubheading}" TextAlignment="Center"
+                                                           Style="{StaticResource MetadataTextStyle}" />
+                                            </StackPanel>
 
-                    <Grid x:Name="LogsPage" Visibility="Collapsed" Margin="24,16,24,18">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="168" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <StackPanel>
-                            <TextBlock Text="گزارش‌ها" Style="{StaticResource PageTitleStyle}" />
-                            <TextBlock Text="فعالیت عامل و رویدادهای سرویس را جستجو و بررسی کنید."
+                                            <Border Style="{StaticResource DetailsCardStyle}">
+                                                <StackPanel Spacing="10">
+                                                    <TextBlock Text="اطلاعات گفتگو" Style="{StaticResource CardTitleStyle}" />
+                                                    <Grid ColumnSpacing="10" RowSpacing="8">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+                                                        <FontIcon Glyph="&#xE7C3;" FontSize="14"
+                                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        <StackPanel Grid.Column="1">
+                                                            <TextBlock Text="{Binding DetailsStatus}" />
+                                                            <TextBlock Text="وضعیت" Style="{StaticResource MetadataTextStyle}" />
+                                                        </StackPanel>
+                                                        <FontIcon Grid.Row="1" Glyph="&#xE787;" FontSize="14"
+                                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        <StackPanel Grid.Row="1" Grid.Column="1">
+                                                            <TextBlock Text="{Binding DetailsCreated}" />
+                                                            <TextBlock Text="شروع گفتگو" Style="{StaticResource MetadataTextStyle}" />
+                                                        </StackPanel>
+                                                        <FontIcon Grid.Row="2" Glyph="&#xE823;" FontSize="14"
+                                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                        <StackPanel Grid.Row="2" Grid.Column="1">
+                                                            <TextBlock Text="{Binding DetailsUpdated}" />
+                                                            <TextBlock Text="آخرین فعالیت" Style="{StaticResource MetadataTextStyle}" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Style="{StaticResource DetailsCardStyle}">
+                                                <StackPanel Spacing="10">
+                                                    <TextBlock Text="اتصال این رایانه" Style="{StaticResource CardTitleStyle}" />
+                                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                                        <Ellipse x:Name="DetailsStatusDot" Width="10" Height="10"
+                                                                 Fill="Gray" VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold" />
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding StatusDetail}" Style="{StaticResource MetadataTextStyle}" />
+                                                    <Button Content="به‌روزرسانی وضعیت" Click="RefreshStatus_Click"
+                                                            HorizontalAlignment="Stretch"
+                                                            AutomationProperties.AutomationId="RefreshStatusButton" />
+                                                </StackPanel>
+                                            </Border>
+
+                                            <Border Style="{StaticResource DetailsCardStyle}">
+                                                <StackPanel Spacing="8">
+                                                    <TextBlock Text="راهنما" Style="{StaticResource CardTitleStyle}" />
+                                                    <TextBlock Style="{StaticResource MetadataTextStyle}"
+                                                               Text="مشکل را ساده و کامل بنویسید؛ دستیار رایانه شما را بررسی می‌کند." />
+                                                    <TextBlock Style="{StaticResource MetadataTextStyle}"
+                                                               Text="هر تغییری روی رایانه، پیش از اجرا از شما تأیید گرفته می‌شود." />
+                                                    <TextBlock Style="{StaticResource MetadataTextStyle}"
+                                                               Text="برای ارسال، Enter و برای رفتن به خط بعد، Shift+Enter را بزنید." />
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                </Border>
+                            </Grid>
+                        </SplitView.Content>
+                    </SplitView>
+                </Grid>
+
+                <ScrollViewer x:Name="StatusPage" Visibility="Collapsed">
+                    <StackPanel MaxWidth="880" Margin="28,20,28,28" Spacing="20">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="وضعیت و کنترل" Style="{StaticResource PageTitleStyle}" />
+                            <TextBlock Text="وضعیت سرویس، اتصال و آخرین فعالیت عامل را مشاهده کنید."
                                        Style="{StaticResource QuietTextStyle}" />
                         </StackPanel>
-                        <Grid Grid.Row="1" Margin="0,14,0,12" ColumnSpacing="8">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="150" />
-                                <ColumnDefinition Width="135" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="LogSearch" Header="جستجو" PlaceholderText="عبارت مورد نظر"
-                                     TextChanged="LogSearch_TextChanged"
-                                     AutomationProperties.Name="جستجو در گزارش‌ها" />
-                            <ComboBox x:Name="LogLevel" Grid.Column="1" SelectedIndex="0" SelectionChanged="LogFilter_Changed"
-                                      Header="سطح" AutomationProperties.Name="سطح گزارش">
-                                <ComboBoxItem Content="همه سطح‌ها" /><ComboBoxItem Content="خطا" />
-                                <ComboBoxItem Content="هشدار" /><ComboBoxItem Content="اطلاعات" />
-                            </ComboBox>
-                            <ComboBox x:Name="LogAge" Grid.Column="2" SelectedIndex="1" SelectionChanged="LogFilter_Changed"
-                                      Header="بازه زمانی" AutomationProperties.Name="بازه زمانی گزارش">
-                                <ComboBoxItem Content="یک ساعت" /><ComboBoxItem Content="۶ ساعت" />
-                                <ComboBoxItem Content="۲۴ ساعت" /><ComboBoxItem Content="۷ روز" />
-                            </ComboBox>
-                            <CommandBar Grid.Column="3" VerticalAlignment="Bottom" Background="Transparent"
-                                        DefaultLabelPosition="Collapsed" IsDynamicOverflowEnabled="True">
-                                <AppBarButton Label="به‌روزرسانی" Click="RefreshLogs_Click">
-                                    <AppBarButton.Icon><SymbolIcon Symbol="Refresh" /></AppBarButton.Icon>
-                                </AppBarButton>
-                                <AppBarButton Label="کپی" Click="CopyLogs_Click">
-                                    <AppBarButton.Icon><SymbolIcon Symbol="Copy" /></AppBarButton.Icon>
-                                </AppBarButton>
-                                <AppBarButton Label="خروجی" Click="ExportLogs_Click">
-                                    <AppBarButton.Icon><SymbolIcon Symbol="Save" /></AppBarButton.Icon>
-                                </AppBarButton>
-                            </CommandBar>
-                        </Grid>
-                        <Border Grid.Row="2" Background="{ThemeResource LayerFillColorAltBrush}"
-                                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                                BorderThickness="0,0,0,1">
-                            <Grid MinHeight="36" ColumnSpacing="12" Padding="12,0">
+                        <Border Style="{StaticResource DetailsCardStyle}" Padding="20,18">
+                            <Grid ColumnSpacing="16">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="145" /><ColumnDefinition Width="80" />
-                                    <ColumnDefinition Width="150" /><ColumnDefinition Width="70" />
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Text="زمان" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="سطح" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="2" Text="منبع" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="3" Text="رویداد" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="4" Text="پیام" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                <Border Width="52" Height="52" CornerRadius="26"
+                                        Background="{ThemeResource EndpointAccentBrush}">
+                                    <FontIcon Glyph="&#xE7F4;" FontSize="22" Foreground="White" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Ellipse x:Name="StatusPageDot" Width="10" Height="10" Fill="Gray"
+                                                 VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding StatusLabel}" FontSize="17" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                    <TextBlock Text="{Binding StatusDetail}" Style="{StaticResource QuietTextStyle}" />
+                                </StackPanel>
                             </Grid>
                         </Border>
-                        <ListView x:Name="LogList" Grid.Row="3" ItemsSource="{Binding Logs}"
-                                  SelectedItem="{Binding SelectedLog, Mode=TwoWay}"
-                                  SelectionMode="Single" AutomationProperties.Name="فهرست گزارش‌های عامل">
-                            <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid MinHeight="46" ColumnSpacing="12" Padding="12,0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="145" /><ColumnDefinition Width="80" />
-                                            <ColumnDefinition Width="150" /><ColumnDefinition Width="70" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Text="{Binding TimestampUtc}" FlowDirection="LeftToRight" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Level}" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="2" Text="{Binding Source}" TextTrimming="CharacterEllipsis"
-                                                   FlowDirection="LeftToRight" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="3" Text="{Binding EventId}" FlowDirection="LeftToRight" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="4" Text="{Binding Message}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                        <TextBox Grid.Row="4" Margin="0,12,0,0" Text="{Binding SelectedLogText}" IsReadOnly="True"
-                                 AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Cascadia Mono"
-                                 FlowDirection="RightToLeft" AutomationProperties.Name="جزئیات گزارش انتخاب‌شده" />
-                        <TextBlock Grid.Row="5" Text="{Binding LogState}" Margin="0,8,0,0"
-                                   AutomationProperties.LiveSetting="Polite"
+                        <Border Style="{StaticResource DetailsCardStyle}" Padding="20,16">
+                            <Grid RowSpacing="14" ColumnSpacing="14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <FontIcon Glyph="&#xE912;" FontSize="15" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Column="1" Text="سرویس" Style="{StaticResource QuietTextStyle}" />
+                                <TextBlock Grid.Column="2" Text="{Binding Service}" />
+                                <FontIcon Grid.Row="1" Glyph="&#xE774;" FontSize="15" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="اتصال" Style="{StaticResource QuietTextStyle}" />
+                                <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding Connection}" />
+                                <FontIcon Grid.Row="2" Glyph="&#xE945;" FontSize="15" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="عملکردها" Style="{StaticResource QuietTextStyle}" />
+                                <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding FunctionMode}" />
+                                <FontIcon Grid.Row="3" Glyph="&#xE823;" FontSize="15" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="آخرین اتصال" Style="{StaticResource QuietTextStyle}" />
+                                <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding LastConnected}" FlowDirection="LeftToRight" HorizontalAlignment="Right" />
+                                <FontIcon Grid.Row="4" Glyph="&#xE9D9;" FontSize="15" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Row="4" Grid.Column="1" Text="آخرین عملکرد" Style="{StaticResource QuietTextStyle}" />
+                                <TextBlock Grid.Row="4" Grid.Column="2" Text="{Binding LastCommand}" TextWrapping="Wrap"
+                                           FlowDirection="LeftToRight" HorizontalAlignment="Right" />
+                                <FontIcon Grid.Row="5" Glyph="&#xE7BA;" FontSize="15" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Grid.Row="5" Grid.Column="1" Text="آخرین مشکل" Style="{StaticResource QuietTextStyle}" />
+                                <TextBlock Grid.Row="5" Grid.Column="2" Text="{Binding LastProblem}" TextWrapping="Wrap" />
+                            </Grid>
+                        </Border>
+                        <StackPanel Spacing="10">
+                            <TextBlock Text="کنترل سرویس" Style="{StaticResource CardTitleStyle}" />
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Button HorizontalAlignment="Stretch" MinHeight="40"
+                                        IsEnabled="{Binding CanStart}" Tag="start" Click="ServiceAction_Click">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE768;" FontSize="14" /><TextBlock Text="راه‌اندازی" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Grid.Column="1" HorizontalAlignment="Stretch" MinHeight="40"
+                                        IsEnabled="{Binding CanPause}" Tag="pause" Click="ServiceAction_Click">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE769;" FontSize="14" /><TextBlock Text="مکث عملکردها" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Grid.Column="2" HorizontalAlignment="Stretch" MinHeight="40"
+                                        IsEnabled="{Binding CanResume}" Tag="resume" Click="ServiceAction_Click">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE72C;" FontSize="14" /><TextBlock Text="ادامه عملکردها" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Grid.Column="3" HorizontalAlignment="Stretch" MinHeight="40"
+                                        IsEnabled="{Binding CanStop}" Tag="stop" Click="ServiceAction_Click"
+                                        Foreground="{ThemeResource SystemFillColorCriticalBrush}">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE71A;" FontSize="14" /><TextBlock Text="توقف سرویس" />
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                        </StackPanel>
+                        <TextBlock Text="{Binding ActionResult}" Style="{StaticResource QuietTextStyle}"
+                                   AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                </ScrollViewer>
+
+                <Grid x:Name="LogsPage" Visibility="Collapsed" Margin="28,20,28,18">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="160" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="گزارش‌ها" Style="{StaticResource PageTitleStyle}" />
+                        <TextBlock Text="فعالیت عامل و رویدادهای سرویس را جستجو و بررسی کنید."
                                    Style="{StaticResource QuietTextStyle}" />
+                    </StackPanel>
+                    <Grid Grid.Row="1" Margin="0,14,0,12" ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="150" />
+                            <ColumnDefinition Width="135" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="LogSearch" Header="جستجو" PlaceholderText="عبارت مورد نظر"
+                                 TextChanged="LogSearch_TextChanged"
+                                 AutomationProperties.Name="جستجو در گزارش‌ها" />
+                        <ComboBox x:Name="LogLevel" Grid.Column="1" SelectedIndex="0" SelectionChanged="LogFilter_Changed"
+                                  Header="سطح" HorizontalAlignment="Stretch" AutomationProperties.Name="سطح گزارش">
+                            <ComboBoxItem Content="همه سطح‌ها" /><ComboBoxItem Content="خطا" />
+                            <ComboBoxItem Content="هشدار" /><ComboBoxItem Content="اطلاعات" />
+                        </ComboBox>
+                        <ComboBox x:Name="LogAge" Grid.Column="2" SelectedIndex="1" SelectionChanged="LogFilter_Changed"
+                                  Header="بازه زمانی" HorizontalAlignment="Stretch" AutomationProperties.Name="بازه زمانی گزارش">
+                            <ComboBoxItem Content="یک ساعت" /><ComboBoxItem Content="۶ ساعت" />
+                            <ComboBoxItem Content="۲۴ ساعت" /><ComboBoxItem Content="۷ روز" />
+                        </ComboBox>
+                        <CommandBar Grid.Column="3" VerticalAlignment="Bottom" Background="Transparent"
+                                    DefaultLabelPosition="Collapsed" IsDynamicOverflowEnabled="True">
+                            <AppBarButton Label="به‌روزرسانی" Click="RefreshLogs_Click">
+                                <AppBarButton.Icon><SymbolIcon Symbol="Refresh" /></AppBarButton.Icon>
+                            </AppBarButton>
+                            <AppBarButton Label="کپی" Click="CopyLogs_Click">
+                                <AppBarButton.Icon><SymbolIcon Symbol="Copy" /></AppBarButton.Icon>
+                            </AppBarButton>
+                            <AppBarButton Label="خروجی" Click="ExportLogs_Click">
+                                <AppBarButton.Icon><SymbolIcon Symbol="Save" /></AppBarButton.Icon>
+                            </AppBarButton>
+                        </CommandBar>
                     </Grid>
+                    <Border Grid.Row="2" Background="{ThemeResource EndpointSurfaceBrush}"
+                            BorderBrush="{ThemeResource EndpointLineBrush}" BorderThickness="1" CornerRadius="12">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border Background="{ThemeResource EndpointSubtleFillBrush}" CornerRadius="12,12,0,0"
+                                    BorderBrush="{ThemeResource EndpointLineBrush}" BorderThickness="0,0,0,1">
+                                <Grid MinHeight="36" ColumnSpacing="12" Padding="12,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="145" /><ColumnDefinition Width="80" />
+                                        <ColumnDefinition Width="150" /><ColumnDefinition Width="70" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="زمان" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="سطح" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="2" Text="منبع" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="3" Text="رویداد" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="4" Text="پیام" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
+                            <ListView x:Name="LogList" Grid.Row="1" ItemsSource="{Binding Logs}"
+                                      SelectedItem="{Binding SelectedLog, Mode=TwoWay}"
+                                      SelectionMode="Single" AutomationProperties.Name="فهرست گزارش‌های عامل">
+                                <ListView.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid MinHeight="42" ColumnSpacing="12" Padding="0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="145" /><ColumnDefinition Width="80" />
+                                                <ColumnDefinition Width="150" /><ColumnDefinition Width="70" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding TimestampUtc}" FlowDirection="LeftToRight" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Level}" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Source}" TextTrimming="CharacterEllipsis"
+                                                       FlowDirection="LeftToRight" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="3" Text="{Binding EventId}" FlowDirection="LeftToRight" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="4" Text="{Binding Message}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </Grid>
+                    </Border>
+                    <TextBox Grid.Row="3" Margin="0,12,0,0" Text="{Binding SelectedLogText}" IsReadOnly="True"
+                             AcceptsReturn="True" TextWrapping="Wrap" FontFamily="Cascadia Mono"
+                             CornerRadius="12"
+                             FlowDirection="RightToLeft" AutomationProperties.Name="جزئیات گزارش انتخاب‌شده" />
+                    <TextBlock Grid.Row="4" Text="{Binding LogState}" Margin="0,8,0,0"
+                               AutomationProperties.LiveSetting="Polite"
+                               Style="{StaticResource QuietTextStyle}" />
+                </Grid>
             </Grid>
         </NavigationView>
     </Grid>

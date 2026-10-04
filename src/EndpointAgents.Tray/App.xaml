@@ -9,47 +9,69 @@
             </ResourceDictionary.MergedDictionaries>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="EndpointSurfaceBrush" Color="#FCFCFD" />
-                    <SolidColorBrush x:Key="EndpointConversationRailBrush" Color="#FBFCFE" />
+                    <SolidColorBrush x:Key="EndpointSurfaceBrush" Color="#FFFFFFFF" />
+                    <SolidColorBrush x:Key="EndpointConversationRailBrush" Color="#FFFFFFFF" />
+                    <SolidColorBrush x:Key="EndpointHeaderBrush" Color="#FFFFFFFF" />
                     <SolidColorBrush x:Key="EndpointComposerBrush" Color="#FFFFFFFF" />
-                    <SolidColorBrush x:Key="EndpointLineBrush" Color="#DCE3EB" />
-                    <SolidColorBrush x:Key="EndpointStatusStripBrush" Color="#EFF7FF" />
-                    <SolidColorBrush x:Key="EndpointStatusStripLineBrush" Color="#D5E5F6" />
-                    <SolidColorBrush x:Key="EndpointUserBubbleBrush" Color="#E6F2FE" />
+                    <SolidColorBrush x:Key="EndpointLineBrush" Color="#FFE3E8EE" />
+                    <SolidColorBrush x:Key="EndpointSubtleFillBrush" Color="#FFF1F4F7" />
+                    <SolidColorBrush x:Key="EndpointAccentBrush" Color="#FF3390EC" />
+                    <SolidColorBrush x:Key="EndpointAccentTextBrush" Color="#FF2B7CD3" />
+                    <LinearGradientBrush x:Key="EndpointChatBackgroundBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#FFDCE8F3" Offset="0" />
+                        <GradientStop Color="#FFE6EFE0" Offset="0.55" />
+                        <GradientStop Color="#FFD9E7EE" Offset="1" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="EndpointUserBubbleBrush" Color="#FFEEFFDE" />
                     <StaticResource x:Key="EndpointUserBubbleForegroundBrush" ResourceKey="TextFillColorPrimaryBrush" />
-                    <StaticResource x:Key="EndpointUserBubbleMetadataForegroundBrush" ResourceKey="TextFillColorSecondaryBrush" />
-                    <SolidColorBrush x:Key="EndpointAssistantBubbleBrush" Color="#F7F8FA" />
+                    <SolidColorBrush x:Key="EndpointUserBubbleMetadataForegroundBrush" Color="#FF5EAA59" />
+                    <SolidColorBrush x:Key="EndpointAssistantBubbleBrush" Color="#FFFFFFFF" />
                     <StaticResource x:Key="EndpointAssistantBubbleForegroundBrush" ResourceKey="TextFillColorPrimaryBrush" />
+                    <SolidColorBrush x:Key="EndpointBubbleMetadataBrush" Color="#FF8C9BAB" />
+                    <SolidColorBrush x:Key="EndpointServiceBubbleBrush" Color="#E6FFFFFF" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <StaticResource x:Key="EndpointSurfaceBrush" ResourceKey="CardBackgroundFillColorDefaultBrush" />
-                    <StaticResource x:Key="EndpointConversationRailBrush" ResourceKey="SolidBackgroundFillColorBaseBrush" />
-                    <StaticResource x:Key="EndpointComposerBrush" ResourceKey="SolidBackgroundFillColorSecondaryBrush" />
-                    <StaticResource x:Key="EndpointLineBrush" ResourceKey="CardStrokeColorDefaultBrush" />
-                    <StaticResource x:Key="EndpointStatusStripBrush" ResourceKey="LayerFillColorDefaultBrush" />
-                    <StaticResource x:Key="EndpointStatusStripLineBrush" ResourceKey="ControlStrokeColorDefaultBrush" />
-                    <SolidColorBrush x:Key="EndpointUserBubbleBrush" Color="#243B5A" />
+                    <SolidColorBrush x:Key="EndpointSurfaceBrush" Color="#FF17212B" />
+                    <SolidColorBrush x:Key="EndpointConversationRailBrush" Color="#FF17212B" />
+                    <SolidColorBrush x:Key="EndpointHeaderBrush" Color="#FF17212B" />
+                    <SolidColorBrush x:Key="EndpointComposerBrush" Color="#FF17212B" />
+                    <SolidColorBrush x:Key="EndpointLineBrush" Color="#FF0F1923" />
+                    <SolidColorBrush x:Key="EndpointSubtleFillBrush" Color="#FF242F3D" />
+                    <SolidColorBrush x:Key="EndpointAccentBrush" Color="#FF5288C1" />
+                    <SolidColorBrush x:Key="EndpointAccentTextBrush" Color="#FF71BAFA" />
+                    <LinearGradientBrush x:Key="EndpointChatBackgroundBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#FF0E1621" Offset="0" />
+                        <GradientStop Color="#FF111C27" Offset="1" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="EndpointUserBubbleBrush" Color="#FF2B5278" />
                     <StaticResource x:Key="EndpointUserBubbleForegroundBrush" ResourceKey="TextFillColorPrimaryBrush" />
-                    <StaticResource x:Key="EndpointUserBubbleMetadataForegroundBrush" ResourceKey="TextFillColorSecondaryBrush" />
-                    <StaticResource x:Key="EndpointAssistantBubbleBrush" ResourceKey="CardBackgroundFillColorDefaultBrush" />
+                    <SolidColorBrush x:Key="EndpointUserBubbleMetadataForegroundBrush" Color="#FF7DA8D3" />
+                    <SolidColorBrush x:Key="EndpointAssistantBubbleBrush" Color="#FF182533" />
                     <StaticResource x:Key="EndpointAssistantBubbleForegroundBrush" ResourceKey="TextFillColorPrimaryBrush" />
+                    <SolidColorBrush x:Key="EndpointBubbleMetadataBrush" Color="#FF6D7F8F" />
+                    <SolidColorBrush x:Key="EndpointServiceBubbleBrush" Color="#CC182533" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
                     <StaticResource x:Key="EndpointSurfaceBrush" ResourceKey="SystemColorWindowColorBrush" />
                     <StaticResource x:Key="EndpointConversationRailBrush" ResourceKey="SystemColorWindowColorBrush" />
+                    <StaticResource x:Key="EndpointHeaderBrush" ResourceKey="SystemColorWindowColorBrush" />
                     <StaticResource x:Key="EndpointComposerBrush" ResourceKey="SystemColorWindowColorBrush" />
                     <StaticResource x:Key="EndpointLineBrush" ResourceKey="SystemColorWindowTextColorBrush" />
-                    <StaticResource x:Key="EndpointStatusStripBrush" ResourceKey="SystemColorWindowColorBrush" />
-                    <StaticResource x:Key="EndpointStatusStripLineBrush" ResourceKey="SystemColorWindowTextColorBrush" />
+                    <StaticResource x:Key="EndpointSubtleFillBrush" ResourceKey="SystemColorWindowColorBrush" />
+                    <StaticResource x:Key="EndpointAccentBrush" ResourceKey="SystemColorHighlightColorBrush" />
+                    <StaticResource x:Key="EndpointAccentTextBrush" ResourceKey="SystemColorWindowTextColorBrush" />
+                    <StaticResource x:Key="EndpointChatBackgroundBrush" ResourceKey="SystemColorWindowColorBrush" />
                     <StaticResource x:Key="EndpointUserBubbleBrush" ResourceKey="SystemColorHighlightColorBrush" />
                     <StaticResource x:Key="EndpointUserBubbleForegroundBrush" ResourceKey="SystemColorHighlightTextColorBrush" />
                     <StaticResource x:Key="EndpointUserBubbleMetadataForegroundBrush" ResourceKey="SystemColorHighlightTextColorBrush" />
                     <StaticResource x:Key="EndpointAssistantBubbleBrush" ResourceKey="SystemColorWindowColorBrush" />
                     <StaticResource x:Key="EndpointAssistantBubbleForegroundBrush" ResourceKey="SystemColorWindowTextColorBrush" />
+                    <StaticResource x:Key="EndpointBubbleMetadataBrush" ResourceKey="SystemColorWindowTextColorBrush" />
+                    <StaticResource x:Key="EndpointServiceBubbleBrush" ResourceKey="SystemColorWindowColorBrush" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
             <Style x:Key="PageTitleStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="28" />
+                <Setter Property="FontSize" Value="24" />
                 <Setter Property="FontWeight" Value="SemiBold" />
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
@@ -59,7 +81,7 @@
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
             <Style x:Key="CardTitleStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="16" />
+                <Setter Property="FontSize" Value="15" />
                 <Setter Property="FontWeight" Value="SemiBold" />
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
@@ -71,6 +93,21 @@
                 <Setter Property="FontSize" Value="12" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style x:Key="DetailsCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource EndpointSurfaceBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource EndpointLineBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="12" />
+                <Setter Property="Padding" Value="16,14" />
+            </Style>
+            <Style x:Key="IconButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="Width" Value="38" />
+                <Setter Property="Height" Value="38" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="CornerRadius" Value="19" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>

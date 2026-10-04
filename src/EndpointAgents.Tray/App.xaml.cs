@@ -34,6 +34,30 @@ public sealed partial class App : Microsoft.UI.Xaml.Application
             });
             return;
         }
+#if DEBUG
+        if (arguments.Contains("--ui-preview", StringComparer.OrdinalIgnoreCase))
+        {
+            _smokeWindow = new SupportWindow(() => Task.CompletedTask);
+            _smokeWindow.LoadPreview(arguments.Contains("--dark"), arguments.Contains("--narrow"));
+            _smokeWindow.ShowSection(SupportSection.Helpdesk);
+            var snapshot = Array.IndexOf(arguments, "--snapshot");
+            if (snapshot > 0 && snapshot + 1 < arguments.Length)
+            {
+                var window = _smokeWindow;
+                var path = arguments[snapshot + 1];
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(4));
+                    window.DispatcherQueue.TryEnqueue(async () =>
+                    {
+                        await window.SavePreviewSnapshotAsync(path);
+                        Exit();
+                    });
+                });
+            }
+            return;
+        }
+#endif
         _controller = new TrayApplicationController(ExitApplication);
         if (arguments.Contains("--tray-smoke", StringComparer.OrdinalIgnoreCase))
         {

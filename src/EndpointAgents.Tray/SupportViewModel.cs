@@ -39,6 +39,7 @@ public sealed class SupportViewModel : INotifyPropertyChanged
     private readonly List<ConversationSummaryViewModel> _allConversations = [];
     private ConversationSummaryViewModel? _selectedConversation;
     private ConversationListFilter _conversationFilter;
+    private string _conversationSearch = string.Empty;
     private bool _isDraft = true;
     private bool _conversationListLoading;
     private bool _conversationListLoaded;
@@ -73,9 +74,23 @@ public sealed class SupportViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(ConversationHeading));
             OnPropertyChanged(nameof(ConversationSubheading));
             OnPropertyChanged(nameof(IsConversationReadOnly));
+            NotifyConversationDetails();
         }
     }
     public bool IsDraft => _isDraft;
+    public object? AvatarState => _isDraft ? null : SelectedConversation?.State;
+    public string DetailsStatus => _isDraft
+        ? "پیش‌نویس؛ با پیام نخست ساخته می‌شود"
+        : SelectedConversation?.StatusLabel ?? "—";
+    public string DetailsCreated => _isDraft
+        ? "—" : SelectedConversation?.CreatedDisplay ?? "—";
+    public string DetailsUpdated => _isDraft
+        ? "—" : SelectedConversation?.UpdatedDisplay ?? "—";
+    public string EmptyConversationListText =>
+        _conversationFilter == ConversationListFilter.All
+        && string.IsNullOrWhiteSpace(_conversationSearch)
+            ? "هنوز گفتگویی ندارید. برای شروع، دکمه مداد را بزنید."
+            : "گفتگویی با این مشخصات پیدا نشد.";
     public bool IsConversationReadOnly => !_isDraft && SelectedConversation is { IsActive: false };
     public bool IsConversationListLoading => _conversationListLoading;
     public string ConversationListError => _conversationListError;
@@ -180,6 +195,7 @@ public sealed class SupportViewModel : INotifyPropertyChanged
         _allConversations.AddRange(updated);
         RefreshConversationGroups();
         NotifyConversationListState();
+        NotifyConversationDetails();
         var selected = string.IsNullOrWhiteSpace(preferredId)
             ? null
             : _allConversations.FirstOrDefault(item =>
@@ -192,6 +208,15 @@ public sealed class SupportViewModel : INotifyPropertyChanged
     {
         if (_conversationFilter == filter) return;
         _conversationFilter = filter;
+        RefreshConversationGroups();
+        NotifyConversationListState();
+    }
+
+    public void SetConversationSearch(string? text)
+    {
+        text = text?.Trim() ?? string.Empty;
+        if (_conversationSearch == text) return;
+        _conversationSearch = text;
         RefreshConversationGroups();
         NotifyConversationListState();
     }
@@ -296,7 +321,10 @@ public sealed class SupportViewModel : INotifyPropertyChanged
             ConversationListFilter.Resolved => item.State == ChatConversationState.Resolved,
             ConversationListFilter.Closed => item.State == ChatConversationState.Closed,
             _ => true
-        }).GroupBy(item => item.DateGroup).ToList();
+        }).Where(item => _conversationSearch.Length == 0
+            || item.Title.Contains(_conversationSearch, StringComparison.CurrentCultureIgnoreCase)
+            || item.Preview.Contains(_conversationSearch, StringComparison.CurrentCultureIgnoreCase))
+        .GroupBy(item => item.DateGroup).ToList();
 
         for (var groupIndex = 0; groupIndex < visible.Count; groupIndex++)
         {
@@ -336,10 +364,20 @@ public sealed class SupportViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsConversationReadOnly));
         OnPropertyChanged(nameof(ConversationHeading));
         OnPropertyChanged(nameof(ConversationSubheading));
+        NotifyConversationDetails();
+    }
+
+    private void NotifyConversationDetails()
+    {
+        OnPropertyChanged(nameof(AvatarState));
+        OnPropertyChanged(nameof(DetailsStatus));
+        OnPropertyChanged(nameof(DetailsCreated));
+        OnPropertyChanged(nameof(DetailsUpdated));
     }
 
     private void NotifyConversationListState()
     {
+        OnPropertyChanged(nameof(EmptyConversationListText));
         OnPropertyChanged(nameof(IsConversationListLoading));
         OnPropertyChanged(nameof(ConversationListError));
         OnPropertyChanged(nameof(HasConversationListError));
@@ -421,8 +459,16 @@ public sealed class ConversationSummaryViewModel : INotifyPropertyChanged
     {
         Summary = summary;
         var local = summary.UpdatedAtUtc.LocalDateTime;
-        UpdatedTime = local.ToString("HH:mm");
         var days = (DateTime.Today - local.Date).Days;
+        UpdatedTime = days switch
+        {
+            <= 0 => local.ToString("HH:mm"),
+            < 7 => local.ToString("dddd", PersianCulture),
+            _ => local.ToString("yyyy/MM/dd", PersianCulture)
+        };
+        UpdatedDisplay = local.ToString("dddd d MMMM، HH:mm", PersianCulture);
+        CreatedDisplay = summary.CreatedAtUtc.LocalDateTime
+            .ToString("dddd d MMMM، HH:mm", PersianCulture);
         DateGroup = days switch
         {
             <= 0 => "امروز",
@@ -441,6 +487,8 @@ public sealed class ConversationSummaryViewModel : INotifyPropertyChanged
         };
     }
 
+    private static readonly System.Globalization.CultureInfo PersianCulture = new("fa-IR");
+
     public ChatConversationSummary Summary { get; private set; } = null!;
     public string ConversationId => Summary.ConversationId;
     public string Title => Summary.Title;
@@ -451,6 +499,11 @@ public sealed class ConversationSummaryViewModel : INotifyPropertyChanged
     public string DateGroup { get; private set; } = string.Empty;
     public string StatusLabel { get; private set; } = string.Empty;
     public string StatusGlyph { get; private set; } = string.Empty;
+    public string UpdatedDisplay { get; private set; } = string.Empty;
+    public string CreatedDisplay { get; private set; } = string.Empty;
+    public bool NeedsAttention => State is ChatConversationState.AwaitingApproval
+        or ChatConversationState.Working;
+    public string AccessibleName => $"{Title}، {StatusLabel}، {UpdatedTime}";
 }
 
 public enum ConversationItemKind
