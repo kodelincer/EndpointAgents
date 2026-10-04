@@ -56,7 +56,7 @@ public sealed class WindowsBugfixRunner(
             return new WindowsBugfixRunResult(menuResult.ExitCode,
                 menuResult.State == OfficeBugfixRunStates.PromptTimedOut,
                 menuResult.State, menuResult.CompletedStepCount,
-                menuResult.FailedStepIndex);
+                menuResult.FailedStepIndex, menuResult.OutputTail);
         }
 
         var fullPath = Path.GetFullPath(path);
@@ -162,4 +162,5 @@ public sealed class WindowsBugfixRunner(
 }
 
 public sealed record WindowsBugfixRunResult(int? ExitCode, bool TimedOut,
-    string? State = null, int CompletedStepCount = 0, int? FailedStepIndex = null);
+    string? State = null, int CompletedStepCount = 0, int? FailedStepIndex = null,
+    string? OutputTail = null);

@@ -89,6 +89,15 @@ internal sealed class BatchOutputCollector
         }
     }
 
+    internal string GetTranscriptTail(int maxCharacters)
+    {
+        lock (_gate)
+        {
+            var length = Math.Min(maxCharacters, _transcript.Length);
+            return _transcript.ToString(_transcript.Length - length, length);
+        }
+    }
+
     internal bool TranscriptContains(string literal)
     {
         lock (_gate) return IndexOfLiteral(_transcript, literal, 0) >= 0;

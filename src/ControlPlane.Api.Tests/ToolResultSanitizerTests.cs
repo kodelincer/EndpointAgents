@@ -6,6 +6,19 @@ namespace ControlPlane.Api.Tests;
 public sealed class ToolResultSanitizerTests
 {
     [Fact]
+    public void Sanitize_NeverForwardsBatOutputTailToTheModel()
+    {
+        var result = ToolResultSanitizer.Sanitize(new
+        {
+            data = new { State = "PromptTimedOut", OutputTail = "Main menu choice:" }
+        });
+
+        using var document = JsonDocument.Parse(result);
+        Assert.Equal("[redacted]", document.RootElement.GetProperty("data")
+            .GetProperty("OutputTail").GetString());
+    }
+
+    [Fact]
     public void Sanitize_RedactsStringsInsideArrays()
     {
         var result = ToolResultSanitizer.Sanitize(new

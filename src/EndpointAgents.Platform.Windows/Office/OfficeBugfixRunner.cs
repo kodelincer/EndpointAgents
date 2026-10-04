@@ -15,6 +15,8 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
 {
     internal static readonly TimeSpan Timeout = TimeSpan.FromMinutes(8);
     internal const int OutputLimitBytes = 1024 * 1024;
+    internal const int OutputTailCharacters = 4096;
+    internal static readonly TimeSpan StartupAllowance = TimeSpan.FromSeconds(30);
     private readonly OfficeRemediationOptions _options = options.Value;
 
     public async Task<OfficeBugfixRunResult> RunAsync(string path,
@@ -62,7 +64,10 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
             CreateNoWindow = true,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
-            RedirectStandardError = true
+            RedirectStandardError = true,
+            // Never inherit a console encoding that writes a byte-order mark into
+            // the first answer. Responses are validated, single-line text.
+            StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
         };
         startInfo.ArgumentList.Add("/d");
         startInfo.ArgumentList.Add("/s");
@@ -84,9 +89,25 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
         if (cancellationToken.IsCancellationRequested)
             return Result(null, null, OfficeBugfixRunStates.Cancelled, 0, 0);
 
-        using var process = new Process { StartInfo = startInfo };
         var collector = new BatchOutputCollector(outputLimitBytes,
             normalized!.FailureMarkers);
+        var result = await RunProcessCoreAsync(startInfo, normalized, collector,
+            cancellationToken, overallTimeout);
+        // Unsuccessful runs keep a short, redacted end of the output for diagnosis.
+        return result.State == OfficeBugfixRunStates.Completed ? result
+            : result with
+            {
+                OutputTail = SensitiveTextRedactor.Redact(
+                    collector.GetTranscriptTail(OutputTailCharacters))
+            };
+    }
+
+    private static async Task<OfficeBugfixRunResult> RunProcessCoreAsync(
+        ProcessStartInfo startInfo, BatchPlaybook normalized,
+        BatchOutputCollector collector, CancellationToken cancellationToken,
+        TimeSpan? overallTimeout)
+    {
+        using var process = new Process { StartInfo = startInfo };
         Task[] pumps = [];
         var completedSteps = 0;
         int? processId = null;
@@ -100,8 +121,6 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                 return Result(null, null, OfficeBugfixRunStates.ProcessFailed,
                     completedSteps, 0);
             processId = process.Id;
-            // cmd's set /p can leave the LF of CRLF queued for the next prompt.
-            process.StandardInput.NewLine = "\r";
             pumps =
             [
                 PumpAsync(process.StandardOutput, collector),
@@ -116,8 +135,11 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                 var candidates = GetCandidates(steps, index, repeats);
                 using var stepTimeout = CancellationTokenSource
                     .CreateLinkedTokenSource(overall.Token);
+                // Before the first response the wait also covers cmd start-up and
+                // antivirus scanning of the freshly staged BAT.
                 stepTimeout.CancelAfter(TimeSpan.FromSeconds(candidates.Max(
-                    candidate => steps[candidate.StepIndex].TimeoutSeconds)));
+                    candidate => steps[candidate.StepIndex].TimeoutSeconds))
+                    + (completedSteps == 0 ? StartupAllowance : TimeSpan.Zero));
 
                 PromptMatch prompt;
                 try
@@ -176,11 +198,13 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                 collector.BeginNextStep();
                 try
                 {
-                    await process.StandardInput.WriteAsync(match.Choice.Send.AsMemory(),
+                    // Send the response and its terminator in one pipe write. A
+                    // pending set /p returns after the first write it sees, so a
+                    // separate CR would be read later as an empty answer.
+                    var response = match.Choice.Submit == BatchPlaybookSubmitKinds.Line
+                        ? match.Choice.Send + "\r" : match.Choice.Send;
+                    await process.StandardInput.WriteAsync(response.AsMemory(),
                         overall.Token);
-                    if (match.Choice.Submit == BatchPlaybookSubmitKinds.Line)
-                        await process.StandardInput.WriteLineAsync(
-                            ReadOnlyMemory<char>.Empty, overall.Token);
                     await process.StandardInput.FlushAsync(overall.Token);
                     completedSteps++;
                     repeats++;
@@ -428,5 +452,6 @@ public sealed record OfficeBugfixRunResult(
     int? ExitCode,
     string State,
     int CompletedStepCount,
-    int? FailedStepIndex);
+    int? FailedStepIndex,
+    string? OutputTail = null);
 

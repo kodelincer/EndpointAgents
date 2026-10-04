@@ -186,7 +186,8 @@ public sealed class OfficeBugfixCommandHandler(
                     execution.ProcessId,
                     execution.ExitCode,
                     execution.CompletedStepCount,
-                    execution.FailedStepIndex
+                    execution.FailedStepIndex,
+                    execution.OutputTail
                 });
 
             var activationAfter = await volumeProbe.ProbeAsync(snapshot.Inventory,

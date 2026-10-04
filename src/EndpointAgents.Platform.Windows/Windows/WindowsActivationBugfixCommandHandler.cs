@@ -111,7 +111,8 @@ public sealed class WindowsActivationBugfixCommandHandler(
                 return RpcResponse.Failure(request.Id, 500,
                     "The Windows activation remediation returned a failure exit code.",
                     new { execution.ExitCode, execution.State,
-                        execution.CompletedStepCount, execution.FailedStepIndex });
+                        execution.CompletedStepCount, execution.FailedStepIndex,
+                        execution.OutputTail });
 
             var after = await probe.ProbeAsync(cancellationToken);
             var state = after.ProbeSucceeded

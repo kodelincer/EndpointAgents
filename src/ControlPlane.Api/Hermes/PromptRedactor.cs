@@ -1,3 +1,4 @@
+using EndpointAgents.Shared.Security;
 using System.Text.RegularExpressions;
 
 namespace ControlPlane.Api.Hermes;
@@ -11,8 +12,7 @@ public static partial class PromptRedactor
                      .OrderByDescending(item => item!.Length))
             redacted = redacted.Replace(exact!, "[redacted]", StringComparison.OrdinalIgnoreCase);
 
-        redacted = CredentialPattern().Replace(redacted, "$1=[redacted]");
-        redacted = BearerPattern().Replace(redacted, "Bearer [redacted]");
+        redacted = SensitiveTextRedactor.RedactCredentials(redacted);
         redacted = Ipv4Pattern().Replace(redacted, "[ip-redacted]");
         redacted = PotentialIpv6Pattern().Replace(redacted, static match =>
             global::System.Net.IPAddress.TryParse(match.Value, out var address)
@@ -23,12 +23,6 @@ public static partial class PromptRedactor
         redacted = MacAddressPattern().Replace(redacted, "[mac-redacted]");
         return redacted;
     }
-
-    [GeneratedRegex(@"(?i)\b(password|passwd|pwd|token|secret|api[_-]?key|user(?:name)?)\s*[:=]\s*[^\s,;]+")]
-    private static partial Regex CredentialPattern();
-
-    [GeneratedRegex(@"(?i)\bBearer\s+[A-Za-z0-9._~+/\-=]+")]
-    private static partial Regex BearerPattern();
 
     [GeneratedRegex(@"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")]
     private static partial Regex Ipv4Pattern();

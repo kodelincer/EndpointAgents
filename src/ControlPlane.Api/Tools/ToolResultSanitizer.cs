@@ -13,7 +13,9 @@ public static class ToolResultSanitizer
             "domainName", "deviceId", "serialNumber", "macAddress",
             "physicalAddress", "sessionId", "desktopPath", "dialerPath",
             "filePath", "installationPath", "systemDirectory", "path",
-            "password", "token", "secret", "apiKey"
+            "password", "token", "secret", "apiKey",
+            // Raw BAT output stays in the operator trace and is never sent to the LLM.
+            "outputTail"
         };
 
     public static string Sanitize(object value)
