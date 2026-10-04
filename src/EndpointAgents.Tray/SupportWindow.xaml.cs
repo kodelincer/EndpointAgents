@@ -29,6 +29,15 @@ public sealed partial class SupportWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
 
+    private const int GwlExStyle = -20;
+    private const nint WsExLayoutRtl = 0x00400000;
+
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
+    private static extern nint GetWindowLongPtr(IntPtr hwnd, int index);
+
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
+    private static extern nint SetWindowLongPtr(IntPtr hwnd, int index, nint value);
+
     private readonly Func<Task> _refreshStatus;
     private readonly ServiceIpcClient _serviceClient = new();
     private readonly EndpointEventLogReader _logReader = new();
@@ -81,6 +90,9 @@ public sealed partial class SupportWindow : Window
         Title = "عامل نقطه پایانی";
 
         var hwnd = WindowNative.GetWindowHandle(this);
+        // Mirror the frame so minimize/maximize/close sit on the left, as in RTL apps.
+        SetWindowLongPtr(hwnd, GwlExStyle,
+            GetWindowLongPtr(hwnd, GwlExStyle) | WsExLayoutRtl);
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(hwnd));
         ResizeWindowInDips(InitialWidthDips, InitialHeightDips);
         UpdateTitleBarInsets();
@@ -120,14 +132,12 @@ public sealed partial class SupportWindow : Window
 
     private void UpdateTitleBarInsets()
     {
-        // Insets are physical, but the RTL title bar mirrors Padding: its Left is the
-        // physical right, where the caption buttons sit.
+        // The window is laid out RTL, so the caption buttons sit physically left, which is
+        // the mirrored title bar's logical Right. Take whichever inset reports them.
         var scale = WindowScale();
-        TitleBarDragRegion.Padding = new Thickness(
-            16 + _appWindow.TitleBar.RightInset / scale,
-            0,
-            16 + _appWindow.TitleBar.LeftInset / scale,
-            0);
+        var captionWidth = Math.Max(_appWindow.TitleBar.LeftInset,
+            _appWindow.TitleBar.RightInset) / scale;
+        TitleBarDragRegion.Padding = new Thickness(16, 0, 16 + captionWidth, 0);
     }
 
     public void ShowSection(SupportSection section)
