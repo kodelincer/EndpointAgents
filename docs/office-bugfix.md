@@ -80,8 +80,43 @@ The BAT contract is deliberately narrow. Its playbook contains 1–32 ordered st
 step waits for a literal prompt fragment and sends only its administrator-approved fixed
 response. `submit: "key"` requires exactly one printable character and does not send
 Enter; `submit: "line"` sends up to 64 printable characters followed by Enter. Step
-timeouts must be 5–300 seconds. Responses cannot contain control characters,
-credentials, tokens, secrets, or product keys.
+timeouts must be 5–300 seconds; the first prompt also gets 30 seconds for cmd and
+antivirus start-up. Responses cannot contain control characters, credentials, tokens,
+secrets, or product keys.
+
+### Playbook version 2
+
+Version 1 is strictly linear. Version 2 (`"version": 2`) keeps every version 1 rule and
+adds, all with literal matching only:
+
+| Field | Where | Meaning |
+| --- | --- | --- |
+| `alternatives` | step | Up to 8 more `{ expect, send, submit }` prompts the same step may show; the one that appears first is answered. |
+| `optional` | step | The step is skipped when a later step's prompt (or the end of the BAT) comes first. |
+| `maxRepeats` | step | 1–20. The step is answered each time its prompt reappears, until the next step's prompt shows; one more repeat stops the run as `RepeatLimitExceeded`. |
+| `successExitCodes` | playbook | Accepted exit codes (default `[0]`, at most 16). |
+| `successMarker` | playbook | Text that must appear in the output, or the run is `SuccessMarkerMissing`. |
+| `failureMarkers` | playbook | Up to 16 texts that stop the run immediately as `FailureMarkerDetected`, including a known unexpected prompt or a printed failure with exit code 0. |
+
+At most 64 responses are sent per run. The playbook hash covers every field, so any
+change needs fresh approval. Version 1 hashes are unchanged. A prompt that is neither
+expected nor listed in `failureMarkers` cannot be told apart from slow output; it ends
+as `PromptTimedOut` after the step timeout. A full example is in
+`deploy/samples/menu-scenarios-sample.playbook.json`.
+
+When a run does not complete, the result carries `OutputTail`: at most the last 4 KB of
+normalized output, with credentials, bearer tokens, product keys, and long opaque
+tokens redacted. It appears in the endpoint response for operators and is never
+forwarded to the model.
+
+### Publish-time lint
+
+The control plane lints every catalog BAT. It rejects BATs that request elevation
+(`runas`, `-Verb RunAs`), run encoded PowerShell, or download or decode code at run time
+(`certutil -decode`/`-urlcache`, `bitsadmin /transfer`, `Invoke-WebRequest`,
+`DownloadString`/`DownloadFile`), because the pinned hash cannot cover that code. It
+reports warnings, without rejecting, for `timeout /t`, `start`, `mshta`, `msg`, and
+`%TEMP%` scripts. Findings appear in the catalog issues.
 
 Office 2016, 2019, 2021, 2024, and Microsoft 365 all report version `16.0`, so a
 `16.0`–`17.0` range alone does **not** identify a release year. For a release-specific
@@ -122,9 +157,11 @@ The endpoint starts hidden `System32\cmd.exe` with redirected input, output, and
 streams. It reads output in chunks because prompts need not end in a newline, removes
 ANSI formatting and nonsemantic control characters, and matches each step only against
 output received after the prior response. Status text is retained but ignored unless it
-contains the approved literal prompt. Output is capped at 1 MiB. The process must finish
-all steps and terminate with exit code `0`; the service stops it after eight minutes,
-before the endpoint command's ten-minute outer timeout.
+contains the approved literal prompt. Each response and its Enter go to the BAT in one
+pipe write with BOM-free input encoding. Output is capped at 1 MiB. The process must
+finish all required steps and exit with an approved code; the service stops it after
+eight minutes, before the endpoint command's ten-minute outer timeout. A stopped BAT is
+killed before its input is closed, so it never receives an empty answer.
 
 ## Runtime flow
 
@@ -154,8 +191,8 @@ before the endpoint command's ten-minute outer timeout.
 9. The LocalSystem service runs only the protected staged copy in session 0. It waits for
    and answers each approved playbook prompt, never executes the user-writable Desktop
    copy, and never requests a UAC password.
-10. After a `Completed` playbook result with exit code `0`, the endpoint immediately
-    verifies healthy KMS with OSPP.
+10. After a `Completed` playbook result, the endpoint immediately verifies healthy KMS
+    with OSPP.
     Hermes calls `office_activation_status` again even when execution reported an error,
     unless an Office app reopened and blocked execution. Exit code `0` alone is not
     proof that activation is healthy.
@@ -164,10 +201,20 @@ before the endpoint command's ten-minute outer timeout.
 
 1. Review the BAT and copy it into the protected repository using the artifact ID as its
    filename.
-2. Compute its hash with `Get-FileHash -Algorithm SHA256`.
-3. Manually run the BAT in a disposable VM and transcribe stable literal prompt fragments
-   and fixed responses into a version 1 playbook. Do not include credentials, tokens, or
-   product keys.
+2. In a disposable VM, write the playbook with the playbook lab. It hashes and lints the
+   BAT, validates the playbook, runs the BAT through the real endpoint runner with
+   `-Execute`, shows the screen after your last step with `-Discover`, and prints a
+   manifest entry draft:
+
+   ```powershell
+   .\scripts\test-bat-playbook.ps1 -Bat .\my-repair.bat -Playbook .\my-repair.playbook.json `
+       -Execute -Discover
+   ```
+
+   Add one step per screen until the run completes. Use stable literal prompt fragments.
+   Do not include credentials, tokens, or product keys.
+3. Copy the reported SHA-256 into the manifest entry (`Get-FileHash -Algorithm SHA256`
+   gives the same value).
 4. Add or update its manifest entry, playbook, and intended Office version range; avoid
    accidental overlaps unless the skill contains an explicit rule for choosing between
    them.
@@ -184,14 +231,12 @@ playbook-enabled production artifact, and confirm endpoints report the updated v
 Pilot the harmless sample first, then an independently reviewed legitimate reseller BAT
 in a disposable VM, and finally one test endpoint. BATs that require UAC, credentials,
 GUI interaction, arrow keys, a signed-in user's profile, new console windows, or detached
-processes are unsupported. ConPTY, branching, transcript storage, live input, and
-automatic response selection are intentionally not part of this release.
+processes are unsupported. ConPTY, regular expressions, full transcript storage, live
+input, and model-chosen responses are intentionally not supported.
 
-For reliable `set /p` menus, emit the prompt with `<nul set /p "=Prompt: "` before
-calling `set /p "answer="`, and leave a short pause between them. An inline
-`set /p "answer=Prompt: "` may read an empty
-response through redirected input before the agent can answer. Verify each menu
-transition with the playbook runner before deploying a BAT.
+Both inline `set /p "answer=Prompt: "` and `<nul set /p "=Prompt: "` followed by
+`set /p "answer="` work, and no pause is needed. Verify each menu transition with the
+playbook lab before deploying a BAT.
 
 The current `tmpfiles/office_bug_fixer.bat` and
 `tmpfiles/windows_bug_fixer.bat` are identical copies of a large `KMS Suite` BAT.
