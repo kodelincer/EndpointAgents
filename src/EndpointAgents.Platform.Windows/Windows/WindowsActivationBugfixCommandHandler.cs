@@ -103,7 +103,11 @@ public sealed class WindowsActivationBugfixCommandHandler(
             if (execution.TimedOut)
                 return RpcResponse.Failure(request.Id, 408,
                     "The Windows activation remediation timed out.");
-            if (execution.ExitCode != 0)
+            // A playbook run reports success only through its Completed state, which
+            // already applies the approved exit codes and output markers.
+            if (execution.State is { } runState
+                    ? runState != OfficeBugfixRunStates.Completed
+                    : execution.ExitCode != 0)
                 return RpcResponse.Failure(request.Id, 500,
                     "The Windows activation remediation returned a failure exit code.",
                     new { execution.ExitCode, execution.State,

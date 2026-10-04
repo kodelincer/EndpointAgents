@@ -85,7 +85,8 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
             return Result(null, null, OfficeBugfixRunStates.Cancelled, 0, 0);
 
         using var process = new Process { StartInfo = startInfo };
-        var collector = new BatchOutputCollector(outputLimitBytes);
+        var collector = new BatchOutputCollector(outputLimitBytes,
+            normalized!.FailureMarkers);
         Task[] pumps = [];
         var completedSteps = 0;
         int? processId = null;
@@ -107,18 +108,23 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                 PumpAsync(process.StandardError, collector)
             ];
 
-            for (var index = 0; index < normalized!.Steps.Count; index++)
+            var steps = normalized!.Steps;
+            var index = 0;
+            var repeats = 0;
+            while (index < steps.Count)
             {
-                var step = normalized.Steps[index];
+                var candidates = GetCandidates(steps, index, repeats);
                 using var stepTimeout = CancellationTokenSource
                     .CreateLinkedTokenSource(overall.Token);
-                stepTimeout.CancelAfter(TimeSpan.FromSeconds(step.TimeoutSeconds));
+                stepTimeout.CancelAfter(TimeSpan.FromSeconds(candidates.Max(
+                    candidate => steps[candidate.StepIndex].TimeoutSeconds)));
 
-                PromptWaitResult prompt;
+                PromptMatch prompt;
                 try
                 {
-                    prompt = await collector.WaitForPromptAsync(step.Expect,
-                        stepTimeout.Token);
+                    prompt = await collector.WaitForAnyAsync(
+                        candidates.Select(candidate => candidate.Choice.Expect)
+                            .ToArray(), stepTimeout.Token);
                 }
                 catch (OperationCanceledException)
                 {
@@ -130,25 +136,39 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                         completedSteps, index);
                 }
 
-                if (prompt == PromptWaitResult.OutputLimitExceeded)
+                var stopState = prompt.Result switch
+                {
+                    PromptWaitResult.OutputLimitExceeded =>
+                        OfficeBugfixRunStates.OutputLimitExceeded,
+                    PromptWaitResult.ReaderFailed => OfficeBugfixRunStates.ProcessFailed,
+                    PromptWaitResult.FailureMarker =>
+                        OfficeBugfixRunStates.FailureMarkerDetected,
+                    PromptWaitResult.Ended when !RemainingStepsAreOptional(steps,
+                            index, repeats) =>
+                        OfficeBugfixRunStates.ExitedBeforePlaybookCompleted,
+                    _ => null
+                };
+                if (stopState is not null)
+                {
+                    await StopAsync(process, pumps);
+                    return Result(processId, TryGetExitCode(process), stopState,
+                        completedSteps, index);
+                }
+                if (prompt.Result == PromptWaitResult.Ended) break;
+
+                var match = candidates[prompt.CandidateIndex];
+                if (match.StepIndex == index && repeats >= steps[index].MaxRepeats
+                    || completedSteps >= BatchPlaybookPolicy.MaximumTotalResponses)
                 {
                     await StopAsync(process, pumps);
                     return Result(processId, TryGetExitCode(process),
-                        OfficeBugfixRunStates.OutputLimitExceeded, completedSteps,
+                        OfficeBugfixRunStates.RepeatLimitExceeded, completedSteps,
                         index);
                 }
-                if (prompt == PromptWaitResult.ReaderFailed)
+                if (match.StepIndex != index)
                 {
-                    await StopAsync(process, pumps);
-                    return Result(processId, TryGetExitCode(process),
-                        OfficeBugfixRunStates.ProcessFailed, completedSteps, index);
-                }
-                if (prompt == PromptWaitResult.Ended)
-                {
-                    await StopAsync(process, pumps);
-                    return Result(processId, TryGetExitCode(process),
-                        OfficeBugfixRunStates.ExitedBeforePlaybookCompleted,
-                        completedSteps, index);
+                    index = match.StepIndex;
+                    repeats = 0;
                 }
 
                 // Clear all previously received text before releasing the approved
@@ -156,13 +176,14 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                 collector.BeginNextStep();
                 try
                 {
-                    await process.StandardInput.WriteAsync(step.Send.AsMemory(),
+                    await process.StandardInput.WriteAsync(match.Choice.Send.AsMemory(),
                         overall.Token);
-                    if (step.Submit == BatchPlaybookSubmitKinds.Line)
+                    if (match.Choice.Submit == BatchPlaybookSubmitKinds.Line)
                         await process.StandardInput.WriteLineAsync(
                             ReadOnlyMemory<char>.Empty, overall.Token);
                     await process.StandardInput.FlushAsync(overall.Token);
                     completedSteps++;
+                    repeats++;
                 }
                 catch (OperationCanceledException)
                 {
@@ -181,39 +202,35 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                         OfficeBugfixRunStates.ExitedBeforePlaybookCompleted,
                         completedSteps, index);
                 }
+
+                if (steps[index].MaxRepeats == 1)
+                {
+                    index++;
+                    repeats = 0;
+                }
             }
 
             var exitTask = process.WaitForExitAsync(overall.Token);
             var winner = await Task.WhenAny(exitTask, collector.OutputLimitTask,
-                collector.ReaderFailureTask);
-            if (winner == collector.OutputLimitTask)
+                collector.ReaderFailureTask, collector.FailureMarkerTask);
+            if (winner != exitTask)
             {
                 await StopAsync(process, pumps);
                 return Result(processId, TryGetExitCode(process),
-                    OfficeBugfixRunStates.OutputLimitExceeded, completedSteps, null);
-            }
-            if (winner == collector.ReaderFailureTask)
-            {
-                await StopAsync(process, pumps);
-                return Result(processId, TryGetExitCode(process),
-                    OfficeBugfixRunStates.ProcessFailed, completedSteps, null);
+                    StateFor(winner, collector), completedSteps, null);
             }
 
             await exitTask;
             var drainTask = Task.WhenAll(pumps);
             winner = await Task.WhenAny(drainTask, collector.OutputLimitTask,
                 collector.ReaderFailureTask);
-            if (winner == collector.OutputLimitTask)
+            if (winner != drainTask)
                 return Result(processId, process.ExitCode,
-                    OfficeBugfixRunStates.OutputLimitExceeded, completedSteps, null);
-            if (winner == collector.ReaderFailureTask)
-                return Result(processId, process.ExitCode,
-                    OfficeBugfixRunStates.ProcessFailed, completedSteps, null);
+                    StateFor(winner, collector), completedSteps, null);
             await drainTask;
 
             return Result(processId, process.ExitCode,
-                process.ExitCode == 0 ? OfficeBugfixRunStates.Completed
-                    : OfficeBugfixRunStates.ProcessFailed,
+                EvaluateCompletion(normalized, process.ExitCode, collector),
                 completedSteps, null);
         }
         catch (OperationCanceledException)
@@ -339,6 +356,57 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
     private static OfficeBugfixRunResult Result(int? processId, int? exitCode,
         string state, int completedSteps, int? failedStepIndex) =>
         new(processId, exitCode, state, completedSteps, failedStepIndex);
+
+    /// <summary>
+    /// Prompts that may answer the current wait: the current step, then later steps
+    /// while every step before them may be skipped (optional, or already answered
+    /// at least once in repeat mode).
+    /// </summary>
+    private static List<(int StepIndex, BatchPlaybookChoice Choice)> GetCandidates(
+        IReadOnlyList<BatchPlaybookStep> steps, int index, int repeats)
+    {
+        var candidates = new List<(int, BatchPlaybookChoice)>();
+        for (var stepIndex = index; stepIndex < steps.Count; stepIndex++)
+        {
+            var step = steps[stepIndex];
+            candidates.Add((stepIndex,
+                new BatchPlaybookChoice(step.Expect, step.Send, step.Submit)));
+            foreach (var alternative in step.Alternatives ?? [])
+                candidates.Add((stepIndex, alternative));
+            var skippable = step.Optional || stepIndex == index && repeats > 0;
+            if (!skippable) break;
+        }
+        return candidates;
+    }
+
+    private static bool RemainingStepsAreOptional(
+        IReadOnlyList<BatchPlaybookStep> steps, int index, int repeats)
+    {
+        for (var stepIndex = index; stepIndex < steps.Count; stepIndex++)
+        {
+            if (stepIndex == index && repeats > 0) continue;
+            if (!steps[stepIndex].Optional) return false;
+        }
+        return true;
+    }
+
+    private static string StateFor(Task winner, BatchOutputCollector collector) =>
+        winner == collector.OutputLimitTask ? OfficeBugfixRunStates.OutputLimitExceeded
+        : winner == collector.FailureMarkerTask
+            ? OfficeBugfixRunStates.FailureMarkerDetected
+            : OfficeBugfixRunStates.ProcessFailed;
+
+    private static string EvaluateCompletion(BatchPlaybook playbook, int exitCode,
+        BatchOutputCollector collector)
+    {
+        if (collector.FailureMarkerTask.IsCompleted)
+            return OfficeBugfixRunStates.FailureMarkerDetected;
+        if (!BatchPlaybookPolicy.GetSuccessExitCodes(playbook).Contains(exitCode))
+            return OfficeBugfixRunStates.ProcessFailed;
+        if (playbook.SuccessMarker is { } marker && !collector.TranscriptContains(marker))
+            return OfficeBugfixRunStates.SuccessMarkerMissing;
+        return OfficeBugfixRunStates.Completed;
+    }
 }
 
 public static class OfficeBugfixRunStates
@@ -350,6 +418,9 @@ public static class OfficeBugfixRunStates
     public const string OutputLimitExceeded = "OutputLimitExceeded";
     public const string Cancelled = "Cancelled";
     public const string ProcessFailed = "ProcessFailed";
+    public const string FailureMarkerDetected = "FailureMarkerDetected";
+    public const string SuccessMarkerMissing = "SuccessMarkerMissing";
+    public const string RepeatLimitExceeded = "RepeatLimitExceeded";
 }
 
 public sealed record OfficeBugfixRunResult(
@@ -359,167 +430,3 @@ public sealed record OfficeBugfixRunResult(
     int CompletedStepCount,
     int? FailedStepIndex);
 
-internal enum PromptWaitResult
-{
-    Matched,
-    Ended,
-    OutputLimitExceeded,
-    ReaderFailed
-}
-
-internal sealed class BatchOutputCollector
-{
-    private enum AnsiState { None, Escape, Csi, Osc, OscEscape }
-
-    private readonly object _gate = new();
-    private readonly StringBuilder _window = new();
-    private readonly int _outputLimitBytes;
-    private TaskCompletionSource<bool> _changed = NewSignal();
-    private readonly TaskCompletionSource<bool> _outputLimit = NewSignal();
-    private readonly TaskCompletionSource<bool> _readerFailure = NewSignal();
-    private int _remainingReaders = 2;
-    private long _capturedBytes;
-    private bool _pendingSpace;
-    private AnsiState _ansiState;
-
-    internal BatchOutputCollector(int outputLimitBytes) =>
-        _outputLimitBytes = outputLimitBytes;
-
-    internal Task OutputLimitTask => _outputLimit.Task;
-    internal Task ReaderFailureTask => _readerFailure.Task;
-
-    internal void Append(ReadOnlySpan<char> text, int byteCount)
-    {
-        lock (_gate)
-        {
-            _capturedBytes += byteCount;
-            if (_capturedBytes > _outputLimitBytes)
-            {
-                _outputLimit.TrySetResult(true);
-                Pulse();
-                return;
-            }
-
-            foreach (var character in text)
-                AppendNormalized(character);
-            Pulse();
-        }
-    }
-
-    internal void CompleteReader(Exception? error = null)
-    {
-        lock (_gate)
-        {
-            if (error is not null) _readerFailure.TrySetResult(true);
-            _remainingReaders--;
-            Pulse();
-        }
-    }
-
-    internal void BeginNextStep()
-    {
-        lock (_gate)
-        {
-            _window.Clear();
-            _pendingSpace = false;
-        }
-    }
-
-    internal async Task<PromptWaitResult> WaitForPromptAsync(string expected,
-        CancellationToken cancellationToken)
-    {
-        while (true)
-        {
-            Task changed;
-            lock (_gate)
-            {
-                if (_outputLimit.Task.IsCompleted)
-                    return PromptWaitResult.OutputLimitExceeded;
-                if (_readerFailure.Task.IsCompleted)
-                    return PromptWaitResult.ReaderFailed;
-                if (ContainsLiteral(_window, expected))
-                    return PromptWaitResult.Matched;
-                if (_remainingReaders == 0) return PromptWaitResult.Ended;
-                changed = _changed.Task;
-            }
-            await changed.WaitAsync(cancellationToken);
-        }
-    }
-
-    private void AppendNormalized(char character)
-    {
-        switch (_ansiState)
-        {
-            case AnsiState.Escape:
-                _ansiState = character switch
-                {
-                    '[' => AnsiState.Csi,
-                    ']' => AnsiState.Osc,
-                    _ => AnsiState.None
-                };
-                return;
-            case AnsiState.Csi:
-                if (character is >= '@' and <= '~') _ansiState = AnsiState.None;
-                return;
-            case AnsiState.Osc:
-                if (character == '\a') _ansiState = AnsiState.None;
-                else if (character == '\u001b') _ansiState = AnsiState.OscEscape;
-                return;
-            case AnsiState.OscEscape:
-                _ansiState = character == '\\' ? AnsiState.None : AnsiState.Osc;
-                return;
-        }
-
-        if (character == '\u001b')
-        {
-            _ansiState = AnsiState.Escape;
-            return;
-        }
-        if (character == '\b')
-        {
-            if (_window.Length > 0) _window.Length--;
-            return;
-        }
-        if (char.IsWhiteSpace(character))
-        {
-            _pendingSpace = _window.Length > 0;
-            return;
-        }
-        if (char.IsControl(character)) return;
-        if (_pendingSpace)
-        {
-            _window.Append(' ');
-            _pendingSpace = false;
-        }
-        _window.Append(character);
-    }
-
-    private static bool ContainsLiteral(StringBuilder haystack, string needle)
-    {
-        if (needle.Length > haystack.Length) return false;
-        for (var start = 0; start <= haystack.Length - needle.Length; start++)
-        {
-            var matches = true;
-            for (var offset = 0; offset < needle.Length; offset++)
-            {
-                if (char.ToUpperInvariant(haystack[start + offset])
-                    == char.ToUpperInvariant(needle[offset]))
-                    continue;
-                matches = false;
-                break;
-            }
-            if (matches) return true;
-        }
-        return false;
-    }
-
-    private void Pulse()
-    {
-        var previous = _changed;
-        _changed = NewSignal();
-        previous.TrySetResult(true);
-    }
-
-    private static TaskCompletionSource<bool> NewSignal() => new(
-        TaskCreationOptions.RunContinuationsAsynchronously);
-}

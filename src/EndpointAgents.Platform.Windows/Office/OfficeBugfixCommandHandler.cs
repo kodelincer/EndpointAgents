@@ -307,6 +307,12 @@ public sealed class OfficeBugfixCommandHandler(
                 "The approved Office repair exceeded the terminal output limit."),
             OfficeBugfixRunStates.Cancelled => (499,
                 "The approved Office repair was cancelled."),
+            OfficeBugfixRunStates.FailureMarkerDetected => (422,
+                "The approved Office repair printed an approved failure message."),
+            OfficeBugfixRunStates.SuccessMarkerMissing => (422,
+                "The approved Office repair finished without its approved success message."),
+            OfficeBugfixRunStates.RepeatLimitExceeded => (508,
+                "The approved Office repair repeated a prompt more often than approved."),
             _ => (500, "The approved Office repair process failed.")
         };
         return execution.State != OfficeBugfixRunStates.Completed;
@@ -315,6 +321,5 @@ public sealed class OfficeBugfixCommandHandler(
     internal static bool IsVerifiedSuccess(OfficeBugfixRunResult execution,
         OfficeActivationProbeResult activationAfter) =>
         execution.State == OfficeBugfixRunStates.Completed
-        && execution.ExitCode == 0
         && OfficeActivationRecommendation.IsHealthyKms(activationAfter);
 }
