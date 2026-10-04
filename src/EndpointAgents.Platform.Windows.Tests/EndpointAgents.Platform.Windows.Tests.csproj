@@ -21,5 +21,7 @@
   <ItemGroup>
     <None Include="..\..\deploy\control-plane\FileRepository\office-activation-repair.bat"
           Link="office-activation-repair.bat" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\deploy\samples\menu-scenarios-sample.bat"
+          Link="menu-scenarios-sample.bat" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

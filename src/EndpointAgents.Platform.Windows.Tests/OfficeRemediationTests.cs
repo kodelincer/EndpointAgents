@@ -539,7 +539,7 @@ public sealed class OfficeRemediationTests
             OfficeBugfixRunner.CreateStartInfo(path), playbook,
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(OfficeBugfixRunStates.Completed, result.State);
+        Assert.True(result.State == OfficeBugfixRunStates.Completed, result.ToString());
         Assert.Equal(0, result.ExitCode);
         Assert.Equal(2, result.CompletedStepCount);
     }
@@ -645,7 +645,7 @@ public sealed class OfficeRemediationTests
 
         Assert.True(result.State == OfficeBugfixRunStates.PromptTimedOut,
             result.ToString());
-        Assert.Equal(1, result.CompletedStepCount);
+        Assert.True(result.CompletedStepCount == 1, result.ToString());
         Assert.Equal(1, result.FailedStepIndex);
     }
 

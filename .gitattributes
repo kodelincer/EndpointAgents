@@ -61,3 +61,7 @@
 #*.PDF   diff=astextplain
 #*.rtf   diff=astextplain
 #*.RTF   diff=astextplain
+
+# Hash-pinned BAT artifacts must keep identical bytes in every checkout.
+*.bat text eol=crlf
+

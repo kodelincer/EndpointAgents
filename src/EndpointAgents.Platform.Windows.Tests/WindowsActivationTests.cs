@@ -178,7 +178,7 @@ public sealed class WindowsActivationTests
         {
             var result = await runner.RunAsync(path, descriptor,
                 TestContext.Current.CancellationToken);
-            Assert.Equal(0, result.ExitCode);
+            Assert.True(result.ExitCode == 0, result.ToString());
             Assert.Equal("Completed", result.State);
             Assert.Equal(2, result.CompletedStepCount);
 
