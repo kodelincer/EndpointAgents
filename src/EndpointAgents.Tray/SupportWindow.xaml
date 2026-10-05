@@ -124,7 +124,44 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid x:Name="TitleBarDragRegion" Grid.Row="0" Padding="16,0" ColumnSpacing="10"
+        <!-- Custom caption buttons sit physically left (last column in RTL), outside the drag region. -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right"
+                    VerticalAlignment="Center" Spacing="4" Margin="0,0,10,0" Canvas.ZIndex="1">
+            <StackPanel.Resources>
+                <Style x:Key="CaptionButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
+                    <Setter Property="Width" Value="30" />
+                    <Setter Property="Height" Value="30" />
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="CornerRadius" Value="15" />
+                    <Setter Property="Background" Value="Transparent" />
+                    <Setter Property="BorderThickness" Value="0" />
+                    <Setter Property="IsTabStop" Value="False" />
+                </Style>
+            </StackPanel.Resources>
+            <Button x:Name="MinimizeButton" Style="{StaticResource CaptionButtonStyle}"
+                    Click="MinimizeButton_Click" ToolTipService.ToolTip="کوچک کردن"
+                    AutomationProperties.Name="کوچک کردن">
+                <FontIcon Glyph="&#xE949;" FontSize="11" />
+            </Button>
+            <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButtonStyle}"
+                    Click="MaximizeButton_Click" ToolTipService.ToolTip="بزرگ کردن"
+                    AutomationProperties.Name="بزرگ کردن">
+                <FontIcon x:Name="MaximizeGlyph" Glyph="&#xE740;" FontSize="11" />
+            </Button>
+            <Button x:Name="CloseButton" Click="CloseButton_Click"
+                    ToolTipService.ToolTip="بستن" AutomationProperties.Name="بستن"
+                    Style="{StaticResource CaptionButtonStyle}">
+                <Button.Resources>
+                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#FFE53935" />
+                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#FFC62828" />
+                    <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White" />
+                    <SolidColorBrush x:Key="ButtonForegroundPressed" Color="White" />
+                </Button.Resources>
+                <FontIcon Glyph="&#xE711;" FontSize="11" />
+            </Button>
+        </StackPanel>
+
+        <Grid x:Name="TitleBarDragRegion" Grid.Row="0" Padding="16,0" Margin="0,0,120,0" ColumnSpacing="10"
               Background="Transparent">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />

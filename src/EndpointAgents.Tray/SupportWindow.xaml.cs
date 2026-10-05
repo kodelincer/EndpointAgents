@@ -29,15 +29,6 @@ public sealed partial class SupportWindow : Window
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
 
-    private const int GwlExStyle = -20;
-    private const nint WsExLayoutRtl = 0x00400000;
-
-    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
-    private static extern nint GetWindowLongPtr(IntPtr hwnd, int index);
-
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
-    private static extern nint SetWindowLongPtr(IntPtr hwnd, int index, nint value);
-
     private readonly Func<Task> _refreshStatus;
     private readonly ServiceIpcClient _serviceClient = new();
     private readonly EndpointEventLogReader _logReader = new();
@@ -91,12 +82,11 @@ public sealed partial class SupportWindow : Window
         Title = "دستیار پشتیبانی";
 
         var hwnd = WindowNative.GetWindowHandle(this);
-        // Mirror the frame so minimize/maximize/close sit on the left, as in RTL apps.
-        SetWindowLongPtr(hwnd, GwlExStyle,
-            GetWindowLongPtr(hwnd, GwlExStyle) | WsExLayoutRtl);
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(hwnd));
+        // Hide the system caption buttons; the XAML ones on the left replace them.
+        if (_appWindow.Presenter is OverlappedPresenter overlapped)
+            overlapped.SetBorderAndTitleBar(hasBorder: true, hasTitleBar: false);
         ResizeWindowInDips(InitialWidthDips, InitialHeightDips);
-        UpdateTitleBarInsets();
         _appWindow.Title = Title;
         SetWindowIcon(TrayHealthState.Checking);
         _appWindow.Closing += AppWindow_Closing;
@@ -132,14 +122,38 @@ public sealed partial class SupportWindow : Window
             (int)Math.Ceiling(height * scale)));
     }
 
-    private void UpdateTitleBarInsets()
+    private void UpdateMaximizeGlyph()
     {
-        // The window is laid out RTL, so the caption buttons sit physically left, which is
-        // the mirrored title bar's logical Right. Take whichever inset reports them.
-        var scale = WindowScale();
-        var captionWidth = Math.Max(_appWindow.TitleBar.LeftInset,
-            _appWindow.TitleBar.RightInset) / scale;
-        TitleBarDragRegion.Padding = new Thickness(16, 0, 16 + captionWidth, 0);
+        var maximized = _appWindow.Presenter is OverlappedPresenter
+            { State: OverlappedPresenterState.Maximized };
+        MaximizeGlyph.Glyph = maximized ? "" : "";
+        var label = maximized ? "بازگرداندن اندازه" : "بزرگ کردن";
+        ToolTipService.SetToolTip(MaximizeButton, label);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MaximizeButton, label);
+    }
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e) =>
+        (_appWindow.Presenter as OverlappedPresenter)?.Minimize();
+
+    private void MaximizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_appWindow.Presenter is not OverlappedPresenter presenter) return;
+        if (presenter.State == OverlappedPresenterState.Maximized) presenter.Restore();
+        else presenter.Maximize();
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => HideToTray();
+
+    // Close and minimize keep the app running in the notification area.
+    private void HideToTray()
+    {
+        if (_previewMode)
+        {
+            Application.Current.Exit();
+            return;
+        }
+        _appWindow.Hide();
+        UpdatePolling();
     }
 
     public void ShowSection(SupportSection section)
@@ -219,7 +233,7 @@ public sealed partial class SupportWindow : Window
 
     private async void WindowRoot_Loaded(object sender, RoutedEventArgs e)
     {
-        UpdateTitleBarInsets();
+        UpdateMaximizeGlyph();
         await _refreshStatus();
         await RefreshConversationsAsync();
         UpdatePolling();
@@ -228,14 +242,8 @@ public sealed partial class SupportWindow : Window
     private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
     {
         if (_allowClose) return;
-        if (_previewMode)
-        {
-            Application.Current.Exit();
-            return;
-        }
         args.Cancel = true;
-        _appWindow.Hide();
-        UpdatePolling();
+        HideToTray();
     }
 
     private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
@@ -250,7 +258,7 @@ public sealed partial class SupportWindow : Window
                 _appWindow.Resize(new SizeInt32(Math.Max(minimumWidth, size.Width),
                     Math.Max(minimumHeight, size.Height)));
         }
-        if (args.DidPositionChange || args.DidSizeChange) UpdateTitleBarInsets();
+        if (args.DidPresenterChange || args.DidSizeChange) UpdateMaximizeGlyph();
         if (args.DidPresenterChange
             && _appWindow.Presenter is OverlappedPresenter
             { State: OverlappedPresenterState.Minimized })
