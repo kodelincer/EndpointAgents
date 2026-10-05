@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "steps": [
+    { "expect": "Select an option [1-6]:", "send": "1", "submit": "line", "timeoutSeconds": 60 },
+    { "expect": "Select an option [1-8]:", "send": "1", "submit": "line", "timeoutSeconds": 30 },
+    { "expect": "[A]pps [S]ettings [B]oth", "send": "B", "submit": "key", "timeoutSeconds": 30 },
+    { "expect": "Press any key", "send": "x", "submit": "key", "timeoutSeconds": 120 },
+    { "expect": "Select an option [1-8]:", "send": "8", "submit": "line", "timeoutSeconds": 30 },
+    { "expect": "Select an option [1-6]:", "send": "6", "submit": "line", "timeoutSeconds": 30 }
+  ],
+  "successExitCodes": [0],
+  "successMarker": "Repair completed successfully",
+  "failureMarkers": ["Repair failed", "Option not available in the simulation"]
+}

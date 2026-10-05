@@ -23,5 +23,9 @@
           Link="office-activation-repair.bat" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\deploy\samples\menu-scenarios-sample.bat"
           Link="menu-scenarios-sample.bat" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\deploy\samples\menu-repair-sample.bat"
+          Link="menu-repair-sample.bat" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\deploy\samples\menu-repair-sample.playbook.json"
+          Link="menu-repair-sample.playbook.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
