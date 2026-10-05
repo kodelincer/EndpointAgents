@@ -29,8 +29,26 @@ public static class BatScriptLint
         ("start ", "start can open a new window or detach a process the runner cannot answer"),
         ("mshta", "mshta shows a GUI the runner cannot answer"),
         ("msg ", "msg shows a GUI message the runner cannot answer"),
-        ("%temp%", "running or writing scripts under %TEMP% is outside the pinned bundle")
+        ("%temp%", "running or writing scripts under %TEMP% is outside the pinned bundle"),
+        // Self-elevation: the endpoint service already runs elevated, so a BAT must
+        // skip this path; if it does not, it waits for a UAC prompt nobody sees.
+        ("\\shell\\runas\\command", "registers a runas verb to relaunch itself elevated"),
+        // Self-extraction: code unpacked at run time is not what the hash reviewed.
+        ("invoke-expression", "runs PowerShell code assembled at run time"),
+        ("iex(", "runs PowerShell code assembled at run time"),
+        ("iex ", "runs PowerShell code assembled at run time"),
+        ("expand -r", "unpacks cabinet files at run time; ship them as supportFiles instead"),
+        ("expand -f:", "unpacks cabinet files at run time; ship them as supportFiles instead")
     ];
+
+    private static void CollectSelfRead(string line, int lineNumber,
+        List<string> findings)
+    {
+        if (line.Contains("powershell", StringComparison.Ordinal)
+            && line.Contains("%~f0", StringComparison.Ordinal))
+            findings.Add($"Line {lineNumber}: PowerShell reads this BAT's own file, "
+                + "which usually unpacks embedded code the hash review cannot see.");
+    }
 
     public static BatLintResult Inspect(string script)
     {
@@ -47,6 +65,7 @@ public static class BatScriptLint
                 continue;
             Collect(line, index + 1, Errors, errors);
             Collect(line, index + 1, Warnings, warnings);
+            CollectSelfRead(line, index + 1, warnings);
         }
         return new BatLintResult(errors, warnings);
     }

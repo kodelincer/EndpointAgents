@@ -28,6 +28,11 @@ public sealed class BatScriptLintTests
     [InlineData("mshta vbscript:Close()")]
     [InlineData("msg * hello")]
     [InlineData("call %TEMP%\\next.bat")]
+    [InlineData("reg add hkcu\\software\\classes\\.x\\shell\\runas\\command /f /ve /d cmd")]
+    [InlineData("powershell -nop -c \"Invoke-Expression $code\"")]
+    [InlineData("powershell -nop -c iex($payload)")]
+    [InlineData("expand -R package.cab -F:* .")]
+    [InlineData("powershell -nop -c \"Get-Content '%~f0' | Out-Null\"")]
     public void FragileUnattendedCommandsAreWarnings(string line)
     {
         var result = BatScriptLint.Inspect($"@echo off\r\n{line}\r\n");
