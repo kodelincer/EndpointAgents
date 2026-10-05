@@ -13,17 +13,23 @@ internal static class Program
                 .GetAwaiter().GetResult();
 
         var sessionId = System.Diagnostics.Process.GetCurrentProcess().SessionId;
-        // Smoke and preview runs must not block (or be blocked by) the real tray instance.
+        // Smoke, snapshot and icon-export runs are throwaway and never block anything.
+        // The preview is single-instance on its own, apart from the real tray.
         var smoke = args.Any(argument => argument.EndsWith("-smoke",
             StringComparison.OrdinalIgnoreCase)
-            || argument is "--ui-preview" or "--export-icon");
-        var mutexName = smoke
-            ? $@"Local\EndpointAgents.Tray.Smoke.{Environment.ProcessId}"
+            || argument is "--snapshot" or "--export-icon");
+        var preview = args.Contains("--ui-preview");
+        var mutexName = smoke ? $@"Local\EndpointAgents.Tray.Smoke.{Environment.ProcessId}"
+            : preview ? $@"Local\EndpointAgents.Tray.Preview.{sessionId}"
             : $@"Local\EndpointAgents.Tray.{sessionId}";
         using var instance = new Mutex(true, mutexName,
             out var createdNew);
         if (!createdNew)
+        {
+            // Standard single-instance behaviour: launching again shows the running window.
+            if (!preview) TrayApplicationController.SignalShowWindow(sessionId);
             return 0;
+        }
 
         Microsoft.UI.Xaml.Application.Start(_initialization =>
         {

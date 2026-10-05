@@ -14,6 +14,9 @@ public sealed class TrayApplicationController : IDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Action _exitApplication;
     private readonly Task _ipcServerTask;
+    private readonly EventWaitHandle _showRequested = new(false, EventResetMode.AutoReset,
+        ShowEventName(System.Diagnostics.Process.GetCurrentProcess().SessionId));
+    private readonly RegisteredWaitHandle _showRequests;
     private SupportWindow? _supportWindow;
     private AgentRuntimeSnapshot? _lastRuntime;
     private TrayStatus? _lastStatus;
@@ -48,6 +51,13 @@ public sealed class TrayApplicationController : IDisposable
         };
         _notifyIcon.DoubleClick += (_, _) => OpenWindow(SupportSection.Helpdesk);
 
+        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        _showRequests = ThreadPool.RegisterWaitForSingleObject(
+            _showRequested, (_, _) => dispatcher.TryEnqueue(() =>
+            {
+                if (!_disposed) OpenWindow(SupportSection.Helpdesk);
+            }), null, Timeout.Infinite, executeOnlyOnce: false);
+
         var server = new TrayIpcServer(System.Diagnostics.Process.GetCurrentProcess().SessionId);
         _ipcServerTask = server.RunAsync(_shutdown.Token);
         _ = _ipcServerTask.ContinueWith(task =>
@@ -60,6 +70,16 @@ public sealed class TrayApplicationController : IDisposable
         TrayEventLogger.Information(
             "برنامه ناحیه اعلان دستیار پشتیبانی برای نشست کاربر اجرا شد.");
         _ = RefreshStatusAsync();
+    }
+
+    private static string ShowEventName(int sessionId) =>
+        $@"Local\EndpointAgents.Tray.Show.{sessionId}";
+
+    // Called by a second launch of the tray in the same session.
+    public static void SignalShowWindow(int sessionId)
+    {
+        if (EventWaitHandle.TryOpenExisting(ShowEventName(sessionId), out var handle))
+            using (handle) handle.Set();
     }
 
     private SupportWindow EnsureWindow() =>
@@ -164,6 +184,8 @@ public sealed class TrayApplicationController : IDisposable
         if (_disposed) return;
         _disposed = true;
         _statusTimer.Stop();
+        _showRequests.Unregister(null);
+        _showRequested.Dispose();
         _shutdown.Cancel();
         _supportWindow?.ClosePermanently();
         _supportWindow = null;
