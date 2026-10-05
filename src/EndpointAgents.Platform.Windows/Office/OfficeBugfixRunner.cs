@@ -17,6 +17,9 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
     internal const int OutputLimitBytes = 1024 * 1024;
     internal const int OutputTailCharacters = 4096;
     internal static readonly TimeSpan StartupAllowance = TimeSpan.FromSeconds(30);
+    // Long enough for brief progress or splash windows to close on their own.
+    internal static readonly TimeSpan GuiDialogGrace = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan GuiPollInterval = TimeSpan.FromMilliseconds(500);
     private readonly OfficeRemediationOptions _options = options.Value;
 
     public async Task<OfficeBugfixRunResult> RunAsync(string path,
@@ -79,7 +82,7 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
     internal static async Task<OfficeBugfixRunResult> RunProcessAsync(
         ProcessStartInfo startInfo, BatchPlaybook playbook,
         CancellationToken cancellationToken, TimeSpan? overallTimeout = null,
-        int outputLimitBytes = OutputLimitBytes)
+        int outputLimitBytes = OutputLimitBytes, Func<int, bool>? guiWindowProbe = null)
     {
         if (!BatchPlaybookPolicy.TryNormalize(playbook, out var normalized,
                 out var validationError))
@@ -92,7 +95,8 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
         var collector = new BatchOutputCollector(outputLimitBytes,
             normalized!.FailureMarkers);
         var result = await RunProcessCoreAsync(startInfo, normalized, collector,
-            cancellationToken, overallTimeout);
+            cancellationToken, overallTimeout,
+            guiWindowProbe ?? GuiWindowProbe.HasVisibleWindow);
         // Unsuccessful runs keep a short, redacted end of the output for diagnosis.
         return result.State == OfficeBugfixRunStates.Completed ? result
             : result with
@@ -105,7 +109,7 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
     private static async Task<OfficeBugfixRunResult> RunProcessCoreAsync(
         ProcessStartInfo startInfo, BatchPlaybook normalized,
         BatchOutputCollector collector, CancellationToken cancellationToken,
-        TimeSpan? overallTimeout)
+        TimeSpan? overallTimeout, Func<int, bool> guiWindowProbe)
     {
         using var process = new Process { StartInfo = startInfo };
         Task[] pumps = [];
@@ -115,12 +119,16 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
         using var overall = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken);
         overall.CancelAfter(overallTimeout ?? Timeout);
+        using var monitorStop = CancellationTokenSource.CreateLinkedTokenSource(
+            overall.Token);
         try
         {
             if (!process.Start())
                 return Result(null, null, OfficeBugfixRunStates.ProcessFailed,
                     completedSteps, 0);
             processId = process.Id;
+            _ = MonitorGuiWindowsAsync(process.Id, guiWindowProbe, collector,
+                monitorStop.Token);
             pumps =
             [
                 PumpAsync(process.StandardOutput, collector),
@@ -165,6 +173,7 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                     PromptWaitResult.ReaderFailed => OfficeBugfixRunStates.ProcessFailed,
                     PromptWaitResult.FailureMarker =>
                         OfficeBugfixRunStates.FailureMarkerDetected,
+                    PromptWaitResult.GuiDialog => OfficeBugfixRunStates.GuiDialogBlocked,
                     PromptWaitResult.Ended when !RemainingStepsAreOptional(steps,
                             index, repeats) =>
                         OfficeBugfixRunStates.ExitedBeforePlaybookCompleted,
@@ -234,7 +243,8 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
 
             var exitTask = process.WaitForExitAsync(overall.Token);
             var winner = await Task.WhenAny(exitTask, collector.OutputLimitTask,
-                collector.ReaderFailureTask, collector.FailureMarkerTask);
+                collector.ReaderFailureTask, collector.FailureMarkerTask,
+                collector.GuiDialogTask);
             if (winner != exitTask)
             {
                 await StopAsync(process, pumps);
@@ -272,6 +282,41 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                 OfficeBugfixRunStates.ProcessFailed, completedSteps,
                 completedSteps < normalized!.Steps.Count ? completedSteps : null);
         }
+        finally
+        {
+            monitorStop.Cancel();
+        }
+    }
+
+    /// <summary>
+    /// Reports a GUI dialog when a window of the BAT's process tree stays visible for
+    /// <see cref="GuiDialogGrace"/>; short-lived splash windows are ignored.
+    /// </summary>
+    private static async Task MonitorGuiWindowsAsync(int processId,
+        Func<int, bool> probe, BatchOutputCollector collector,
+        CancellationToken cancellationToken)
+    {
+        DateTime? visibleSince = null;
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(GuiPollInterval, cancellationToken);
+                bool visible;
+                try { visible = probe(processId); }
+                catch { visible = false; }
+                if (!visible)
+                {
+                    visibleSince = null;
+                    continue;
+                }
+                visibleSince ??= DateTime.UtcNow;
+                if (DateTime.UtcNow - visibleSince < GuiDialogGrace) continue;
+                collector.ReportGuiDialog();
+                return;
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     internal static async Task<bool> IsApprovedAsync(string path, string artifactId,
@@ -428,6 +473,8 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
         winner == collector.OutputLimitTask ? OfficeBugfixRunStates.OutputLimitExceeded
         : winner == collector.FailureMarkerTask
             ? OfficeBugfixRunStates.FailureMarkerDetected
+        : winner == collector.GuiDialogTask
+            ? OfficeBugfixRunStates.GuiDialogBlocked
             : OfficeBugfixRunStates.ProcessFailed;
 
     private static string EvaluateCompletion(BatchPlaybook playbook, int exitCode,
@@ -455,6 +502,7 @@ public static class OfficeBugfixRunStates
     public const string FailureMarkerDetected = "FailureMarkerDetected";
     public const string SuccessMarkerMissing = "SuccessMarkerMissing";
     public const string RepeatLimitExceeded = "RepeatLimitExceeded";
+    public const string GuiDialogBlocked = "GuiDialogBlocked";
 }
 
 public sealed record OfficeBugfixRunResult(

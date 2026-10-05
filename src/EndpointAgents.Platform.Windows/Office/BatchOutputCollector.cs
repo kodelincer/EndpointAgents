@@ -8,7 +8,8 @@ internal enum PromptWaitResult
     Ended,
     OutputLimitExceeded,
     ReaderFailed,
-    FailureMarker
+    FailureMarker,
+    GuiDialog
 }
 
 internal readonly record struct PromptMatch(PromptWaitResult Result, int CandidateIndex);
@@ -31,6 +32,7 @@ internal sealed class BatchOutputCollector
     private readonly TaskCompletionSource<bool> _outputLimit = NewSignal();
     private readonly TaskCompletionSource<bool> _readerFailure = NewSignal();
     private readonly TaskCompletionSource<bool> _failureMarker = NewSignal();
+    private readonly TaskCompletionSource<bool> _guiDialog = NewSignal();
     private int _remainingReaders = 2;
     private long _capturedBytes;
     private bool _pendingSpace;
@@ -50,6 +52,16 @@ internal sealed class BatchOutputCollector
     internal Task OutputLimitTask => _outputLimit.Task;
     internal Task ReaderFailureTask => _readerFailure.Task;
     internal Task FailureMarkerTask => _failureMarker.Task;
+    internal Task GuiDialogTask => _guiDialog.Task;
+
+    internal void ReportGuiDialog()
+    {
+        lock (_gate)
+        {
+            _guiDialog.TrySetResult(true);
+            Pulse();
+        }
+    }
 
     internal void Append(ReadOnlySpan<char> text, int byteCount)
     {
@@ -118,6 +130,8 @@ internal sealed class BatchOutputCollector
                     return new(PromptWaitResult.ReaderFailed, -1);
                 if (_failureMarker.Task.IsCompleted)
                     return new(PromptWaitResult.FailureMarker, -1);
+                if (_guiDialog.Task.IsCompleted)
+                    return new(PromptWaitResult.GuiDialog, -1);
 
                 var best = -1;
                 var bestPosition = int.MaxValue;

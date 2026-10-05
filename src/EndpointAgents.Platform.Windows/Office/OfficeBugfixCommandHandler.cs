@@ -314,6 +314,8 @@ public sealed class OfficeBugfixCommandHandler(
                 "The approved Office repair finished without its approved success message."),
             OfficeBugfixRunStates.RepeatLimitExceeded => (508,
                 "The approved Office repair repeated a prompt more often than approved."),
+            OfficeBugfixRunStates.GuiDialogBlocked => (409,
+                "The approved Office repair opened a window that needs a mouse click, which unattended runs cannot answer."),
             _ => (500, "The approved Office repair process failed.")
         };
         return execution.State != OfficeBugfixRunStates.Completed;

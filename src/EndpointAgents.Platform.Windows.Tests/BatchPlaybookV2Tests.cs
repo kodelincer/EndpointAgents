@@ -257,6 +257,72 @@ public sealed class BatchPlaybookV2Tests
         }
     }
 
+    // ---- GUI dialogs ----
+
+    [Fact]
+    public async Task PersistentWindowStopsTheRunWithoutWaitingForTheTimeout()
+    {
+        var clock = Stopwatch.StartNew();
+
+        var result = await OfficeBugfixRunner.RunProcessAsync(
+            OfficeBugfixRunner.CreateStartInfo(SamplePath),
+            V2(Step("Never shown", "1")), TestContext.Current.CancellationToken,
+            guiWindowProbe: _ => true);
+
+        Assert.Equal(OfficeBugfixRunStates.GuiDialogBlocked, result.State);
+        Assert.Equal(0, result.FailedStepIndex);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(Wait), clock.Elapsed.ToString());
+    }
+
+    [Fact]
+    public async Task ShortLivedWindowIsNotADialog()
+    {
+        var checks = 0;
+
+        var result = await OfficeBugfixRunner.RunProcessAsync(
+            OfficeBugfixRunner.CreateStartInfo(SamplePath),
+            V2(Step("Main menu choice:", "9")), TestContext.Current.CancellationToken,
+            guiWindowProbe: _ => Interlocked.Increment(ref checks) <= 2);
+
+        Assert.Equal(OfficeBugfixRunStates.Completed, result.State);
+    }
+
+    // A dialog shown under the hidden, redirected runner returns at once on an
+    // interactive desktop, so the real probe is checked against a normally started
+    // message box instead. The session 0 behaviour of the service is not reproduced.
+    [Fact]
+    public async Task ProbeSeesAMessageBoxButNotAWindowlessProcess()
+    {
+        using var dialog = Process.Start(new ProcessStartInfo("powershell.exe",
+            "-NoProfile -Command \"Add-Type -AssemblyName System.Windows.Forms;"
+            + " [void][System.Windows.Forms.MessageBox]::Show('EndpointAgents probe test')\"")
+        {
+            UseShellExecute = true, WindowStyle = ProcessWindowStyle.Minimized
+        })!;
+        using var windowless = Process.Start(new ProcessStartInfo("cmd.exe",
+            "/d /c ping -n 20 127.0.0.1 >nul")
+        {
+            UseShellExecute = false, CreateNoWindow = true
+        })!;
+        try
+        {
+            var seen = false;
+            for (var attempt = 0; attempt < 40 && !seen; attempt++)
+            {
+                await Task.Delay(250, TestContext.Current.CancellationToken);
+                seen = GuiWindowProbe.HasVisibleWindow(dialog.Id);
+            }
+
+            Assert.True(seen);
+            Assert.False(GuiWindowProbe.HasVisibleWindow(windowless.Id));
+        }
+        finally
+        {
+            dialog.Kill(entireProcessTree: true);
+            windowless.Kill(entireProcessTree: true);
+        }
+    }
+
     // ---- Failure output tail ----
 
     [Fact]
