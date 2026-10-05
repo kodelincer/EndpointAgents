@@ -97,6 +97,7 @@ adds, all with literal matching only:
 | `successExitCodes` | playbook | Accepted exit codes (default `[0]`, at most 16). |
 | `successMarker` | playbook | Text that must appear in the output, or the run is `SuccessMarkerMissing`. |
 | `failureMarkers` | playbook | Up to 16 texts that stop the run immediately as `FailureMarkerDetected`, including a known unexpected prompt or a printed failure with exit code 0. |
+| `guiDialogGraceSeconds` | playbook | 5–600, default 15. A window from the BAT that stays visible this long stops the run as `GuiDialogBlocked`; see [bat-packages.md](bat-packages.md#5-windows-that-need-a-mouse). |
 
 At most 64 responses are sent per run. The playbook hash covers every field, so any
 change needs fresh approval. Version 1 hashes are unchanged. A prompt that is neither
