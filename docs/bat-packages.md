@@ -97,7 +97,24 @@ to report.
 The best fix for a BAT with dialogs is a silent or unattended switch from its vendor
 (many tools accept `/silent`, `/s`, or `/quiet`), so that it needs no window at all.
 
-## 6. Publish
+## 6. Adding a real BAT
+
+`deploy/samples/menu-repair-sample.bat` and its playbook are a print-only mock with the
+same structure many vendor tools have (banner, extraction pause, main menu, sub-menu,
+one-key choice, self-closing message box, progress lines, success line, "press any
+key", exits). Use it to develop and test the pipeline. A real vendor BAT never matches
+its wording, so it is not a drop-in template:
+
+1. Review the real BAT and run the lab without `-Execute`; resolve lint findings.
+2. Start a playbook with only the first screen, then run the lab with
+   `-Execute -Discover` and add one step per screen, copying short stable fragments of
+   the real prompt text, until the run reports `Completed`.
+3. Set `successMarker` and `failureMarkers` from the real success and error lines.
+4. Copy the BAT hash and playbook from the lab's manifest draft into a new manifest
+   entry with the BAT's own artifact id and its compatible versions.
+5. Pilot on one test endpoint (section 7).
+
+## 7. Publish
 
 1. Copy the BAT (and any `supportFiles`) into the protected file repository.
 2. Add the manifest entry and check the dashboard's catalog issues for lint findings.
