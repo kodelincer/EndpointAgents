@@ -412,7 +412,7 @@
                                                          MinHeight="44" MaxHeight="120" MaxLength="200"
                                                          Padding="16,11" CornerRadius="22"
                                                          VerticalContentAlignment="Center"
-                                                         PlaceholderText="پیام خود را بنویسید…"
+                                                         PlaceholderText="مشکل خود را بنویسید…"
                                                          TextChanged="MessageInput_TextChanged"
                                                          PreviewKeyDown="MessageInput_KeyDown"
                                                          AutomationProperties.AutomationId="MessageInput"
@@ -534,6 +534,11 @@
                                             <Border Style="{StaticResource DetailsCardStyle}">
                                                 <StackPanel Spacing="8">
                                                     <TextBlock Text="راهنما" Style="{StaticResource CardTitleStyle}" />
+                                                    <Border Padding="10,8" CornerRadius="8"
+                                                            Background="{ThemeResource EndpointAccentBrush}">
+                                                        <TextBlock Foreground="White" FontSize="12" TextWrapping="Wrap"
+                                                                   Text="لطفاً نیازی به سلام و احوال‌پرسی با دستیار نیست؛ همان اول، مشکل خود را بنویسید." />
+                                                    </Border>
                                                     <TextBlock Style="{StaticResource MetadataTextStyle}"
                                                                Text="مشکل را ساده و کامل بنویسید؛ دستیار رایانه شما را بررسی می‌کند." />
                                                     <TextBlock Style="{StaticResource MetadataTextStyle}"

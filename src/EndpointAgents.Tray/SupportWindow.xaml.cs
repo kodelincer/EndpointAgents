@@ -41,6 +41,7 @@ public sealed partial class SupportWindow : Window
     private readonly Func<Task> _refreshStatus;
     private readonly ServiceIpcClient _serviceClient = new();
     private readonly EndpointEventLogReader _logReader = new();
+    private readonly TrayIconFactory _windowIcons = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly HashSet<string> _renderedMessageIds = [];
     private readonly HashSet<string> _seenActionIds = [];
@@ -97,6 +98,7 @@ public sealed partial class SupportWindow : Window
         ResizeWindowInDips(InitialWidthDips, InitialHeightDips);
         UpdateTitleBarInsets();
         _appWindow.Title = Title;
+        SetWindowIcon(TrayHealthState.Checking);
         _appWindow.Closing += AppWindow_Closing;
         _appWindow.Changed += AppWindow_Changed;
 
@@ -179,6 +181,7 @@ public sealed partial class SupportWindow : Window
         }
 
         ViewModel.ApplyStatus(status);
+        SetWindowIcon(status.Health);
         var dot = new SolidColorBrush(status.Health switch
         {
             TrayHealthState.Ready => ColorHelper.FromArgb(255, 0x2E, 0xB8, 0x72),
@@ -194,6 +197,11 @@ public sealed partial class SupportWindow : Window
         UpdateSubmitState();
     }
 
+    // Taskbar and title-bar icon follow the same health colour as the tray icon.
+    private void SetWindowIcon(TrayHealthState health) =>
+        _appWindow.SetIcon(Win32Interop.GetIconIdFromIcon(
+            _windowIcons.Get(health, 32).Handle));
+
     public void ClosePermanently()
     {
         if (_allowClose) return;
@@ -206,6 +214,7 @@ public sealed partial class SupportWindow : Window
         ViewModel.Conversation.CollectionChanged -= Conversation_CollectionChanged;
         Close();
         _lifetime.Dispose();
+        _windowIcons.Dispose();
     }
 
     private async void WindowRoot_Loaded(object sender, RoutedEventArgs e)
@@ -910,7 +919,7 @@ public sealed partial class SupportWindow : Window
         ClosedConversationButton.IsEnabled = ViewModel.IsConnected && !_startingConversation;
         MessageInput.PlaceholderText = readOnly
             ? "این گفتگو بسته شده و فقط برای مشاهده است."
-            : "پیام خود را بنویسید…";
+            : "مشکل خود را بنویسید…";
         if (readOnly && string.IsNullOrWhiteSpace(ViewModel.SubmitResult))
             ViewModel.SubmitResult =
                 "این گفتگو بسته شده است؛ برای درخواست تازه، گفتگوی جدید بسازید.";

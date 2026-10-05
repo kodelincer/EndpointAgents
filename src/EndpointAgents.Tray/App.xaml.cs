@@ -35,6 +35,18 @@ public sealed partial class App : Microsoft.UI.Xaml.Application
             return;
         }
 #if DEBUG
+        var exportIcon = Array.IndexOf(arguments, "--export-icon");
+        if (exportIcon > 0 && exportIcon + 1 < arguments.Length)
+        {
+            TrayIconFactory.WriteIco(arguments[exportIcon + 1], TrayHealthState.Ready);
+            foreach (var state in Enum.GetValues<TrayHealthState>())
+            {
+                using var bitmap = TrayIconFactory.Draw(state, 64);
+                bitmap.Save(Path.ChangeExtension(arguments[exportIcon + 1], $"{state}.png"));
+            }
+            Exit();
+            return;
+        }
         if (arguments.Contains("--ui-preview", StringComparer.OrdinalIgnoreCase))
         {
             _smokeWindow = new SupportWindow(() => Task.CompletedTask);
