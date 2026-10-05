@@ -20,7 +20,8 @@ public sealed record BatchPlaybook(
     IReadOnlyList<BatchPlaybookStep> Steps,
     IReadOnlyList<int>? SuccessExitCodes = null,
     string? SuccessMarker = null,
-    IReadOnlyList<string>? FailureMarkers = null);
+    IReadOnlyList<string>? FailureMarkers = null,
+    int? GuiDialogGraceSeconds = null);
 
 public sealed record BatchPlaybookStep(
     string Expect,
@@ -51,6 +52,9 @@ public static class BatchPlaybookPolicy
     public const int MaximumExitCodes = 16;
     public const int MaximumFailureMarkers = 16;
     public const int MaximumMarkerCharacters = 128;
+    public const int DefaultGuiDialogGraceSeconds = 15;
+    public const int MinimumGuiDialogGraceSeconds = 5;
+    public const int MaximumGuiDialogGraceSeconds = 600;
 
     private static readonly IReadOnlyList<int> DefaultSuccessExitCodes = [0];
 
@@ -65,6 +69,11 @@ public static class BatchPlaybookPolicy
     public static IReadOnlyList<int> GetSuccessExitCodes(BatchPlaybook playbook) =>
         playbook.SuccessExitCodes is { Count: > 0 } codes
             ? codes : DefaultSuccessExitCodes;
+
+    /// <summary>How long a GUI window may stay open before the run counts as blocked.</summary>
+    public static TimeSpan GetGuiDialogGrace(BatchPlaybook playbook) =>
+        TimeSpan.FromSeconds(playbook.GuiDialogGraceSeconds
+            ?? DefaultGuiDialogGraceSeconds);
 
     public static bool TryNormalize(BatchPlaybook? playbook,
         out BatchPlaybook? normalized, out string? error)
@@ -81,7 +90,8 @@ public static class BatchPlaybookPolicy
                 out error);
         if (!isV2 && (playbook.SuccessExitCodes is not null
                 || playbook.SuccessMarker is not null
-                || playbook.FailureMarkers is not null))
+                || playbook.FailureMarkers is not null
+                || playbook.GuiDialogGraceSeconds is not null))
             return Fail("Exit codes and output markers require playbook version 2.",
                 out error);
 
@@ -169,8 +179,14 @@ public static class BatchPlaybookPolicy
             return Fail($"failureMarkers must contain at most {MaximumFailureMarkers} distinct values.",
                 out error);
 
+        if (playbook.GuiDialogGraceSeconds is < MinimumGuiDialogGraceSeconds
+            or > MaximumGuiDialogGraceSeconds)
+            return Fail($"guiDialogGraceSeconds must be between {MinimumGuiDialogGraceSeconds} and {MaximumGuiDialogGraceSeconds}.",
+                out error);
+
         normalized = new BatchPlaybook(2, steps, exitCodes.Order().ToArray(),
-            successMarker, failureMarkers);
+            successMarker, failureMarkers,
+            playbook.GuiDialogGraceSeconds ?? DefaultGuiDialogGraceSeconds);
         error = null;
         return true;
     }
@@ -213,6 +229,7 @@ public static class BatchPlaybookPolicy
                 writer.Write(normalized.SuccessMarker ?? string.Empty);
                 writer.Write(normalized.FailureMarkers!.Count);
                 foreach (var marker in normalized.FailureMarkers) writer.Write(marker);
+                writer.Write(normalized.GuiDialogGraceSeconds!.Value);
             }
         }
         return Convert.ToHexString(SHA256.HashData(stream.GetBuffer()

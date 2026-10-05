@@ -266,8 +266,8 @@ public sealed class BatchPlaybookV2Tests
 
         var result = await OfficeBugfixRunner.RunProcessAsync(
             OfficeBugfixRunner.CreateStartInfo(SamplePath),
-            V2(Step("Never shown", "1")), TestContext.Current.CancellationToken,
-            guiWindowProbe: _ => true);
+            V2(Step("Never shown", "1")) with { GuiDialogGraceSeconds = 5 },
+            TestContext.Current.CancellationToken, guiWindowProbe: _ => true);
 
         Assert.Equal(OfficeBugfixRunStates.GuiDialogBlocked, result.State);
         Assert.Equal(0, result.FailedStepIndex);
@@ -478,7 +478,11 @@ public sealed class BatchPlaybookV2Tests
         V2(Step("Prompt", "1")) with { SuccessExitCodes = [0, 0] },
         V2(Step("Prompt", "1")) with { SuccessMarker = "   " },
         V2(Step("Prompt", "1")) with { FailureMarkers = [new string('x', 129)] },
-        V2(Step("Prompt", "1")) with { FailureMarkers = ["FAILED", "failed"] }
+        V2(Step("Prompt", "1")) with { FailureMarkers = ["FAILED", "failed"] },
+        V2(Step("Prompt", "1")) with { GuiDialogGraceSeconds = 4 },
+        V2(Step("Prompt", "1")) with { GuiDialogGraceSeconds = 601 },
+        new BatchPlaybook(1, [new BatchPlaybookStep("Prompt", "1", "line", 30)],
+            GuiDialogGraceSeconds: 60)
     ];
 
     [Theory]
@@ -509,7 +513,8 @@ public sealed class BatchPlaybookV2Tests
                 alternatives: new BatchPlaybookChoice("Other", "3", "line"))] },
             baseline with { SuccessExitCodes = [0] },
             baseline with { SuccessMarker = null },
-            baseline with { FailureMarkers = ["ERROR"] }
+            baseline with { FailureMarkers = ["ERROR"] },
+            baseline with { GuiDialogGraceSeconds = 60 }
         ];
 
         Assert.All(variants, variant => Assert.NotEqual(hash,

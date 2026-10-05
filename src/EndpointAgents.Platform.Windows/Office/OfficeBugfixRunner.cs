@@ -17,8 +17,6 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
     internal const int OutputLimitBytes = 1024 * 1024;
     internal const int OutputTailCharacters = 4096;
     internal static readonly TimeSpan StartupAllowance = TimeSpan.FromSeconds(30);
-    // Long enough for brief progress or splash windows to close on their own.
-    internal static readonly TimeSpan GuiDialogGrace = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan GuiPollInterval = TimeSpan.FromMilliseconds(500);
     private readonly OfficeRemediationOptions _options = options.Value;
 
@@ -127,7 +125,8 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                 return Result(null, null, OfficeBugfixRunStates.ProcessFailed,
                     completedSteps, 0);
             processId = process.Id;
-            _ = MonitorGuiWindowsAsync(process.Id, guiWindowProbe, collector,
+            _ = MonitorGuiWindowsAsync(process.Id, guiWindowProbe,
+                BatchPlaybookPolicy.GetGuiDialogGrace(normalized), collector,
                 monitorStop.Token);
             pumps =
             [
@@ -290,10 +289,10 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
 
     /// <summary>
     /// Reports a GUI dialog when a window of the BAT's process tree stays visible for
-    /// <see cref="GuiDialogGrace"/>; short-lived splash windows are ignored.
+    /// the playbook's grace period, so short-lived progress windows are ignored.
     /// </summary>
     private static async Task MonitorGuiWindowsAsync(int processId,
-        Func<int, bool> probe, BatchOutputCollector collector,
+        Func<int, bool> probe, TimeSpan grace, BatchOutputCollector collector,
         CancellationToken cancellationToken)
     {
         DateTime? visibleSince = null;
@@ -311,7 +310,7 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                     continue;
                 }
                 visibleSince ??= DateTime.UtcNow;
-                if (DateTime.UtcNow - visibleSince < GuiDialogGrace) continue;
+                if (DateTime.UtcNow - visibleSince < grace) continue;
                 collector.ReportGuiDialog();
                 return;
             }
