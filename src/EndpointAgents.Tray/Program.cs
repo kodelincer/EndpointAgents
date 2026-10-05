@@ -13,8 +13,10 @@ internal static class Program
                 .GetAwaiter().GetResult();
 
         var sessionId = System.Diagnostics.Process.GetCurrentProcess().SessionId;
+        // Smoke and preview runs must not block (or be blocked by) the real tray instance.
         var smoke = args.Any(argument => argument.EndsWith("-smoke",
-            StringComparison.OrdinalIgnoreCase));
+            StringComparison.OrdinalIgnoreCase)
+            || argument is "--ui-preview" or "--export-icon");
         var mutexName = smoke
             ? $@"Local\EndpointAgents.Tray.Smoke.{Environment.ProcessId}"
             : $@"Local\EndpointAgents.Tray.{sessionId}";

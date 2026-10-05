@@ -154,7 +154,8 @@ public sealed partial class SupportWindow : Window
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => HideToTray();
 
-    // Close and minimize keep the app running in the notification area.
+    // Minimize goes to the taskbar; close hides the window and the app keeps running
+    // behind its notification-area icon.
     private void HideToTray()
     {
         if (_previewMode)
@@ -269,13 +270,6 @@ public sealed partial class SupportWindow : Window
                     Math.Max(minimumHeight, size.Height)));
         }
         if (args.DidPresenterChange || args.DidSizeChange) UpdateMaximizeGlyph();
-        if (args.DidPresenterChange
-            && _appWindow.Presenter is OverlappedPresenter
-            { State: OverlappedPresenterState.Minimized })
-        {
-            _appWindow.Hide();
-            UpdatePolling();
-        }
     }
 
     private void Navigation_SelectionChanged(NavigationView sender,
