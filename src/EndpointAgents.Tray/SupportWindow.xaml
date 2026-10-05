@@ -124,44 +124,63 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Custom caption buttons sit physically left (last column in RTL), outside the drag region. -->
-        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right"
-                    VerticalAlignment="Center" Spacing="4" Margin="0,0,10,0" Canvas.ZIndex="1">
+        <!-- macOS-style "traffic light" buttons, physically left (last column in RTL), outside the drag region.
+             Children run right-to-left, so the physical order is close, minimize, maximize. -->
+        <StackPanel x:Name="CaptionButtons" Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right"
+                    VerticalAlignment="Center" Spacing="4" Margin="0,0,10,0" Canvas.ZIndex="1"
+                    PointerEntered="CaptionButtons_PointerEntered" PointerExited="CaptionButtons_PointerExited">
             <StackPanel.Resources>
-                <Style x:Key="CaptionButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-                    <Setter Property="Width" Value="30" />
-                    <Setter Property="Height" Value="30" />
-                    <Setter Property="Padding" Value="0" />
-                    <Setter Property="CornerRadius" Value="15" />
-                    <Setter Property="Background" Value="Transparent" />
-                    <Setter Property="BorderThickness" Value="0" />
+                <Style x:Key="CaptionButtonStyle" TargetType="Button">
                     <Setter Property="IsTabStop" Value="False" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Grid Width="20" Height="20" Background="Transparent">
+                                    <VisualStateManager.VisualStateGroups>
+                                        <VisualStateGroup x:Name="CommonStates">
+                                            <VisualState x:Name="Normal" />
+                                            <VisualState x:Name="PointerOver" />
+                                            <VisualState x:Name="Pressed">
+                                                <VisualState.Setters>
+                                                    <Setter Target="Light.Opacity" Value="0.7" />
+                                                </VisualState.Setters>
+                                            </VisualState>
+                                        </VisualStateGroup>
+                                    </VisualStateManager.VisualStateGroups>
+                                    <Ellipse x:Name="Light" Width="13" Height="13"
+                                             Fill="{TemplateBinding Background}"
+                                             Stroke="#26000000" StrokeThickness="0.5" />
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+                <Style x:Key="CaptionGlyphStyle" TargetType="FontIcon">
+                    <Setter Property="FontSize" Value="7" />
+                    <Setter Property="FontWeight" Value="Bold" />
+                    <Setter Property="Foreground" Value="#A0000000" />
+                    <Setter Property="Opacity" Value="0" />
                 </Style>
             </StackPanel.Resources>
-            <Button x:Name="MinimizeButton" Style="{StaticResource CaptionButtonStyle}"
-                    Click="MinimizeButton_Click" ToolTipService.ToolTip="کوچک کردن"
-                    AutomationProperties.Name="کوچک کردن">
-                <FontIcon Glyph="&#xE949;" FontSize="11" />
-            </Button>
-            <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButtonStyle}"
+            <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButtonStyle}" Background="#FF28C840"
                     Click="MaximizeButton_Click" ToolTipService.ToolTip="بزرگ کردن"
                     AutomationProperties.Name="بزرگ کردن">
-                <FontIcon x:Name="MaximizeGlyph" Glyph="&#xE740;" FontSize="11" />
+                <FontIcon x:Name="MaximizeGlyph" Glyph="&#xE740;" Style="{StaticResource CaptionGlyphStyle}" />
             </Button>
-            <Button x:Name="CloseButton" Click="CloseButton_Click"
-                    ToolTipService.ToolTip="بستن" AutomationProperties.Name="بستن"
-                    Style="{StaticResource CaptionButtonStyle}">
-                <Button.Resources>
-                    <SolidColorBrush x:Key="ButtonBackgroundPointerOver" Color="#FFE53935" />
-                    <SolidColorBrush x:Key="ButtonBackgroundPressed" Color="#FFC62828" />
-                    <SolidColorBrush x:Key="ButtonForegroundPointerOver" Color="White" />
-                    <SolidColorBrush x:Key="ButtonForegroundPressed" Color="White" />
-                </Button.Resources>
-                <FontIcon Glyph="&#xE711;" FontSize="11" />
+            <Button x:Name="MinimizeButton" Style="{StaticResource CaptionButtonStyle}" Background="#FFFEBC2E"
+                    Click="MinimizeButton_Click" ToolTipService.ToolTip="کوچک کردن"
+                    AutomationProperties.Name="کوچک کردن">
+                <FontIcon x:Name="MinimizeGlyph" Glyph="&#xE949;" Style="{StaticResource CaptionGlyphStyle}" />
+            </Button>
+            <Button x:Name="CloseButton" Style="{StaticResource CaptionButtonStyle}" Background="#FFFF5F57"
+                    Click="CloseButton_Click" ToolTipService.ToolTip="بستن"
+                    AutomationProperties.Name="بستن">
+                <FontIcon x:Name="CloseGlyph" Glyph="&#xE711;" Style="{StaticResource CaptionGlyphStyle}" />
             </Button>
         </StackPanel>
 
-        <Grid x:Name="TitleBarDragRegion" Grid.Row="0" Padding="16,0" Margin="0,0,120,0" ColumnSpacing="10"
+        <Grid x:Name="TitleBarDragRegion" Grid.Row="0" Padding="16,0" Margin="0,0,90,0" ColumnSpacing="10"
               Background="Transparent">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />

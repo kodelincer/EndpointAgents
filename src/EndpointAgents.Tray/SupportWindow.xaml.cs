@@ -126,11 +126,21 @@ public sealed partial class SupportWindow : Window
     {
         var maximized = _appWindow.Presenter is OverlappedPresenter
             { State: OverlappedPresenterState.Maximized };
-        MaximizeGlyph.Glyph = maximized ? "" : "";
+        MaximizeGlyph.Glyph = maximized ? "" : "";
         var label = maximized ? "بازگرداندن اندازه" : "بزرگ کردن";
         ToolTipService.SetToolTip(MaximizeButton, label);
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MaximizeButton, label);
     }
+
+    // Like macOS, the symbols appear only while the pointer is over the button group.
+    private void CaptionButtons_PointerEntered(object sender, PointerRoutedEventArgs e) =>
+        SetCaptionGlyphOpacity(1);
+
+    private void CaptionButtons_PointerExited(object sender, PointerRoutedEventArgs e) =>
+        SetCaptionGlyphOpacity(0);
+
+    private void SetCaptionGlyphOpacity(double opacity) =>
+        MinimizeGlyph.Opacity = MaximizeGlyph.Opacity = CloseGlyph.Opacity = opacity;
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e) =>
         (_appWindow.Presenter as OverlappedPresenter)?.Minimize();
