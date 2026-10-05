@@ -88,7 +88,7 @@ public sealed partial class SupportWindow : Window
         };
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBarDragRegion);
-        Title = "عامل نقطه پایانی";
+        Title = "دستیار پشتیبانی";
 
         var hwnd = WindowNative.GetWindowHandle(this);
         // Mirror the frame so minimize/maximize/close sit on the left, as in RTL apps.
@@ -434,7 +434,7 @@ public sealed partial class SupportWindow : Window
                 _conversationListInitialized = true;
             }
             ViewModel.CompleteConversationListRefresh(
-                "ارتباط محلی با سرویس کامل نشد. سرویس عامل را به‌روزرسانی یا دوباره راه‌اندازی کنید.");
+                "ارتباط محلی با سرویس کامل نشد. سرویس دستیار پشتیبانی را به‌روزرسانی یا دوباره راه‌اندازی کنید.");
         }
         finally
         {
@@ -632,7 +632,7 @@ public sealed partial class SupportWindow : Window
             var dialog = new ContentDialog
             {
                 XamlRoot = WindowRoot.XamlRoot,
-                Title = "توقف سرویس عامل نقطه پایانی",
+                Title = "توقف سرویس دستیار پشتیبانی",
                 Content = "با توقف سرویس، این رایانه تا راه‌اندازی دوباره از پشتیبانی قطع می‌شود.",
                 PrimaryButtonText = "توقف سرویس",
                 CloseButtonText = "انصراف",
@@ -676,7 +676,7 @@ public sealed partial class SupportWindow : Window
         if (_loadingLogs || !_appWindow.IsVisible
             || LogsPage.Visibility != Visibility.Visible) return;
         _loadingLogs = true;
-        ViewModel.LogState = "در حال خواندن گزارش فعالیت عامل…";
+        ViewModel.LogState = "در حال خواندن گزارش فعالیت دستیار پشتیبانی…";
         try
         {
             _logs = await _logReader.ReadAsync(GetSelectedAge(), GetSelectedLogLevel(),
@@ -924,7 +924,7 @@ public sealed partial class SupportWindow : Window
             ViewModel.SubmitResult =
                 "این گفتگو بسته شده است؛ برای درخواست تازه، گفتگوی جدید بسازید.";
         const string disconnected =
-            "برای ارسال درخواست، عامل نقطه پایانی باید به سرور متصل باشد.";
+            "برای ارسال درخواست، دستیار پشتیبانی باید به سرور متصل باشد.";
         if (!ViewModel.IsConnected && string.IsNullOrWhiteSpace(ViewModel.SubmitResult))
             ViewModel.SubmitResult = disconnected;
         else if (ViewModel.IsConnected && ViewModel.SubmitResult == disconnected)

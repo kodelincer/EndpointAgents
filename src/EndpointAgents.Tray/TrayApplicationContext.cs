@@ -25,13 +25,13 @@ public sealed class TrayApplicationController : IDisposable
     {
         _exitApplication = exitApplication;
         var menu = new Forms.ContextMenuStrip { RightToLeft = Forms.RightToLeft.Yes };
-        _statusMenuItem = new Forms.ToolStripMenuItem("در حال بررسی وضعیت عامل…")
+        _statusMenuItem = new Forms.ToolStripMenuItem("در حال بررسی وضعیت دستیار پشتیبانی…")
         {
             Enabled = false
         };
         menu.Items.Add(_statusMenuItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("باز کردن عامل نقطه پایانی", null,
+        menu.Items.Add("باز کردن دستیار پشتیبانی", null,
             (_, _) => OpenWindow(SupportSection.Helpdesk));
         menu.Items.Add("مشاهده گزارش‌ها", null,
             (_, _) => OpenWindow(SupportSection.Logs));
@@ -41,7 +41,7 @@ public sealed class TrayApplicationController : IDisposable
         var initialIcon = _icons.Get(TrayHealthState.Checking);
         _notifyIcon = new Forms.NotifyIcon
         {
-            Text = "عامل نقطه پایانی - در حال بررسی",
+            Text = "دستیار پشتیبانی - در حال بررسی",
             Icon = initialIcon,
             Visible = true,
             ContextMenuStrip = menu
@@ -58,7 +58,7 @@ public sealed class TrayApplicationController : IDisposable
         _statusTimer.Tick += async (_, _) => await RefreshStatusAsync();
         _statusTimer.Start();
         TrayEventLogger.Information(
-            "برنامه ناحیه اعلان عامل نقطه پایانی برای نشست کاربر اجرا شد.");
+            "برنامه ناحیه اعلان دستیار پشتیبانی برای نشست کاربر اجرا شد.");
         _ = RefreshStatusAsync();
     }
 
@@ -129,17 +129,17 @@ public sealed class TrayApplicationController : IDisposable
     private void ApplyStatus(TrayStatus status)
     {
         _notifyIcon.Icon = _icons.Get(status.Health);
-        _notifyIcon.Text = LimitTooltip("عامل نقطه پایانی - " + status.Label);
+        _notifyIcon.Text = LimitTooltip("دستیار پشتیبانی - " + status.Label);
         _statusMenuItem.Text = status.Label;
         _supportWindow?.UpdateStatus(status);
 
         if (_lastStatus is { } previous && previous.Health != status.Health)
         {
             TrayEventLogger.Information(
-                $"وضعیت عامل از {previous.Health} به {status.Health} تغییر کرد: {status.Label}.");
+                $"وضعیت دستیار پشتیبانی از {previous.Health} به {status.Health} تغییر کرد: {status.Label}.");
             if (status.Health is TrayHealthState.Error)
             {
-                _notifyIcon.BalloonTipTitle = "عامل نقطه پایانی نیاز به بررسی دارد";
+                _notifyIcon.BalloonTipTitle = "دستیار پشتیبانی نیاز به بررسی دارد";
                 _notifyIcon.BalloonTipText = status.Detail;
                 _notifyIcon.BalloonTipIcon = Forms.ToolTipIcon.Error;
                 _notifyIcon.ShowBalloonTip(5_000);
@@ -147,8 +147,8 @@ public sealed class TrayApplicationController : IDisposable
             else if (previous.Health is TrayHealthState.Error or TrayHealthState.Warning
                      && status.Health == TrayHealthState.Ready)
             {
-                _notifyIcon.BalloonTipTitle = "عامل نقطه پایانی دوباره متصل شد";
-                _notifyIcon.BalloonTipText = "عامل دوباره متصل و آماده استفاده است.";
+                _notifyIcon.BalloonTipTitle = "دستیار پشتیبانی دوباره متصل شد";
+                _notifyIcon.BalloonTipText = "دستیار پشتیبانی دوباره متصل و آماده استفاده است.";
                 _notifyIcon.BalloonTipIcon = Forms.ToolTipIcon.Info;
                 _notifyIcon.ShowBalloonTip(4_000);
             }
@@ -173,6 +173,6 @@ public sealed class TrayApplicationController : IDisposable
         _icons.Dispose();
         _shutdown.Dispose();
         TrayEventLogger.Information(
-            "برنامه ناحیه اعلان عامل نقطه پایانی بسته شد.");
+            "برنامه ناحیه اعلان دستیار پشتیبانی بسته شد.");
     }
 }

@@ -496,15 +496,15 @@ internal sealed class ChatRunProgressView : Control
     private static string StartLabel(ChatProgressActivity activity) => activity switch
     {
         ChatProgressActivity.OfficeInventory =>
-            "درخواست بررسی نصب و نسخه آفیس به عامل ارسال شد",
+            "درخواست بررسی نصب و نسخه آفیس به دستیار پشتیبانی ارسال شد",
         ChatProgressActivity.OfficeActivationStatus =>
-            "درخواست بررسی فعال‌سازی آفیس به عامل ارسال شد",
+            "درخواست بررسی فعال‌سازی آفیس به دستیار پشتیبانی ارسال شد",
         ChatProgressActivity.OfficeRuntimeStatus =>
             "در حال بررسی برنامه‌های باز آفیس",
         ChatProgressActivity.WindowsActivationStatus =>
-            "درخواست بررسی فعال‌سازی ویندوز به عامل ارسال شد",
+            "درخواست بررسی فعال‌سازی ویندوز به دستیار پشتیبانی ارسال شد",
         ChatProgressActivity.ProposedAction => "در حال آماده‌سازی اقدام پیشنهادی",
-        _ => "درخواست بررسی به عامل ارسال شد"
+        _ => "درخواست بررسی به دستیار پشتیبانی ارسال شد"
     };
 
     private static string CompleteLabel(ChatProgressActivity activity,
@@ -528,7 +528,7 @@ internal sealed class ChatRunProgressView : Control
             ChatProgressActivity.ProposedAction => failed
                 ? "آماده‌سازی اقدام پیشنهادی ناموفق بود"
                 : "اقدام پیشنهادی آماده شد",
-            _ => failed ? "بررسی عامل ناموفق بود" : "بررسی عامل کامل شد"
+            _ => failed ? "بررسی رایانه ناموفق بود" : "بررسی رایانه کامل شد"
         };
     }
 

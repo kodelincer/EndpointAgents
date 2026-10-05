@@ -135,7 +135,7 @@
                     Background="{ThemeResource EndpointAccentBrush}">
                 <FontIcon Glyph="&#xE95B;" FontSize="12" Foreground="White" />
             </Border>
-            <TextBlock Grid.Column="1" Text="پشتیبانی رایانه" FontWeight="SemiBold"
+            <TextBlock Grid.Column="1" Text="دستیار پشتیبانی" FontWeight="SemiBold"
                        FontSize="13" VerticalAlignment="Center" />
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" Margin="8,0,0,0"
                         VerticalAlignment="Center">
@@ -559,7 +559,7 @@
                     <StackPanel MaxWidth="880" Margin="28,20,28,28" Spacing="20">
                         <StackPanel Spacing="4">
                             <TextBlock Text="وضعیت و کنترل" Style="{StaticResource PageTitleStyle}" />
-                            <TextBlock Text="وضعیت سرویس، اتصال و آخرین فعالیت عامل را مشاهده کنید."
+                            <TextBlock Text="وضعیت سرویس، اتصال و آخرین فعالیت دستیار پشتیبانی را مشاهده کنید."
                                        Style="{StaticResource QuietTextStyle}" />
                         </StackPanel>
                         <Border Style="{StaticResource DetailsCardStyle}" Padding="20,18">
@@ -666,7 +666,7 @@
                     </Grid.RowDefinitions>
                     <StackPanel Spacing="4">
                         <TextBlock Text="گزارش‌ها" Style="{StaticResource PageTitleStyle}" />
-                        <TextBlock Text="فعالیت عامل و رویدادهای سرویس را جستجو و بررسی کنید."
+                        <TextBlock Text="فعالیت دستیار پشتیبانی و رویدادهای سرویس را جستجو و بررسی کنید."
                                    Style="{StaticResource QuietTextStyle}" />
                     </StackPanel>
                     <Grid Grid.Row="1" Margin="0,14,0,12" ColumnSpacing="8">
@@ -726,7 +726,7 @@
                             </Border>
                             <ListView x:Name="LogList" Grid.Row="1" ItemsSource="{Binding Logs}"
                                       SelectedItem="{Binding SelectedLog, Mode=TwoWay}"
-                                      SelectionMode="Single" AutomationProperties.Name="فهرست گزارش‌های عامل">
+                                      SelectionMode="Single" AutomationProperties.Name="فهرست گزارش‌های دستیار پشتیبانی">
                                 <ListView.ItemTemplate>
                                     <DataTemplate>
                                         <Grid MinHeight="42" ColumnSpacing="12" Padding="0,0">

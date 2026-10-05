@@ -26,7 +26,7 @@ public sealed class SupportViewModel : INotifyPropertyChanged
 {
     private const int DefaultConversationLimit = 30;
     private TrayStatus _status = new(TrayHealthState.Checking,
-        EndpointServiceState.Unknown, null, "در حال بررسی عامل",
+        EndpointServiceState.Unknown, null, "در حال بررسی دستیار پشتیبانی",
         "وضعیت فعلی در حال دریافت است.");
     private string _chatState = "در انتظار اتصال";
     private string _submitResult = string.Empty;
@@ -588,7 +588,7 @@ public sealed class ProgressItemViewModel : ConversationItemViewModel, INotifyPr
         ChatProgressStage.WaitingForModel => "در انتظار پاسخ دستیار",
         ChatProgressStage.EndpointCheckStarted => ActivityLabel(progress.Activity),
         ChatProgressStage.EndpointCheckCompleted => progress.Outcome == ChatProgressOutcome.Failure
-            ? "بررسی عامل ناموفق بود" : "بررسی عامل کامل شد",
+            ? "بررسی رایانه ناموفق بود" : "بررسی رایانه کامل شد",
         ChatProgressStage.Retrying => "ارتباط برقرار نشد؛ تلاش دوباره",
         ChatProgressStage.Completed => "پاسخ آماده شد",
         ChatProgressStage.Failed => "بررسی درخواست کامل نشد",
@@ -626,7 +626,7 @@ public sealed class ProgressItemViewModel : ConversationItemViewModel, INotifyPr
         ChatProgressActivity.WindowsActivationStatus => "در حال بررسی فعال‌سازی ویندوز",
         ChatProgressActivity.WindowsActivationRepair => "در حال تعمیر فعال‌سازی ویندوز",
         ChatProgressActivity.ProposedAction => "در حال آماده‌سازی اقدام پیشنهادی",
-        _ => "در حال بررسی عامل"
+        _ => "در حال بررسی رایانه"
     };
 }
 

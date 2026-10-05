@@ -74,7 +74,7 @@ public sealed class IbsngDialerLauncher
     private static TrayIpcResponse ConfirmInstall(TrayIpcRequest request)
     {
         var consent = MessageBox.Show(
-            $"عامل نقطه پایانی نیاز دارد نسخه تأییدشده IBSng را نصب یا تعمیر کند.\r\n\r\n" +
+            $"دستیار پشتیبانی نیاز دارد نسخه تأییدشده IBSng را نصب یا تعمیر کند.\r\n\r\n" +
             $"مسیر مقصد:\r\n{request.DialerPath}\r\n\r\nآیا ادامه می‌دهید؟",
             "تأیید نصب یا تعمیر IBSng",
             MessageBoxButtons.YesNo,

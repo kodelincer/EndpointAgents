@@ -28,10 +28,10 @@ public static class ServiceControlLauncher
             return process.ExitCode == 0
                 ? new(true, action switch
                 {
-                    "start" => "سرویس عامل نقطه پایانی راه‌اندازی شد.",
-                    "stop" => "سرویس عامل نقطه پایانی متوقف شد.",
-                    "pause" => "عملکردهای جدید عامل موقتاً متوقف شدند.",
-                    "resume" => "عملکردهای عامل دوباره فعال شدند.",
+                    "start" => "سرویس دستیار پشتیبانی راه‌اندازی شد.",
+                    "stop" => "سرویس دستیار پشتیبانی متوقف شد.",
+                    "pause" => "عملکردهای جدید دستیار پشتیبانی موقتاً متوقف شدند.",
+                    "resume" => "عملکردهای دستیار پشتیبانی دوباره فعال شدند.",
                     _ => "عملیات مدیریتی انجام شد."
                 })
                 : new(false, "عملیات مدیریتی کامل نشد. برای جزئیات، گزارش‌ها را بررسی کنید.");
@@ -80,7 +80,7 @@ public static class ElevatedServiceActionRunner
         {
             TrayEventLogger.Error($"عملیات مدیریتی سرویس '{action}' ناموفق بود: " +
                 $"{ex.GetType().Name}: {ex.Message}");
-            MessageBox.Show(ex.Message, "عامل نقطه پایانی", MessageBoxButtons.OK,
+            MessageBox.Show(ex.Message, "دستیار پشتیبانی", MessageBoxButtons.OK,
                 MessageBoxIcon.Error, MessageBoxDefaultButton.Button1,
                 MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
             return 1;
