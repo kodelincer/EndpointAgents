@@ -1,5 +1,5 @@
 import type { Activity, Agent, ApiSystemStatus, CommandDefinition, FileInventory,
-  MaintenanceModeResult, RpcRequest, RpcResponse, SupportRequest } from "./types";
+  MaintenanceModeResult, PackageInventory, RpcRequest, RpcResponse, SupportRequest } from "./types";
 import type { HelpdeskConversationDetail, HelpdeskConversationSummary } from "./types";
 
 export const CONTROL_PLANE_URL = process.env.NEXT_PUBLIC_CONTROL_PLANE_URL ?? "http://localhost:5052";
@@ -32,6 +32,11 @@ export async function runCommand(agentId: string, request: RpcRequest): Promise<
 /** Reads the administrator-managed artifacts that endpoint agents may download. */
 export function getFileInventory(): Promise<FileInventory> {
   return read<FileInventory>("/api/files");
+}
+
+/** Reads every BAT package folder with its validation status. */
+export function getPackageInventory(): Promise<PackageInventory> {
+  return read<PackageInventory>("/api/files/packages");
 }
 
 /** Reads process health and operator-visible state directly from the unified API. */

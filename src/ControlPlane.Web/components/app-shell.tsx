@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, FileArchive, LayoutDashboard, LifeBuoy, RefreshCw, Server, Waypoints } from "lucide-react";
+import { CircleAlert, LayoutDashboard, LifeBuoy, Package, RefreshCw, Server, Waypoints } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useControlPlane } from "@/lib/control-plane-context";
@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <nav className="primary-nav" aria-label="Control plane">
         <Link className={path === "/" ? "active" : ""} href="/"><LayoutDashboard size={15} />Overview</Link>
         <Link className={path.startsWith("/agents") ? "active" : ""} href="/agents/"><Waypoints size={15} />Agents</Link>
-        <Link className={path.startsWith("/files") ? "active" : ""} href="/files/"><FileArchive size={15} />Files</Link>
+        <Link className={path.startsWith("/files") ? "active" : ""} href="/files/"><Package size={15} />Packages</Link>
         <Link className={path.startsWith("/support") ? "active" : ""} href="/support/"><LifeBuoy size={15} />Helpdesk{supportRequests.length > 0 && <span className="nav-count">{supportRequests.length}</span>}</Link>
       </nav>
       <div className="topbar-status">

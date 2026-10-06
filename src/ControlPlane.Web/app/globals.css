@@ -379,3 +379,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visibl
   .trace-event summary time { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+/* BAT packages */
+.package-path { margin: 0 1px 14px; color: var(--muted); font-size: 11px; }.package-path code, .package-limits code { font: 10px var(--font-mono); overflow-wrap: anywhere; }
+.package-status-icon { width: 38px; height: 38px; border-radius: 9px; display: grid; place-items: center; flex: 0 0 auto; }
+.package-status-icon.ready, .package-status.ready { color: oklch(0.4 0.11 155); background: color-mix(in oklch, var(--success) 12%, white); }
+.package-status-icon.warning, .package-status.warning { color: oklch(0.42 0.1 65); background: oklch(0.98 0.025 85); }
+.package-status-icon.blocked, .package-status.blocked { color: var(--danger); background: color-mix(in oklch, var(--danger) 8%, white); }
+.package-status { padding: 3px 7px; border-radius: 999px; font: 650 10px var(--font-geist); }
+.package-reasons, .package-warnings { margin: 8px 0 0; padding-left: 18px; font-size: 11px; line-height: 1.5; }.package-reasons { color: var(--danger); }.package-warnings { color: oklch(0.42 0.1 65); }
+.package-toggle { margin-top: 9px; padding: 0; display: inline-flex; align-items: center; gap: 4px; border: 0; background: transparent; color: var(--action); font-size: 11px; cursor: pointer; }
+.package-toggle:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.package-detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 11px; line-height: 1.55; }
+.package-detail h3 { margin: 10px 0 4px; font-size: 11px; }.package-detail ol, .package-detail ul { margin: 0; padding-left: 18px; }
+.package-hashes { margin: 0; display: grid; gap: 4px; }.package-hashes div { display: grid; grid-template-columns: minmax(150px, 190px) 1fr; gap: 8px; }.package-hashes dt { color: var(--muted); }.package-hashes dd { margin: 0; font: 10px var(--font-mono); overflow-wrap: anywhere; }
+.package-limits { margin: 0; color: var(--muted); }
+.package-howto { margin-top: 18px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); font-size: 12px; line-height: 1.6; }
+.package-howto h2 { margin: 0 0 6px; font-size: 13px; }.package-howto ol { margin: 0; padding-left: 20px; }.package-howto code { font: 10.5px var(--font-mono); overflow-wrap: anywhere; }.package-howto p { margin: 8px 0 0; color: var(--muted); }
+@media (max-width: 640px) { .package-hashes div { grid-template-columns: 1fr; gap: 0; } }

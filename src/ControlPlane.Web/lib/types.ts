@@ -42,6 +42,46 @@ export type FileInventory = {
   };
 };
 
+export type PlaybookChoice = { expect: string; send: string; submit: string };
+export type PlaybookStep = PlaybookChoice & {
+  timeoutSeconds: number; alternatives?: PlaybookChoice[] | null;
+  optional?: boolean; maxRepeats?: number;
+};
+export type Playbook = {
+  version: number; steps: PlaybookStep[]; successExitCodes?: number[] | null;
+  successMarker?: string | null; failureMarkers?: string[] | null;
+  guiDialogGraceSeconds?: number | null;
+};
+export type PackageStatus = "Ready" | "ReadyWithWarnings" | "HashMismatch"
+  | "InvalidPlaybook" | "LintRejected" | "Invalid";
+export type BatPackage = {
+  id: string; folder: string; status: PackageStatus; reasons: string[]; warnings: string[];
+  kind?: "office" | "windows" | null; displayName?: string | null; description?: string | null;
+  batFileName?: string | null; pinnedBatSha256?: string | null; actualBatSha256?: string | null;
+  batSizeBytes?: number | null; pinnedPlaybookSha256?: string | null;
+  computedPlaybookSha256?: string | null; playbook?: Playbook | null;
+  supportFiles: { fileName: string; sha256: string }[];
+  office?: {
+    minOfficeVersion: string; maxOfficeVersionExclusive: string;
+    officeProductReleaseIds?: string[] | null; minWindowsVersion?: string | null;
+    maxWindowsVersionExclusive?: string | null;
+  } | null;
+  windows?: {
+    minWindowsVersion: string; maxWindowsVersionExclusive: string; editionIds?: string[] | null;
+  } | null;
+  review?: { reviewedBy?: string | null; reviewedOn?: string | null;
+    source?: string | null; notes?: string | null } | null;
+};
+export type PackageInventory = {
+  packagesPath: string; protectedAclRequired: boolean;
+  limits: {
+    maxSteps: number; maxResponses: number; maxResponseCharacters: number;
+    minStepTimeoutSeconds: number; maxStepTimeoutSeconds: number;
+    defaultGuiDialogGraceSeconds: number; maxRunMinutes: number; maxOutputBytes: number;
+  };
+  packages: BatPackage[];
+};
+
 export type ApiSystemStatus = {
   version: string; machineName: string; startedAtUtc: string; uptimeSeconds: number;
   maintenanceMode: boolean; connectedAgents: number; retainedActivity: number;
