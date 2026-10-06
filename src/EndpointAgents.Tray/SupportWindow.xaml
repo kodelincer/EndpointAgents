@@ -519,88 +519,100 @@
                                     </Border>
                                 </Grid>
 
-                                <!-- Details (physically left) -->
+                                <!-- Details (physically left): compact so it rarely needs scrolling -->
                                 <Border x:Name="DetailsPane" Grid.Column="1"
                                         Background="{ThemeResource EndpointSubtleFillBrush}"
                                         BorderBrush="{ThemeResource EndpointLineBrush}" BorderThickness="0,0,1,0">
-                                    <ScrollViewer>
-                                        <StackPanel Padding="14,16" Spacing="12">
-                                            <StackPanel HorizontalAlignment="Center" Spacing="8" Margin="0,4,0,4">
-                                                <Border Width="76" Height="76" CornerRadius="38" HorizontalAlignment="Center"
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <StackPanel Padding="12,12" Spacing="8">
+                                            <Grid ColumnSpacing="10" Margin="2,0,2,2">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Width="44" Height="44" CornerRadius="22"
                                                         Background="{Binding AvatarState, Converter={StaticResource StateBrush}}">
-                                                    <FontIcon Glyph="&#xE95B;" FontSize="32" Foreground="White" />
+                                                    <FontIcon Glyph="&#xE95B;" FontSize="20" Foreground="White" />
                                                 </Border>
-                                                <TextBlock Text="{Binding ConversationHeading}" FontSize="16"
-                                                           FontWeight="SemiBold" TextAlignment="Center"
-                                                           TextWrapping="Wrap" MaxLines="3" />
-                                                <TextBlock Text="{Binding ConversationSubheading}" TextAlignment="Center"
-                                                           Style="{StaticResource MetadataTextStyle}" />
-                                            </StackPanel>
-
-                                            <Border Style="{StaticResource DetailsCardStyle}">
-                                                <StackPanel Spacing="10">
-                                                    <TextBlock Text="اطلاعات گفتگو" Style="{StaticResource CardTitleStyle}" />
-                                                    <Grid ColumnSpacing="10" RowSpacing="8">
-                                                        <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="Auto" />
-                                                            <ColumnDefinition Width="*" />
-                                                        </Grid.ColumnDefinitions>
-                                                        <Grid.RowDefinitions>
-                                                            <RowDefinition Height="Auto" />
-                                                            <RowDefinition Height="Auto" />
-                                                            <RowDefinition Height="Auto" />
-                                                        </Grid.RowDefinitions>
-                                                        <FontIcon Glyph="&#xE7C3;" FontSize="14"
-                                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                                        <StackPanel Grid.Column="1">
-                                                            <TextBlock Text="{Binding DetailsStatus}" />
-                                                            <TextBlock Text="وضعیت" Style="{StaticResource MetadataTextStyle}" />
-                                                        </StackPanel>
-                                                        <FontIcon Grid.Row="1" Glyph="&#xE787;" FontSize="14"
-                                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                                        <StackPanel Grid.Row="1" Grid.Column="1">
-                                                            <TextBlock Text="{Binding DetailsCreated}" />
-                                                            <TextBlock Text="شروع گفتگو" Style="{StaticResource MetadataTextStyle}" />
-                                                        </StackPanel>
-                                                        <FontIcon Grid.Row="2" Glyph="&#xE823;" FontSize="14"
-                                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                                        <StackPanel Grid.Row="2" Grid.Column="1">
-                                                            <TextBlock Text="{Binding DetailsUpdated}" />
-                                                            <TextBlock Text="آخرین فعالیت" Style="{StaticResource MetadataTextStyle}" />
-                                                        </StackPanel>
-                                                    </Grid>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding ConversationHeading}" FontSize="14"
+                                                               FontWeight="SemiBold" TextWrapping="Wrap" MaxLines="2"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding ConversationSubheading}" MaxLines="1"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Style="{StaticResource MetadataTextStyle}" />
                                                 </StackPanel>
+                                            </Grid>
+
+                                            <Border Style="{StaticResource DetailsCardStyle}" Padding="12,8">
+                                                <Grid ColumnSpacing="8" RowSpacing="6">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                    </Grid.RowDefinitions>
+                                                    <TextBlock Text="وضعیت" Style="{StaticResource MetadataTextStyle}" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding DetailsStatus}" FontSize="13"
+                                                               TextWrapping="Wrap" HorizontalAlignment="Left" />
+                                                    <TextBlock Grid.Row="1" Text="شروع" Style="{StaticResource MetadataTextStyle}" />
+                                                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding DetailsCreated}"
+                                                               FontSize="13" HorizontalAlignment="Left" />
+                                                    <TextBlock Grid.Row="2" Text="آخرین فعالیت" Style="{StaticResource MetadataTextStyle}" />
+                                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DetailsUpdated}"
+                                                               FontSize="13" HorizontalAlignment="Left" />
+                                                </Grid>
                                             </Border>
 
-                                            <Border Style="{StaticResource DetailsCardStyle}">
-                                                <StackPanel Spacing="10">
-                                                    <TextBlock Text="اتصال این رایانه" Style="{StaticResource CardTitleStyle}" />
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <Ellipse x:Name="DetailsStatusDot" Width="10" Height="10"
+                                            <Border Style="{StaticResource DetailsCardStyle}" Padding="12,8">
+                                                <Grid ColumnSpacing="8" RowSpacing="2">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="Auto" />
+                                                    </Grid.RowDefinitions>
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                                        <Ellipse x:Name="DetailsStatusDot" Width="9" Height="9"
                                                                  Fill="Gray" VerticalAlignment="Center" />
-                                                        <TextBlock Text="{Binding StatusLabel}" FontWeight="SemiBold" />
+                                                        <TextBlock Text="{Binding StatusLabel}" FontSize="13" FontWeight="SemiBold"
+                                                                   TextTrimming="CharacterEllipsis" />
                                                     </StackPanel>
-                                                    <TextBlock Text="{Binding StatusDetail}" Style="{StaticResource MetadataTextStyle}" />
-                                                    <Button Content="به‌روزرسانی وضعیت" Click="RefreshStatus_Click"
-                                                            HorizontalAlignment="Stretch"
-                                                            AutomationProperties.AutomationId="RefreshStatusButton" />
-                                                </StackPanel>
+                                                    <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}"
+                                                            Width="30" Height="30" CornerRadius="15"
+                                                            Click="RefreshStatus_Click"
+                                                            ToolTipService.ToolTip="به‌روزرسانی وضعیت"
+                                                            AutomationProperties.Name="به‌روزرسانی وضعیت"
+                                                            AutomationProperties.AutomationId="RefreshStatusButton">
+                                                        <FontIcon Glyph="&#xE72C;" FontSize="13" />
+                                                    </Button>
+                                                    <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding StatusDetail}"
+                                                               MaxLines="2" TextTrimming="CharacterEllipsis"
+                                                               Style="{StaticResource MetadataTextStyle}" />
+                                                </Grid>
                                             </Border>
 
-                                            <Border Style="{StaticResource DetailsCardStyle}">
-                                                <StackPanel Spacing="8">
-                                                    <TextBlock Text="راهنما" Style="{StaticResource CardTitleStyle}" />
-                                                    <Border Padding="10,8" CornerRadius="8"
-                                                            Background="{ThemeResource EndpointAccentBrush}">
-                                                        <TextBlock Foreground="White" FontSize="12" TextWrapping="Wrap"
-                                                                   Text="لطفاً نیازی به سلام و احوال‌پرسی با دستیار نیست؛ همان اول، مشکل خود را بنویسید." />
-                                                    </Border>
-                                                    <TextBlock Style="{StaticResource MetadataTextStyle}"
-                                                               Text="مشکل را ساده و کامل بنویسید؛ دستیار رایانه شما را بررسی می‌کند." />
-                                                    <TextBlock Style="{StaticResource MetadataTextStyle}"
+                                            <Border Padding="12,10" CornerRadius="12"
+                                                    Background="{ThemeResource EndpointNoteBrush}"
+                                                    BorderBrush="{ThemeResource EndpointNoteBorderBrush}" BorderThickness="1">
+                                                <StackPanel Spacing="4">
+                                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                                        <FontIcon Glyph="&#xE946;" FontSize="13"
+                                                                  Foreground="{ThemeResource EndpointNoteTextBrush}" />
+                                                        <TextBlock Text="راهنما" FontSize="13" FontWeight="SemiBold"
+                                                                   Foreground="{ThemeResource EndpointNoteTextBrush}" />
+                                                    </StackPanel>
+                                                    <TextBlock FontSize="12" LineHeight="19" TextWrapping="Wrap"
+                                                               Foreground="{ThemeResource EndpointNoteTextBrush}"
+                                                               Text="لطفاً نیازی به سلام و احوال‌پرسی با دستیار نیست؛ همان اول، مشکل خود را بنویسید." />
+                                                    <TextBlock FontSize="12" LineHeight="19" TextWrapping="Wrap"
+                                                               Foreground="{ThemeResource EndpointNoteTextBrush}" Opacity="0.85"
                                                                Text="هر تغییری روی رایانه، پیش از اجرا از شما تأیید گرفته می‌شود." />
-                                                    <TextBlock Style="{StaticResource MetadataTextStyle}"
-                                                               Text="برای ارسال، Enter و برای رفتن به خط بعد، Shift+Enter را بزنید." />
                                                 </StackPanel>
                                             </Border>
                                         </StackPanel>
