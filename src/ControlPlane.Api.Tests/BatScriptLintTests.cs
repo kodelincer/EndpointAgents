@@ -65,8 +65,8 @@ public sealed class BatScriptLintTests
         foreach (var path in new[]
         {
             Path.Combine(root, "deploy", "samples", "menu-scenarios-sample.bat"),
-            Path.Combine(root, "deploy", "control-plane", "FileRepository",
-                "office-activation-repair.bat")
+            Path.Combine(root, "deploy", "control-plane", "FileRepository", "packages",
+                "office-activation-repair", "office-activation-repair.bat")
         })
         {
             var result = BatScriptLint.Inspect(File.ReadAllText(path));

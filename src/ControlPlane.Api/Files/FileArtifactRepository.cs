@@ -25,7 +25,8 @@ public sealed record OfficeArtifactCatalogSnapshot(
 
 public sealed record OfficeBugfixFileArtifact(
     FileArtifact File,
-    OfficeBugfixArtifactDescriptor Descriptor);
+    OfficeBugfixArtifactDescriptor Descriptor,
+    string? SupportDirectory = null);
 
 public sealed record OfficeBugfixCatalogSnapshot(
     IReadOnlyList<OfficeBugfixFileArtifact> Artifacts,
@@ -33,7 +34,8 @@ public sealed record OfficeBugfixCatalogSnapshot(
 
 public sealed record WindowsBugfixFileArtifact(
     FileArtifact File,
-    WindowsBugfixArtifactDescriptor Descriptor);
+    WindowsBugfixArtifactDescriptor Descriptor,
+    string? SupportDirectory = null);
 
 public sealed record WindowsBugfixCatalogSnapshot(
     IReadOnlyList<WindowsBugfixFileArtifact> Artifacts,
@@ -217,7 +219,7 @@ public sealed partial class FileArtifactRepository
             artifactId, StringComparison.OrdinalIgnoreCase));
     }
 
-    public async Task<OfficeBugfixCatalogSnapshot> GetOfficeBugfixCatalogAsync(
+    private async Task<OfficeBugfixCatalogSnapshot> GetLegacyOfficeBugfixCatalogAsync(
         CancellationToken cancellationToken)
     {
         if (!PrepareTrustedRoot())
@@ -297,7 +299,8 @@ public sealed partial class FileArtifactRepository
             }
 
             var (supportFiles, supportError) = await LoadSupportFilesAsync(
-                _rootPath, entry.ArtifactId, entry.SupportFiles,
+                Path.Combine(_rootPath, $"{entry.ArtifactId}.files"),
+                entry.ArtifactId, entry.SupportFiles,
                 $"/api/files/office/bugfix/{entry.ArtifactId}/file",
                 cancellationToken);
             if (supportError is not null)
@@ -310,23 +313,8 @@ public sealed partial class FileArtifactRepository
                     issues, cancellationToken))
                 continue;
 
-            var descriptor = new OfficeBugfixArtifactDescriptor(entry.ArtifactId,
-                entry.DisplayName.Trim(), entry.Description.Trim(), entry.FileName,
-                expectedHash, Version.Parse(entry.MinOfficeVersion).ToString(),
-                Version.Parse(entry.MaxOfficeVersionExclusive).ToString(),
-                playbook!, BatchPlaybookPolicy.ComputeSha256(playbook!),
-                $"/api/files/office/bugfix/{entry.ArtifactId}",
-                entry.OfficeProductReleaseIds.ToArray(),
-                entry.MinWindowsVersion is null ? null
-                    : Version.Parse(entry.MinWindowsVersion).ToString(),
-                entry.MaxWindowsVersionExclusive is null ? null
-                    : Version.Parse(entry.MaxWindowsVersionExclusive).ToString(),
-                supportFiles, supportFiles!.Count == 0 ? null
-                    : BatchSupportFilePolicy.ComputeBundleSha256(expectedHash,
-                        supportFiles),
-                entry.AdditionalCompatibility.Select(NormalizeOfficeCompatibility)
-                    .ToArray());
-            artifacts.Add(new OfficeBugfixFileArtifact(file, descriptor));
+            artifacts.Add(new OfficeBugfixFileArtifact(file, CreateOfficeBugfixDescriptor(
+                entry, playbook!, expectedHash, supportFiles!)));
         }
 
         return new OfficeBugfixCatalogSnapshot(
@@ -356,13 +344,13 @@ public sealed partial class FileArtifactRepository
         if (artifact?.Descriptor.SupportFiles?.Any(item =>
                 item.FileName == fileName) != true)
             return null;
-        return await InspectFileAsync(Path.Combine(_rootPath,
-                $"{artifactId}.files", fileName),
+        return await InspectFileAsync(Path.Combine(artifact.SupportDirectory
+                ?? Path.Combine(_rootPath, $"{artifactId}.files"), fileName),
             artifact.Descriptor.SupportFiles.Single(item =>
                 item.FileName == fileName).Sha256, cancellationToken);
     }
 
-    public async Task<WindowsBugfixCatalogSnapshot> GetWindowsBugfixCatalogAsync(
+    private async Task<WindowsBugfixCatalogSnapshot> GetLegacyWindowsBugfixCatalogAsync(
         CancellationToken cancellationToken)
     {
         if (!PrepareTrustedDirectory(_windowsRootPath))
@@ -443,7 +431,8 @@ public sealed partial class FileArtifactRepository
                     continue;
                 }
                 var (supportFiles, supportError) = await LoadSupportFilesAsync(
-                    _windowsRootPath, entry.ArtifactId, entry.SupportFiles,
+                    Path.Combine(_windowsRootPath, $"{entry.ArtifactId}.files"),
+                    entry.ArtifactId, entry.SupportFiles,
                     $"/api/files/windows/bugfix/{entry.ArtifactId}/file",
                     cancellationToken);
                 if (supportError is not null)
@@ -456,19 +445,8 @@ public sealed partial class FileArtifactRepository
                         issues, cancellationToken))
                     continue;
                 artifacts.Add(new WindowsBugfixFileArtifact(file,
-                    new WindowsBugfixArtifactDescriptor(entry.ArtifactId,
-                        entry.DisplayName.Trim(), entry.Description.Trim(),
-                        entry.FileName, file.Sha256,
-                        $"/api/files/windows/bugfix/{entry.ArtifactId}",
-                        Version.Parse(entry.MinWindowsVersion).ToString(),
-                        Version.Parse(entry.MaxWindowsVersionExclusive).ToString(),
-                        entry.EditionIds.ToArray(), playbook,
-                        BatchPlaybookPolicy.ComputeSha256(playbook!),
-                        supportFiles, supportFiles!.Count == 0 ? null
-                            : BatchSupportFilePolicy.ComputeBundleSha256(
-                                file.Sha256, supportFiles),
-                        entry.AdditionalCompatibility
-                            .Select(NormalizeWindowsCompatibility).ToArray())));
+                    CreateWindowsBugfixDescriptor(entry, playbook!, file.Sha256,
+                        supportFiles!)));
             }
         }
         var activation = await InspectFileAsync(_windowsBugfixFilePath,
@@ -520,14 +498,14 @@ public sealed partial class FileArtifactRepository
         if (artifact?.Descriptor.SupportFiles?.Any(item =>
                 item.FileName == fileName) != true)
             return null;
-        return await InspectFileAsync(Path.Combine(_windowsRootPath,
-                $"{artifactId}.files", fileName),
+        return await InspectFileAsync(Path.Combine(artifact.SupportDirectory
+                ?? Path.Combine(_windowsRootPath, $"{artifactId}.files"), fileName),
             artifact.Descriptor.SupportFiles.Single(item =>
                 item.FileName == fileName).Sha256, cancellationToken);
     }
 
     private async Task<(IReadOnlyList<BatchSupportFile>? Files, string? Error)>
-        LoadSupportFilesAsync(string repositoryRoot, string artifactId,
+        LoadSupportFilesAsync(string supportDirectory, string artifactId,
             IReadOnlyList<BatchSupportFileManifestEntry> entries,
             string downloadPrefix, CancellationToken cancellationToken)
     {
@@ -541,8 +519,7 @@ public sealed partial class FileArtifactRepository
                 .Distinct(StringComparer.OrdinalIgnoreCase).Count() != entries.Count)
             return (null, "Supporting file names or hashes are invalid.");
         if (entries.Count == 0) return ([], null);
-        var directory = Path.GetFullPath(Path.Combine(repositoryRoot,
-            $"{artifactId}.files"));
+        var directory = Path.GetFullPath(supportDirectory);
         if (!IsWithinRoot(directory) || !Directory.Exists(directory)
             || !PrepareTrustedDirectory(directory))
             return (null, "The supporting file directory is missing or untrusted.");
@@ -611,6 +588,36 @@ public sealed partial class FileArtifactRepository
         error = null;
         return true;
     }
+
+    private static OfficeBugfixArtifactDescriptor CreateOfficeBugfixDescriptor(
+        OfficeBugfixManifestEntry entry, BatchPlaybook playbook, string sha256,
+        IReadOnlyList<BatchSupportFile> supportFiles) => new(entry.ArtifactId,
+            entry.DisplayName.Trim(), entry.Description.Trim(), entry.FileName,
+            sha256, Version.Parse(entry.MinOfficeVersion).ToString(),
+            Version.Parse(entry.MaxOfficeVersionExclusive).ToString(),
+            playbook, BatchPlaybookPolicy.ComputeSha256(playbook),
+            $"/api/files/office/bugfix/{entry.ArtifactId}",
+            entry.OfficeProductReleaseIds.ToArray(),
+            entry.MinWindowsVersion is null ? null
+                : Version.Parse(entry.MinWindowsVersion).ToString(),
+            entry.MaxWindowsVersionExclusive is null ? null
+                : Version.Parse(entry.MaxWindowsVersionExclusive).ToString(),
+            supportFiles, supportFiles.Count == 0 ? null
+                : BatchSupportFilePolicy.ComputeBundleSha256(sha256, supportFiles),
+            entry.AdditionalCompatibility.Select(NormalizeOfficeCompatibility).ToArray());
+
+    private static WindowsBugfixArtifactDescriptor CreateWindowsBugfixDescriptor(
+        WindowsBugfixManifestEntry entry, BatchPlaybook playbook, string sha256,
+        IReadOnlyList<BatchSupportFile> supportFiles) => new(entry.ArtifactId,
+            entry.DisplayName.Trim(), entry.Description.Trim(), entry.FileName, sha256,
+            $"/api/files/windows/bugfix/{entry.ArtifactId}",
+            Version.Parse(entry.MinWindowsVersion).ToString(),
+            Version.Parse(entry.MaxWindowsVersionExclusive).ToString(),
+            entry.EditionIds.ToArray(), playbook,
+            BatchPlaybookPolicy.ComputeSha256(playbook),
+            supportFiles, supportFiles.Count == 0 ? null
+                : BatchSupportFilePolicy.ComputeBundleSha256(sha256, supportFiles),
+            entry.AdditionalCompatibility.Select(NormalizeWindowsCompatibility).ToArray());
 
     private static WindowsBugfixCompatibilityRange NormalizeWindowsCompatibility(
         WindowsBugfixCompatibilityRange rule) => new(

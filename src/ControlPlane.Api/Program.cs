@@ -286,6 +286,26 @@ app.MapGet("/api/files", async (FileArtifactRepository repository,
         }
     });
 });
+// Operator view of BAT package folders; loopback-only like the rest of /api/files.
+app.MapGet("/api/files/packages", async (FileArtifactRepository repository,
+    CancellationToken cancellationToken) => Results.Ok(new
+{
+    packagesPath = repository.PackagesRootPath,
+    protectedAclRequired = repository.ProtectedAclRequired,
+    limits = new
+    {
+        maxSteps = BatchPlaybookPolicy.MaximumSteps,
+        maxResponses = BatchPlaybookPolicy.MaximumTotalResponses,
+        maxResponseCharacters = BatchPlaybookPolicy.MaximumResponseCharacters,
+        minStepTimeoutSeconds = BatchPlaybookPolicy.MinimumStepTimeoutSeconds,
+        maxStepTimeoutSeconds = BatchPlaybookPolicy.MaximumStepTimeoutSeconds,
+        defaultGuiDialogGraceSeconds = BatchPlaybookPolicy.DefaultGuiDialogGraceSeconds,
+        // Enforced by the endpoint runner (OfficeBugfixRunner).
+        maxRunMinutes = 8,
+        maxOutputBytes = 1024 * 1024
+    },
+    packages = await repository.GetPackageStatusesAsync(cancellationToken)
+}));
 app.MapGet("/api/files/ibsng-dialer", async (HttpContext context,
     FileArtifactRepository repository, CancellationToken cancellationToken) =>
 {
