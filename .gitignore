@@ -361,3 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# Local dev run output (the .local folder also holds older tracked files)
+.local/credentials/
+.local/screenshots/
+.local/*.log
+.local/*.err
