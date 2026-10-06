@@ -8,8 +8,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Package validation reuses the control plane's own package loader. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\EndpointAgents.Shared\EndpointAgents.Shared.csproj" />
     <ProjectReference Include="..\EndpointAgents.Platform.Windows\EndpointAgents.Platform.Windows.csproj" />
+    <ProjectReference Include="..\ControlPlane.Api\ControlPlane.Api.csproj" />
   </ItemGroup>
 
 </Project>

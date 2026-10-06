@@ -1,26 +1,33 @@
 <#
 .SYNOPSIS
-Hashes, lints and validates a BAT and its playbook, and optionally runs it through
+Validates a BAT package (or a loose BAT and playbook) and optionally runs it through
 the real endpoint runner.
 
 .DESCRIPTION
-Without -Execute the BAT is only read. With -Execute it really runs as the current
-user, exactly as the endpoint would answer its prompts, so test unknown BATs in a
-disposable VM. -Discover additionally prints the screen that follows the last step,
-which helps when writing the next playbook step. Prints a manifest entry draft.
+-Package <folder> checks a FileRepository\packages\<id> folder with the control
+plane's own rules and prints the exact fields to fix. -Fix writes the current BAT,
+supporting-file and playbook hashes into package.json; use it only after reviewing
+the change. Without -Execute nothing is run. With -Execute the BAT really runs as the
+current user, answered exactly as an endpoint would answer it. -Discover additionally
+prints the screen that follows the last step, to write the next playbook step.
 
 .EXAMPLE
-.\scripts\test-bat-playbook.ps1 -Bat .\deploy\samples\menu-scenarios-sample.bat `
-    -Playbook .\deploy\samples\menu-scenarios-sample.playbook.json -Execute
+.\scripts\test-bat-playbook.ps1 -Package .\deploy\control-plane\FileRepository\packages\office-activation-repair -Validate
+
+.EXAMPLE
+.\scripts\test-bat-playbook.ps1 -Bat .\deploy\samples\menu-repair-sample.bat `
+    -Playbook .\deploy\samples\menu-repair-sample.playbook.json -Execute
 #>
-[CmdletBinding()]
+[CmdletBinding(DefaultParameterSetName = "Package")]
 param(
-    [Parameter(Mandatory)] [string]$Bat,
-    [Parameter(Mandatory)] [string]$Playbook,
-    [string]$ArtifactId,
+    [Parameter(Mandatory, ParameterSetName = "Package")] [string]$Package,
+    [Parameter(ParameterSetName = "Package")] [switch]$Validate,
+    [Parameter(ParameterSetName = "Package")] [switch]$Fix,
+    [Parameter(Mandatory, ParameterSetName = "Loose")] [string]$Bat,
+    [Parameter(Mandatory, ParameterSetName = "Loose")] [string]$Playbook,
     [switch]$Execute,
     [switch]$Discover,
-    # NAME=VALUE pairs set only for the BAT process, e.g. -Environment SAMPLE_PAGES=2
+    # NAME=VALUE pairs set only for the BAT process, e.g. -Environment SAMPLE_FAIL=1
     [string[]]$Environment = @()
 )
 
@@ -28,8 +35,12 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repoRoot "src\EndpointAgents.PlaybookLab\EndpointAgents.PlaybookLab.csproj"
 
-$labArgs = @("--bat", (Resolve-Path $Bat).Path, "--playbook", (Resolve-Path $Playbook).Path)
-if ($ArtifactId) { $labArgs += @("--artifact-id", $ArtifactId) }
+$labArgs = if ($PSCmdlet.ParameterSetName -eq "Package") {
+    @("--package", (Resolve-Path $Package).Path)
+} else {
+    @("--bat", (Resolve-Path $Bat).Path, "--playbook", (Resolve-Path $Playbook).Path)
+}
+if ($Fix) { $labArgs += "--fix" }
 if ($Execute) { $labArgs += "--execute" }
 if ($Discover) { $labArgs += "--discover" }
 # powershell -File passes "A=1,B=2" as one string, so split on commas as well.

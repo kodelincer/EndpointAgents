@@ -438,6 +438,7 @@ Set-ExactProtectedDirectoryAcl $endpointAgentsDataRoot -AllowUsersReadAndExecute
 New-SafeDirectory $dataRoot
 New-SafeDirectory $officeRepositoryRoot
 New-SafeDirectory $windowsRepositoryRoot
+New-SafeDirectory (Join-Path $fileRepositoryRoot "packages")
 Set-ExactProtectedTreeAcl $dataRoot
 if (Test-Path -LiteralPath $windowsBugfixPath) {
     $runtimeHash = (Get-FileHash -LiteralPath $windowsBugfixPath -Algorithm SHA256).Hash
