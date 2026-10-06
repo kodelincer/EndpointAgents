@@ -1,5 +1,9 @@
 # Version-aware Office activation repairs
 
+> New repairs should be added as BAT packages (`FileRepository\packages\<id>\package.json`);
+> see [bat-packages.md](bat-packages.md). The manifest format below still works and
+> describes the same fields; packages map onto it.
+
 Office activation BAT files are administrator-managed in:
 
 ```text

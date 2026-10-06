@@ -1,123 +1,182 @@
-# Curating BAT packages
+# Adding a BAT package
 
-A BAT package is one reviewed BAT file plus the metadata that lets the endpoint run it
-unattended and lets Hermes pick it safely. The endpoint never improvises: it runs only
-a catalogued BAT whose file hash and playbook hash match, and answers only the screens
-the playbook lists. This guide describes how an administrator curates that metadata.
-Feature specifics live in [office-bugfix.md](office-bugfix.md) and
-[windows-activation.md](windows-activation.md).
+This guide shows an administrator how to turn a vendor's BAT file into a package that
+endpoints can run unattended. You need a PC with this repository and the .NET 10 SDK;
+the control plane server only receives the finished package folder.
 
-## 1. Review the BAT first
+A **package** is one folder:
 
-Run the playbook lab without `-Execute`; it only reads the file:
-
-```powershell
-.\scripts\test-bat-playbook.ps1 -Bat .\my-repair.bat -Playbook .\my-repair.playbook.json
+```text
+FileRepository\packages\<id>\
+    package.json        what the BAT is, its hashes, its playbook and compatibility
+    <any name>.bat      the reviewed BAT, unchanged
+    files\              optional supporting files the BAT needs
 ```
 
-- **Lint errors** (elevation through `runas`/`-Verb RunAs`, encoded PowerShell, run-time
-  downloads or decoding) keep the BAT out of the catalog.
-- **Lint warnings** need a decision. Self-elevation or self-extraction code, `start`,
-  `timeout /t`, GUI tools, and `%TEMP%` scripts usually mean the BAT cannot run
-  unattended, or runs code the hash review never saw. Ask the vendor for a version
-  without them, or ship extracted files as reviewed `supportFiles`.
+The endpoint never improvises. It runs a BAT only when the file, its supporting files,
+and its playbook all match the hashes in `package.json`, and it answers only the
+screens the playbook lists. The Packages tab of the dashboard shows each package's
+status and exactly what to fix.
 
-Only package BATs whose provenance and licensing purpose you have confirmed.
+The worked example below uses the harmless mock
+`deploy\samples\menu-repair-sample.bat`. It prints a repair menu and changes nothing.
 
-## 2. Manifest entry
+## 1. Place the file
 
-One entry per BAT in the catalog manifest (`office-bugfix-managers.json` or
-`Windows/windows-bugfix-managers.json`):
+Put the BAT somewhere on your admin PC. Only package BATs from a trusted source whose
+purpose you understand and are licensed to use.
 
-| Field | Purpose |
+## 2. Create the package folder
+
+```powershell
+.\scripts\new-bat-package.ps1 -Bat .\deploy\samples\menu-repair-sample.bat `
+    -Id menu-repair-sample -Kind office -Development
+```
+
+- `-Id`: lowercase letters, numbers, `.`, `_`, `-`; it becomes the folder name.
+- `-Kind`: `office` or `windows`, which decides the catalog and compatibility fields.
+- `-Development` uses the repository's development `FileRepository`. Without it the
+  folder is created under `C:\ProgramData\EndpointAgents\ControlPlane\FileRepository`.
+
+The script copies the BAT, records its SHA-256, writes a draft `package.json` full of
+`TODO` markers, and validates the folder. The status is `Invalid` until every `TODO`
+is replaced. The BAT is not run.
+
+## 3. Discover the screens, one round at a time
+
+```powershell
+.\scripts\test-bat-playbook.ps1 -Package .\deploy\control-plane\FileRepository\packages\menu-repair-sample -Execute -Discover
+```
+
+`-Execute` really runs the BAT as you, answering exactly as an endpoint would.
+`-Discover` stops after your last playbook step and prints the next screen as
+`Output tail`. In the first round the only step still waits for its `TODO` text, so the
+tail shows the first screen:
+
+```text
+Run state:        PromptTimedOut
+Output tail:      ... ============== MAIN MENU ============== [1] Office repair ...
+                  [6] Exit ======================================= Select an option [1-6]:
+```
+
+Put a short, stable piece of that prompt in the first step and choose the answer,
+then run the same command again to see the next screen. Repeat until the BAT finishes.
+For the mock that gives six steps:
+
+| Screen ends with | Answer |
 | --- | --- |
-| `artifactId` | Lowercase id; the file must be named `<artifactId>.bat`. |
-| `displayName`, `description` | Shown to operators; describe what the repair does. |
-| `sha256` | Exact hash of the reviewed file. Any byte change makes the package unavailable. |
-| Compatibility | Office: `minOfficeVersion`, `maxOfficeVersionExclusive`, `officeProductReleaseIds`; Windows: version range and edition ids; optional `additionalCompatibility` rules. Hermes only sees packages compatible with the user's PC. |
-| `supportFiles` | Optional flat files with their own hashes, placed under `<artifactId>.files/`. |
-| `playbook` | The screens and answers below. |
+| `Select an option [1-6]:` | `1`, Enter |
+| `Select an option [1-8]:` | `1`, Enter |
+| `[A]pps [S]ettings [B]oth :` | the key `B` |
+| `Press any key to continue` | any key, e.g. `x` |
+| `Select an option [1-8]:` | `8`, Enter (back to the main menu) |
+| `Select an option [1-6]:` | `6`, Enter (exit) |
 
-`.bat` files are stored with CRLF line endings (see `.gitattributes`) so the hash is the
-same in every checkout.
+Each round really runs the BAT up to the screen where it stops, so for a BAT that
+changes something, every round repeats that change.
 
-## 3. Playbook: screens and answers
+## 4. Write the playbook
 
-Walk through the BAT once by hand and write one step per screen that needs input:
+The playbook lives in `package.json`. The mock's complete playbook is
+`deploy\samples\menu-repair-sample.playbook.json`. Each step is:
 
 ```json
-{
-  "version": 2,
-  "steps": [
-    { "expect": "Main menu choice:", "send": "1", "submit": "line", "timeoutSeconds": 30 },
-    { "expect": "Press any key", "send": "x", "submit": "key", "timeoutSeconds": 30,
-      "optional": true }
-  ],
-  "successMarker": "Task completed successfully",
-  "failureMarkers": ["FAILED", "Invalid choice"]
+{ "expect": "Select an option [1-6]:", "send": "1", "submit": "line", "timeoutSeconds": 60 }
+```
+
+- `expect`: a short piece of the prompt, copied from the output tail (colours are
+  removed and line breaks become single spaces). Avoid dates, versions and PC names.
+- `send`: the fixed answer, at most 64 characters, never a password, token or key.
+- `submit`: `line` types the answer and presses Enter; `key` sends one character.
+- `timeoutSeconds`: 5–300. The first screen also gets 30 seconds of start-up time.
+- `optional: true`: the screen may not appear (for example a "Press any key" that is
+  shown only sometimes).
+- `maxRepeats`: for a screen that repeats, such as notice pages.
+- `alternatives`: other prompts the same step may show, each with its own answer.
+
+## 5. Write the finish rules
+
+```json
+"successExitCodes": [0],
+"successMarker": "Repair completed successfully",
+"failureMarkers": ["Repair failed", "Option not available"]
+```
+
+- `successMarker`: text that only appears when the job worked. Without it, exit code 0
+  alone counts as success.
+- `failureMarkers`: error lines or unexpected prompts. Any of them stops the run at
+  once as failed.
+- `guiDialogGraceSeconds` (default 15): endpoints run BATs in a hidden session where
+  nobody can click a window. A window that stays open this long stops the run as
+  `GuiDialogBlocked`. Raise it only for a BAT with a legitimate long progress window.
+  The best fix for a BAT with dialogs is a silent switch from its vendor (`/silent`,
+  `/s`, `/quiet`).
+
+## 6. Set compatibility and review
+
+For `office` packages:
+
+```json
+"office": {
+  "minOfficeVersion": "16.0", "maxOfficeVersionExclusive": "17.0",
+  "officeProductReleaseIds": ["ProPlus2021Volume"]
 }
 ```
 
-- `expect` is a short, stable, literal piece of the prompt text (no regular expressions).
-- `send` is the fixed answer; `submit: "line"` adds Enter, `submit: "key"` sends one
-  character. Answers never contain credentials, tokens, or product keys.
-- Use `alternatives` when a step can show different prompts, `optional` for screens that
-  appear only sometimes, and `maxRepeats` for screens that repeat (notice pages).
-- Use `successMarker` for the line that proves the job worked, and `failureMarkers` for
-  error lines and known surprise prompts; they stop the run at once.
-- `successExitCodes` lists accepted exit codes (default `[0]`).
+Office 2016 to 2024 all report version 16.0, so list the Click-to-Run product IDs the
+BAT really supports; an empty list means every product in the range. Optional
+`minWindowsVersion` / `maxWindowsVersionExclusive` and `additionalCompatibility` work
+as in [office-bugfix.md](office-bugfix.md).
 
-The full field reference is in [office-bugfix.md](office-bugfix.md#playbook-version-2),
-and `deploy/samples/menu-scenarios-sample.playbook.json` is a complete example.
+For `windows` packages use `"windows": { "minWindowsVersion", "maxWindowsVersionExclusive", "editionIds" }`.
 
-## 4. Build and test with the playbook lab
+Fill in `displayName`, `description`, and `review` (`reviewedBy`, `reviewedOn`,
+`source`, `notes`).
+
+## 7. Validate and record the hashes
 
 ```powershell
-.\scripts\test-bat-playbook.ps1 -Bat .\my-repair.bat -Playbook .\my-repair.playbook.json `
-    -Execute -Discover
+.\scripts\test-bat-playbook.ps1 -Package <folder> -Fix -Execute
 ```
 
-`-Execute` really runs the BAT as the current user, the way the endpoint would answer
-it. `-Discover` prints the screen that follows your last step, so you can add steps one
-screen at a time until the run reports `Completed`. The lab prints the BAT hash, the
-playbook hash, and a manifest entry draft to copy into the catalog.
+`-Fix` writes the current BAT, supporting-file and playbook hashes into
+`package.json`; use it only after you reviewed what changed. Then the package is
+checked with the control plane's own rules. Every line starting with `FIX` names a
+field to correct; `WARN` lines are lint warnings that do not block publishing. You are
+done when it prints:
 
-## 5. Windows that need a mouse
+```text
+Status:           Ready
+Run state:        Completed
+```
 
-The endpoint service runs BATs in a hidden session where no one can see or click a
-window. If a window from the BAT's process tree stays visible for the playbook's
-`guiDialogGraceSeconds` (default 15, range 5–600), the run stops as `GuiDialogBlocked`
-instead of waiting for the step timeout. Clicking dialogs automatically is not supported.
+What the statuses mean:
 
-The grace period is a trade-off. A BAT that legitimately shows a progress window for
-longer (for example an installer run with `/passive`) is stopped by mistake unless its
-playbook raises `guiDialogGraceSeconds`; a longer value makes a real dialog take longer
-to report.
+| Status | Meaning |
+| --- | --- |
+| Ready | Offered to compatible endpoints. |
+| Ready with lint warnings | Offered; read the warnings. |
+| Hash mismatch | The BAT or a supporting file changed after review. |
+| Invalid playbook | The playbook breaks a rule, or changed without a new `playbookSha256`. |
+| Rejected by lint | The BAT requests elevation, runs encoded PowerShell, or downloads code. |
+| Invalid package | `package.json` is unreadable, still has `TODO`, or its `id` differs from the folder. |
 
-The best fix for a BAT with dialogs is a silent or unattended switch from its vendor
-(many tools accept `/silent`, `/s`, or `/quiet`), so that it needs no window at all.
+## 8. Publish to the control plane
 
-## 6. Adding a real BAT
+Copy the whole package folder into the server's
+`C:\ProgramData\EndpointAgents\ControlPlane\FileRepository\packages\` (an
+administrator-only folder). No restart is needed: refresh the Packages tab and check
+that the package is Ready. Any later change to the BAT or playbook needs the same
+review, `-Fix` and copy again.
 
-`deploy/samples/menu-repair-sample.bat` and its playbook are a print-only mock with the
-same structure many vendor tools have (banner, extraction pause, main menu, sub-menu,
-one-key choice, self-closing message box, progress lines, success line, "press any
-key", exits). Use it to develop and test the pipeline. A real vendor BAT never matches
-its wording, so it is not a drop-in template:
+## 9. Test on one PC, then pilot
 
-1. Review the real BAT and run the lab without `-Execute`; resolve lint findings.
-2. Start a playbook with only the first screen, then run the lab with
-   `-Execute -Discover` and add one step per screen, copying short stable fragments of
-   the real prompt text, until the run reports `Completed`.
-3. Set `successMarker` and `failureMarkers` from the real success and error lines.
-4. Copy the BAT hash and playbook from the lab's manifest draft into a new manifest
-   entry with the BAT's own artifact id and its compatible versions.
-5. Pilot on one test endpoint (section 7).
+Run the repair on one test endpoint first and confirm the expected result. Then pilot
+it on a few users before relying on it. If the agent needs a rule for choosing between
+packages, update the relevant Hermes skill in `deploy\hermes\skills`.
 
-## 7. Publish
+## Legacy manifests
 
-1. Copy the BAT (and any `supportFiles`) into the protected file repository.
-2. Add the manifest entry and check the dashboard's catalog issues for lint findings.
-3. Update the relevant Hermes skill in `deploy/hermes/skills` if the agent needs a rule
-   for choosing between packages, and add tests (see `CLAUDE.md`).
-4. Pilot on one test endpoint before rollout.
+`office-bugfix-managers.json` and `Windows\windows-bugfix-managers.json` still load. If a
+package and a manifest entry use the same id, the manifest entry wins and the package
+shows as Invalid; move the entry into a package to resolve it.
