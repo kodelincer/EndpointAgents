@@ -1,4 +1,4 @@
-using EndpointAgents.Shared.Windows;
+﻿using EndpointAgents.Shared.Windows;
 using Microsoft.Win32;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -15,10 +15,10 @@ public interface IWindowsActivationProbe
 [SupportedOSPlatform("windows")]
 public sealed class WindowsActivationProbe : IWindowsActivationProbe
 {
-    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(60);
     private const string PowerShellScript =
         "$ErrorActionPreference='Stop';" +
-        "$p=Get-CimInstance SoftwareLicensingProduct -Filter \"ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f'\"|" +
+        "$p=Get-CimInstance SoftwareLicensingProduct -Filter \"ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL\"|" +
         "Where-Object {$_.PartialProductKey}|Sort-Object @{Expression={if($_.LicenseStatus -eq 1){0}else{1}}}|" +
         "Select-Object -First 1 Name,Description,LicenseStatus,LicenseStatusReason,GracePeriodRemaining,ProductKeyChannel;" +
         "if($null -eq $p){'{}'}else{$p|ConvertTo-Json -Compress}";
