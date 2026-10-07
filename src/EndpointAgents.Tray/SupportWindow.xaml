@@ -339,7 +339,7 @@
                                                         </Grid.ColumnDefinitions>
                                                         <!-- Active-conversation marker: full-height bar on the physical right edge, in the status colour. -->
                                                         <Border Grid.ColumnSpan="2" Width="3" HorizontalAlignment="Left" VerticalAlignment="Stretch"
-                                                                Margin="-8,-1,0,-1" CornerRadius="1.5" IsHitTestVisible="False"
+                                                                Margin="-8,-9,0,-9" CornerRadius="1.5" IsHitTestVisible="False"
                                                                 Background="{Binding State, Converter={StaticResource StateBrush}}"
                                                                 Opacity="{Binding SelectionOpacity}">
                                                             <Border.OpacityTransition>

@@ -53,6 +53,7 @@ mcp_servers:
         - office_runtime_status
         - run_office_activation_repair
         - propose_endpoint_action
+        - mark_problem_resolved
       resources: false
       prompts: false
     sampling:

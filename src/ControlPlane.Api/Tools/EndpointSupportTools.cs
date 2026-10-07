@@ -1,4 +1,4 @@
-using ControlPlane.Api.Agents;
+﻿using ControlPlane.Api.Agents;
 using ControlPlane.Api.Chat;
 using ControlPlane.Api.Commands;
 using ControlPlane.Api.Files;
@@ -269,6 +269,26 @@ public sealed class EndpointSupportTools
         });
     }
 
+    [McpServerTool(Name = "mark_problem_resolved"), Description(
+        "Mark this run's support conversation as resolved. Call it only after the endpoint user clearly confirms that their problem is solved. It changes nothing on the endpoint.")]
+    public static async Task<string> MarkProblemResolved(
+        ChatStore store,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        CancellationToken cancellationToken)
+    {
+        var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+        if (scope is null)
+            return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+        var updated = await store.PatchHelpdeskConversationAsync(scope.ConversationId,
+            new HelpdeskConversationPatch(HelpdeskStatus.Resolved, null, null),
+            cancellationToken);
+        if (!updated)
+            return """{"ok":false,"error":"The conversation is not available."}""";
+        await store.WriteToolAuditAsync(scope, "mark_problem_resolved", "resolved",
+            null, cancellationToken);
+        return """{"ok":true,"state":"Resolved"}""";
+    }
     private static async Task<string> RunReadOnlyAsync(ChatStore store,
         AgentRegistry registry, string capability, string method,
         JsonElement? parameters, CancellationToken cancellationToken)

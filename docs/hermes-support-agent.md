@@ -1,4 +1,4 @@
-﻿# Isolated Hermes Support Agent
+# Isolated Hermes Support Agent
 
 ## Authority boundary
 
@@ -265,6 +265,11 @@ Only these tools are visible to Hermes:
 - `office_runtime_status`
 - `run_office_activation_repair`
 - `propose_endpoint_action`
+- `mark_problem_resolved`
+
+`mark_problem_resolved` only sets the run's own conversation to Resolved. The skills ask the user
+whether the problem is solved and call it only after a clear yes; a later user message reopens
+the conversation. It changes nothing on the endpoint.
 
 The dedicated Windows repair tool supplies only the fixed Windows activation artifact.
 The dedicated Office repair tool accepts only a cataloged, version-compatible artifact
