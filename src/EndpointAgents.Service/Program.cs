@@ -3,6 +3,7 @@ using EndpointAgents.Platform.Windows.EndpointInfo;
 using EndpointAgents.Platform.Windows;
 using EndpointAgents.Platform.Windows.Ibsng;
 using EndpointAgents.Platform.Windows.Office;
+using EndpointAgents.Platform.Windows.SystemInfo;
 using EndpointAgents.Platform.Windows.UserSessions;
 using EndpointAgents.Platform.Windows.Windows;
 using EndpointAgents.Shared.Office;
@@ -155,6 +156,14 @@ builder.Services.AddSingleton<IEndpointCommandHandler, OfficeBugfixCommandHandle
 builder.Services.AddSingleton<IEndpointCommandHandler, WindowsActivationStatusCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, WindowsActivationBugfixCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, WindowsHelloSampleCommandHandler>();
+builder.Services.AddSingleton<IEndpointCommandHandler, SystemInfoCommandHandler>();
+
+// Read-only system.get_info sections; add a new ISystemInfoSection here to extend it.
+builder.Services.AddSingleton<ISystemInfoSection, NetworkInfoSection>();
+builder.Services.AddSingleton<ISystemInfoSection, WindowsInfoSection>();
+builder.Services.AddSingleton<ISystemInfoSection, DomainInfoSection>();
+builder.Services.AddSingleton<ISystemInfoSection, HardwareInfoSection>();
+builder.Services.AddSingleton<ISystemInfoSection, StorageInfoSection>();
 
 // AgentWorker owns the SignalR connection. Register the concrete singleton so
 // the local IPC bridge can submit helpdesk requests through the same connection.

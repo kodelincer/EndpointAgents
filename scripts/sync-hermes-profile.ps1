@@ -4,7 +4,7 @@ param(
     [string]$ProfileName = "endpointagents",
     [string]$HermesHome = (Join-Path $env:LOCALAPPDATA "hermes\profiles\endpointagents"),
     # Reviewed skill folders (deploy\hermes\skills) promoted into the profile.
-    [string[]]$Skills = @("office-support", "windows-support"),
+    [string[]]$Skills = @("office-support", "windows-support", "system-info"),
     # First-time setup: write config.yaml and .env (API-server and MCP keys are taken from
     # src\ControlPlane.Api\appsettings.Development.json, the provider key from -SourceHermesHome).
     [switch]$Provision,

@@ -454,8 +454,8 @@ app.MapPost("/api/helpdesk/conversations/{conversationId}/diagnostics", async (
 {
     var readOnlyDiagnostics = new HashSet<string>(StringComparer.Ordinal)
     {
-        "endpoint.get_info", "system.windows_activation_status",
-        "software.office_inventory", "software.office_activation_status",
+        "endpoint.get_info", EndpointAgents.Shared.Support.SystemInfoContracts.Method,
+        "system.windows_activation_status", "software.office_inventory", "software.office_activation_status",
         "software.office_runtime_status",
         "network.ibsng_diagnose"
     };

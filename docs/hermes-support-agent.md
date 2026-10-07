@@ -86,7 +86,7 @@ copies only the LLM provider key from the default profile.
 
 Hermes only sees reviewed assets after they are copied into that profile. After **every**
 change to `deploy/hermes/SOUL.md` or to a promoted skill (`office-support`,
-`windows-support`), run `.\scripts\sync-hermes-profile.ps1` and restart the gateway.
+`windows-support`, `system-info`), run `.\scripts\sync-hermes-profile.ps1` and restart the gateway.
 `.\scripts\sync-hermes-profile.ps1 -Check` reports whether the profile is current and
 exits 1 when it is not.
 ## Production installation
@@ -248,6 +248,9 @@ Hermes runs locally, but the configured LLM provider receives each prompt,
 bounded conversation history, tool schemas, and any sanitized tool results.
 ControlPlane masks known bearer/credential patterns, endpoint identity values,
 SIDs, raw IPv4 addresses, usernames, and machine names before run submission.
+Tool results get the same masking, with one deliberate exception: `endpoint_system_info`
+keeps IP addresses (adapter IP, subnet, gateway, DNS, DHCP server) because diagnosing
+the network is its purpose; identifiers such as machine and user names are still masked.
 This is risk reduction, not a mathematical guarantee that free-form user text
 contains no personal data. Obtain the appropriate organizational approval,
 configure the provider's retention/privacy terms, and do not send unnecessary
@@ -258,6 +261,7 @@ logs.
 Only these tools are visible to Hermes:
 
 - `endpoint_get_info`
+- `endpoint_system_info`
 - `windows_activation_status`
 - `run_windows_activation_repair`
 - `office_inventory`

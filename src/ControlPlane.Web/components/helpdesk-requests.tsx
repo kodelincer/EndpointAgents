@@ -21,6 +21,7 @@ import type {
 const statusOptions = ["All", "New", "Open", "Resolved"] as const;
 const diagnosticOptions = [
   ["endpoint.get_info", "Endpoint information"],
+  ["system.get_info", "System information"],
   ["system.windows_activation_status", "Windows activation"],
   ["software.office_inventory", "Office inventory"],
   ["software.office_activation_status", "Office activation"],

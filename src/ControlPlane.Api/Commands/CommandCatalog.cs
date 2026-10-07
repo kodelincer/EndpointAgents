@@ -1,3 +1,5 @@
+using EndpointAgents.Shared.Support;
+
 namespace ControlPlane.Api.Commands;
 
 /// <summary>Operator-visible metadata for one approved endpoint RPC method.</summary>
@@ -13,6 +15,9 @@ public sealed class CommandCatalog
     [
         new("endpoint.get_info", "Get endpoint information",
             "Collect the active user, machine, network adapter, proxy, time, and internet status.", null),
+        new(SystemInfoContracts.Method, "Get system information",
+            "Read the network configuration (IP, subnet, gateway, DNS, DHCP), Windows version, domain or workgroup membership, hardware, and disk space.",
+            new { sections = SystemInfoContracts.Sections }),
         new("system.windows_activation_status", "Check Windows activation",
             "Collect sanitized Windows version, edition, license, and activation state.", null),
         new("system.windows_activation_bugfix_run", "Run Windows activation repair",

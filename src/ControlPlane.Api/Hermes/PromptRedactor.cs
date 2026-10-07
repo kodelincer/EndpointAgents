@@ -24,6 +24,14 @@ public static partial class PromptRedactor
         return redacted;
     }
 
+    /// <summary>Redacts credentials, bearer tokens and MAC addresses but keeps IP addresses.</summary>
+    public static string RedactSecrets(string value)
+    {
+        var redacted = CredentialPattern().Replace(value, "$1=[redacted]");
+        redacted = BearerPattern().Replace(redacted, "Bearer [redacted]");
+        return MacAddressPattern().Replace(redacted, "[mac-redacted]");
+    }
+
     [GeneratedRegex(@"(?i)\b(password|passwd|pwd|token|secret|api[_-]?key|user(?:name)?)\s*[:=]\s*[^\s,;]+")]
     private static partial Regex CredentialPattern();
 

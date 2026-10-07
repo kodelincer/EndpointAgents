@@ -5,6 +5,7 @@ using ControlPlane.Api.Files;
 using ControlPlane.Api.Hermes;
 using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Rpc;
+using EndpointAgents.Shared.Support;
 using EndpointAgents.Shared.Windows;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
@@ -39,6 +40,30 @@ public sealed class EndpointSupportTools
         CancellationToken cancellationToken) =>
         RunReadOnlyAsync(store, registry, runCapability, "endpoint.get_info",
             parameters: null, cancellationToken);
+
+    [McpServerTool(Name = "endpoint_system_info"), Description(
+        "Read the endpoint's configuration: network adapters with IP address, subnet mask, default gateway, DNS servers, DHCP server and lease, " +
+        "DNS suffix and firewall profiles; Windows version, edition, uptime and pending restart; domain, workgroup or Entra ID membership and " +
+        "domain controller reachability; hardware and memory; and disk free space. Read-only.")]
+    public static Task<string> GetEndpointSystemInfo(
+        ChatStore store,
+        AgentRegistry registry,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        [Description("Optional subset of sections: network, windows, domain, hardware, storage. Omit for all.")]
+        string[]? sections = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!SystemInfoContracts.TryNormalizeSections(sections, out var normalized))
+            return Task.FromResult(ToolResultSanitizer.Sanitize(new
+            {
+                ok = false,
+                error = $"Unknown section. Use only: {string.Join(", ", SystemInfoContracts.Sections)}."
+            }));
+        return RunReadOnlyAsync(store, registry, runCapability, SystemInfoContracts.Method,
+            JsonSerializer.SerializeToElement(new { sections = normalized }),
+            cancellationToken, keepIpAddresses: true);
+    }
 
     [McpServerTool(Name = "windows_activation_status"), Description(
         "Read sanitized Windows version, edition, license, and activation state for the endpoint bound to this run.")]
@@ -291,7 +316,8 @@ public sealed class EndpointSupportTools
     }
     private static async Task<string> RunReadOnlyAsync(ChatStore store,
         AgentRegistry registry, string capability, string method,
-        JsonElement? parameters, CancellationToken cancellationToken)
+        JsonElement? parameters, CancellationToken cancellationToken,
+        bool keepIpAddresses = false)
     {
         var scope = await store.ResolveCapabilityAsync(capability, cancellationToken);
         if (scope is null)
@@ -316,7 +342,7 @@ public sealed class EndpointSupportTools
             cancellationToken);
         return ToolResultSanitizer.Sanitize(response.Error is null
             ? new { ok = true, result = response.Result }
-            : new { ok = false, error = response.Error.Message });
+            : new { ok = false, error = response.Error.Message }, keepIpAddresses);
     }
 
     private static ChatProgressActivity GetProgressActivity(string method) => method switch
