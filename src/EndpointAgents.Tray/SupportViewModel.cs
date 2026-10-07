@@ -1,4 +1,4 @@
-using EndpointAgents.Shared.Chat;
+﻿using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Support;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -71,6 +71,7 @@ public sealed class SupportViewModel : INotifyPropertyChanged
         private set
         {
             if (!Set(ref _selectedConversation, value)) return;
+            foreach (var item in _allConversations) item.IsSelected = ReferenceEquals(item, value);
             OnPropertyChanged(nameof(ConversationHeading));
             OnPropertyChanged(nameof(ConversationSubheading));
             OnPropertyChanged(nameof(IsConversationReadOnly));
@@ -503,6 +504,17 @@ public sealed class ConversationSummaryViewModel : INotifyPropertyChanged
     public string CreatedDisplay { get; private set; } = string.Empty;
     public bool NeedsAttention => State is ChatConversationState.AwaitingApproval
         or ChatConversationState.Working;
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value) return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
     public string AccessibleName => $"{Title}، {StatusLabel}، {UpdatedTime}";
 }
 

@@ -299,6 +299,9 @@
                                             <ListView.Resources>
                                                 <!-- Selection = filled card; the thin accent bar is hidden so it cannot be mistaken for a scrollbar. -->
                                                 <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent" />
+                                                <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPointerOverBrush" Color="Transparent" />
+                                                <SolidColorBrush x:Key="ListViewItemSelectionIndicatorPressedBrush" Color="Transparent" />
+                                                <SolidColorBrush x:Key="ListViewItemSelectionIndicatorDisabledBrush" Color="Transparent" />
                                                 <StaticResource x:Key="ListViewItemBackgroundSelected" ResourceKey="EndpointSelectedItemBrush" />
                                                 <StaticResource x:Key="ListViewItemBackgroundSelectedPointerOver" ResourceKey="EndpointSelectedItemHoverBrush" />
                                                 <StaticResource x:Key="ListViewItemBackgroundSelectedPressed" ResourceKey="EndpointSelectedItemHoverBrush" />
@@ -329,11 +332,16 @@
                                             <ListView.ItemTemplate>
                                                 <DataTemplate>
                                                     <Grid Padding="8,9" ColumnSpacing="12"
-                                                          AutomationProperties.Name="{Binding AccessibleName}">
+                                                          AutomationProperties.Name="{Binding AccessibleName}">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="Auto" />
                                                             <ColumnDefinition Width="*" />
                                                         </Grid.ColumnDefinitions>
+                                                        <!-- Active-conversation marker: full-height bar on the physical right edge, in the status colour. -->
+                                                        <Border Grid.ColumnSpan="2" Width="5" HorizontalAlignment="Left" VerticalAlignment="Stretch"
+                                                                Margin="-8,-9,0,-9" CornerRadius="2.5"
+                                                                Background="{Binding State, Converter={StaticResource StateBrush}}"
+                                                                Visibility="{Binding IsSelected, Converter={StaticResource BoolVisibility}}" />
                                                         <Border Width="46" Height="46" CornerRadius="23"
                                                                 VerticalAlignment="Center"
                                                                 Background="{Binding State, Converter={StaticResource StateBrush}}"
