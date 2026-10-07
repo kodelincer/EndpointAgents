@@ -491,7 +491,9 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBox x:Name="MessageInput"
+                                                <TextBox x:Name="MessageInput" FlowDirection="RightToLeft" Language="fa-IR"
+                                                         TextReadingOrder="UseFlowDirection" TextAlignment="Right"
+                                                         GotFocus="MessageInput_GotFocus"
                                                          AcceptsReturn="True" TextWrapping="Wrap"
                                                          MinHeight="44" MaxHeight="120" MaxLength="200"
                                                          Padding="16,11" CornerRadius="22"

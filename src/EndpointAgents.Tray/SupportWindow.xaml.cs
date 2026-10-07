@@ -1,4 +1,4 @@
-using EndpointAgents.Shared.Chat;
+﻿using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Support;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -28,6 +28,15 @@ public sealed partial class SupportWindow : Window
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr LoadKeyboardLayout(string layoutId, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+
+    private const uint WmInputLangChangeRequest = 0x0050;
+    private bool _persianKeyboardApplied;
 
     private readonly Func<Task> _refreshStatus;
     private readonly ServiceIpcClient _serviceClient = new();
@@ -169,6 +178,7 @@ public sealed partial class SupportWindow : Window
 
     public void ShowSection(SupportSection section)
     {
+        _persianKeyboardApplied = false;
         foreach (var item in Navigation.MenuItems.OfType<NavigationViewItem>())
         {
             if (string.Equals(item.Tag?.ToString(), section.ToString(),
@@ -186,6 +196,7 @@ public sealed partial class SupportWindow : Window
         Activate();
         if (section == SupportSection.Helpdesk)
         {
+            DispatcherQueue.TryEnqueue(() => MessageInput.Focus(FocusState.Programmatic));
             _scrollToEndAfterSync = true;
             _ = RefreshConversationsAsync();
             _ = SyncChatAsync();
@@ -528,6 +539,24 @@ public sealed partial class SupportWindow : Window
         _activeProgressLabel = null;
         _lastChatSequence = 0;
         ViewModel.SubmitResult = string.Empty;
+    }
+
+    // Persian is the default typing language: switch the keyboard layout once each time the window is shown,
+    // so a user who deliberately switches to English is not overridden while typing.
+    private void MessageInput_GotFocus(object sender, RoutedEventArgs e)
+    {
+        if (_persianKeyboardApplied) return;
+        _persianKeyboardApplied = true;
+        try
+        {
+            var layout = LoadKeyboardLayout("00000429", 0);
+            if (layout != IntPtr.Zero)
+                PostMessage(WindowNative.GetWindowHandle(this), WmInputLangChangeRequest, IntPtr.Zero, layout);
+        }
+        catch (Exception ex)
+        {
+            TrayEventLogger.Warning("تغییر زبان صفحه‌کلید به فارسی انجام نشد: " + ex.Message);
+        }
     }
 
     private void MessageInput_TextChanged(object sender, TextChangedEventArgs e)
