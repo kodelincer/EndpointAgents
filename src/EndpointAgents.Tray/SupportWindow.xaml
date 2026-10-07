@@ -206,6 +206,12 @@
                          IsBackButtonVisible="Collapsed" IsSettingsVisible="False"
                          AlwaysShowHeader="False" SelectionChanged="Navigation_SelectionChanged"
                          AutomationProperties.AutomationId="PrimaryNavigation">
+            <NavigationView.Resources>
+                <!-- No accent bar beside the selected page icon; the selected tile is filled instead. -->
+                <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground" Color="Transparent" />
+                <StaticResource x:Key="NavigationViewItemBackgroundSelected" ResourceKey="EndpointSelectedItemBrush" />
+                <StaticResource x:Key="NavigationViewItemBackgroundSelectedPointerOver" ResourceKey="EndpointSelectedItemHoverBrush" />
+            </NavigationView.Resources>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="گفتگوها" Tag="Helpdesk"
                                     ToolTipService.ToolTip="گفتگوها">
@@ -300,6 +306,9 @@
                                             <ListView.ItemContainerStyle>
                                                 <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
                                                     <Setter Property="Padding" Value="0" />
+                                                    <Setter Property="UseSystemFocusVisuals" Value="False" />
+                                                    <Setter Property="FocusVisualPrimaryThickness" Value="0" />
+                                                    <Setter Property="FocusVisualSecondaryThickness" Value="0" />
                                                     <Setter Property="Margin" Value="6,1" />
                                                     <Setter Property="MinHeight" Value="0" />
                                                     <Setter Property="CornerRadius" Value="10" />
