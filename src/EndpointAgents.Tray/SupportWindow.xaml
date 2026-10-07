@@ -290,6 +290,13 @@
                                                   Padding="0,0,0,8"
                                                   AutomationProperties.AutomationId="ConversationIndex"
                                                   AutomationProperties.Name="فهرست گفتگوهای پشتیبانی">
+                                            <ListView.Resources>
+                                                <!-- Selection = filled card; the thin accent bar is hidden so it cannot be mistaken for a scrollbar. -->
+                                                <SolidColorBrush x:Key="ListViewItemSelectionIndicatorBrush" Color="Transparent" />
+                                                <StaticResource x:Key="ListViewItemBackgroundSelected" ResourceKey="EndpointSelectedItemBrush" />
+                                                <StaticResource x:Key="ListViewItemBackgroundSelectedPointerOver" ResourceKey="EndpointSelectedItemHoverBrush" />
+                                                <StaticResource x:Key="ListViewItemBackgroundSelectedPressed" ResourceKey="EndpointSelectedItemHoverBrush" />
+                                            </ListView.Resources>
                                             <ListView.ItemContainerStyle>
                                                 <Style TargetType="ListViewItem" BasedOn="{StaticResource DefaultListViewItemStyle}">
                                                     <Setter Property="Padding" Value="0" />

@@ -30,6 +30,8 @@
                     <SolidColorBrush x:Key="EndpointBubbleMetadataBrush" Color="#FF8C9BAB" />
                     <SolidColorBrush x:Key="EndpointServiceBubbleBrush" Color="#E6FFFFFF" />
                     <SolidColorBrush x:Key="EndpointNoteBrush" Color="#FFFFF1DC" />
+                    <SolidColorBrush x:Key="EndpointSelectedItemBrush" Color="#FFDCEBFB" />
+                    <SolidColorBrush x:Key="EndpointSelectedItemHoverBrush" Color="#FFD0E4F9" />
                     <SolidColorBrush x:Key="EndpointNoteBorderBrush" Color="#FFFFD9A3" />
                     <SolidColorBrush x:Key="EndpointNoteTextBrush" Color="#FF9A5200" />
                 </ResourceDictionary>
@@ -54,6 +56,8 @@
                     <SolidColorBrush x:Key="EndpointBubbleMetadataBrush" Color="#FF6D7F8F" />
                     <SolidColorBrush x:Key="EndpointServiceBubbleBrush" Color="#CC182533" />
                     <SolidColorBrush x:Key="EndpointNoteBrush" Color="#FF3A2B17" />
+                    <SolidColorBrush x:Key="EndpointSelectedItemBrush" Color="#FF2B5278" />
+                    <SolidColorBrush x:Key="EndpointSelectedItemHoverBrush" Color="#FF326090" />
                     <SolidColorBrush x:Key="EndpointNoteBorderBrush" Color="#FF5C4120" />
                     <SolidColorBrush x:Key="EndpointNoteTextBrush" Color="#FFFFC078" />
                 </ResourceDictionary>
@@ -75,6 +79,8 @@
                     <StaticResource x:Key="EndpointBubbleMetadataBrush" ResourceKey="SystemColorWindowTextColorBrush" />
                     <StaticResource x:Key="EndpointServiceBubbleBrush" ResourceKey="SystemColorWindowColorBrush" />
                     <StaticResource x:Key="EndpointNoteBrush" ResourceKey="SystemColorWindowColorBrush" />
+                    <StaticResource x:Key="EndpointSelectedItemBrush" ResourceKey="SystemColorHighlightColorBrush" />
+                    <StaticResource x:Key="EndpointSelectedItemHoverBrush" ResourceKey="SystemColorHighlightColorBrush" />
                     <StaticResource x:Key="EndpointNoteBorderBrush" ResourceKey="SystemColorWindowTextColorBrush" />
                     <StaticResource x:Key="EndpointNoteTextBrush" ResourceKey="SystemColorWindowTextColorBrush" />
                 </ResourceDictionary>
