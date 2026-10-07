@@ -1,4 +1,4 @@
-using Microsoft.UI.Xaml;
+﻿using Microsoft.UI.Xaml;
 
 namespace EndpointAgents.Tray;
 
@@ -51,7 +51,8 @@ public sealed partial class App : Microsoft.UI.Xaml.Application
         {
             _smokeWindow = new SupportWindow(() => Task.CompletedTask);
             _smokeWindow.LoadPreview(arguments.Contains("--dark"), arguments.Contains("--narrow"));
-            _smokeWindow.ShowSection(SupportSection.Helpdesk);
+            _smokeWindow.ShowSection(arguments.Contains("--status") ? SupportSection.Status : SupportSection.Helpdesk);
+            if (arguments.Contains("--max")) _smokeWindow.MaximizeForPreview();
             var snapshot = Array.IndexOf(arguments, "--snapshot");
             if (snapshot > 0 && snapshot + 1 < arguments.Length)
             {

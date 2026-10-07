@@ -59,10 +59,10 @@ public sealed class SupportViewModel : INotifyPropertyChanged
         ? "در دسترس نیست" : Friendly(_status.Runtime.ConnectionStatus);
     public string FunctionMode => _status.Runtime is null
         ? "ناشناخته" : Friendly(_status.Runtime.FunctionMode);
-    public string LastConnected => FormatTime(_status.Runtime?.LastConnectedAtUtc);
+    public string LastConnected => IsolateIfValue(FormatTime(_status.Runtime?.LastConnectedAtUtc), _status.Runtime?.LastConnectedAtUtc is not null);
     public string LastCommand => _status.Runtime?.LastCommandMethod is null
         ? "عملکردی ثبت نشده است"
-        : $"{_status.Runtime.LastCommandMethod} · {FormatTime(_status.Runtime.LastCommandAtUtc)}";
+        : BidiText.IsolateLeftToRight($"{_status.Runtime.LastCommandMethod} · {FormatTime(_status.Runtime.LastCommandAtUtc)}");
     public string LastProblem => _status.Runtime?.LastProblemMessage ?? "مشکلی گزارش نشده است";
     public bool IsConnected => _status.Runtime?.ConnectionStatus == AgentConnectionStatus.Connected;
     public ConversationSummaryViewModel? SelectedConversation
@@ -403,6 +403,9 @@ public sealed class SupportViewModel : INotifyPropertyChanged
 
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+    private static string IsolateIfValue(string text, bool isValue) =>
+        isValue ? BidiText.IsolateLeftToRight(text) : text;
 
     public static string Friendly(Enum value) => value.ToString() switch
     {

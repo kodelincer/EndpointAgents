@@ -653,8 +653,8 @@
                     </SplitView>
                 </Grid>
 
-                <ScrollViewer x:Name="StatusPage" Visibility="Collapsed">
-                    <StackPanel MaxWidth="880" Margin="28,20,28,28" Spacing="20">
+                <ScrollViewer x:Name="StatusPage" Visibility="Collapsed" SizeChanged="StatusPage_SizeChanged" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="StatusContent" HorizontalAlignment="Center" Width="880" Margin="28,20,28,28" Spacing="20">
                         <StackPanel Spacing="4">
                             <TextBlock Text="وضعیت و کنترل" Style="{StaticResource PageTitleStyle}" />
                             <TextBlock Text="وضعیت سرویس، اتصال و آخرین فعالیت دستیار پشتیبانی را مشاهده کنید."
@@ -703,11 +703,10 @@
                                 <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding FunctionMode}" />
                                 <FontIcon Grid.Row="3" Glyph="&#xE823;" FontSize="15" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <TextBlock Grid.Row="3" Grid.Column="1" Text="آخرین اتصال" Style="{StaticResource QuietTextStyle}" />
-                                <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding LastConnected}" FlowDirection="LeftToRight" HorizontalAlignment="Right" />
+                                <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding LastConnected}" />
                                 <FontIcon Grid.Row="4" Glyph="&#xE9D9;" FontSize="15" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <TextBlock Grid.Row="4" Grid.Column="1" Text="آخرین عملکرد" Style="{StaticResource QuietTextStyle}" />
-                                <TextBlock Grid.Row="4" Grid.Column="2" Text="{Binding LastCommand}" TextWrapping="Wrap"
-                                           FlowDirection="LeftToRight" HorizontalAlignment="Right" />
+                                <TextBlock Grid.Row="4" Grid.Column="2" Text="{Binding LastCommand}" TextWrapping="Wrap" />
                                 <FontIcon Grid.Row="5" Glyph="&#xE7BA;" FontSize="15" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <TextBlock Grid.Row="5" Grid.Column="1" Text="آخرین مشکل" Style="{StaticResource QuietTextStyle}" />
                                 <TextBlock Grid.Row="5" Grid.Column="2" Text="{Binding LastProblem}" TextWrapping="Wrap" />

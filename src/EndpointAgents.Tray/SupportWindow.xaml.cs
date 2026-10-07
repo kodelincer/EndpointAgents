@@ -327,6 +327,10 @@ public sealed partial class SupportWindow : Window
             : Visibility.Visible;
     }
 
+    // Keep the status page a centred column that never exceeds the window, at any size.
+    private void StatusPage_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        StatusContent.Width = Math.Max(320, Math.Min(880, e.NewSize.Width - 56));
+
     private void ConversationPaneButton_Click(object sender, RoutedEventArgs e)
     {
         ConversationSplitView.IsPaneOpen = !ConversationSplitView.IsPaneOpen;

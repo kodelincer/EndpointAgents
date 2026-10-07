@@ -9,6 +9,9 @@ namespace EndpointAgents.Tray;
 // conversations so the layout can be reviewed without the service or control plane.
 public sealed partial class SupportWindow
 {
+    public void MaximizeForPreview() =>
+        (_appWindow.Presenter as Microsoft.UI.Windowing.OverlappedPresenter)?.Maximize();
+
     public void LoadPreview(bool dark, bool narrow)
     {
         _previewMode = true;
