@@ -504,6 +504,7 @@ public sealed class ConversationSummaryViewModel : INotifyPropertyChanged
     public string CreatedDisplay { get; private set; } = string.Empty;
     public bool NeedsAttention => State is ChatConversationState.AwaitingApproval
         or ChatConversationState.Working;
+    public double SelectionOpacity => _isSelected ? 1 : 0;
     private bool _isSelected;
     public bool IsSelected
     {
@@ -513,6 +514,7 @@ public sealed class ConversationSummaryViewModel : INotifyPropertyChanged
             if (_isSelected == value) return;
             _isSelected = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionOpacity)));
         }
     }
     public string AccessibleName => $"{Title}، {StatusLabel}، {UpdatedTime}";
