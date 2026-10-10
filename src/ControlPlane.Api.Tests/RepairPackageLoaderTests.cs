@@ -42,7 +42,9 @@ public sealed class RepairPackageLoaderTests : IDisposable
         var descriptor = package.Descriptor;
         Assert.Equal("spooler-reset", descriptor.PackageId);
         Assert.Equal(PackageFileTypes.Bat, descriptor.FileType);
-        Assert.Equal("Tool.bat", descriptor.FileName);
+        // Endpoints stage the file as <id>.<type>, whatever its name in the package.
+        Assert.Equal("spooler-reset.bat", descriptor.FileName);
+        Assert.Equal("Vendor Tool.bat", package.File.FileName);
         Assert.Equal("/api/files/repair-packages/spooler-reset", descriptor.DownloadPath);
         Assert.Equal(["Printing is stuck"], descriptor.Symptoms);
         Assert.Equal("10.0.17763", descriptor.MinWindowsVersion);
@@ -163,7 +165,7 @@ public sealed class RepairPackageLoaderTests : IDisposable
     [Fact]
     public async Task SupportFileCannotShadowThePackageFile()
     {
-        await WritePackageAsync("shadow", supportFile: ("Tool.bat", Bat));
+        await WritePackageAsync("shadow", supportFile: ("shadow.bat", Bat));
 
         var status = await SingleStatusAsync();
 
@@ -195,7 +197,7 @@ public sealed class RepairPackageLoaderTests : IDisposable
         string? fileName = null, Action<JsonObject>? edit = null)
     {
         var folder = Directory.CreateDirectory(Path.Combine(_root, "packages", id)).FullName;
-        fileName ??= exe is null ? "Tool.bat" : "Tool.exe";
+        fileName ??= exe is null ? "Vendor Tool.bat" : "Vendor Tool.exe";
         var bytes = exe is null ? Encoding.ASCII.GetBytes(Bat)
             : await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken);
         await File.WriteAllBytesAsync(Path.Combine(folder, fileName), bytes,

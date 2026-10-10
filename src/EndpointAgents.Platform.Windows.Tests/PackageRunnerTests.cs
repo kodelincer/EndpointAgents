@@ -197,6 +197,58 @@ public sealed class PackageRunnerTests : IDisposable
         Assert.True(exe.CreateNoWindow && bat.CreateNoWindow);
     }
 
+    [Fact]
+    public async Task RunnerRunsTheStagedSamplePackageAndRejectsATamperedCopy()
+    {
+        var root = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(root, "EndpointAgents.slnx")))
+            root = Path.GetDirectoryName(root)!;
+        var bytes = await File.ReadAllBytesAsync(Path.Combine(root, "deploy", "samples",
+            "no-input-repair-sample.bat"), TestContext.Current.CancellationToken);
+        var playbook = V3() with
+        {
+            Arguments = ["/quiet"], RestartExitCodes = [3010],
+            SuccessMarker = "Spooler reset completed.", FailureMarkers = ["ERROR:"]
+        };
+        BatchPlaybookPolicy.TryNormalize(playbook, out var normalized, out _);
+        var descriptor = Descriptor() with
+        {
+            Sha256 = Convert.ToHexString(SHA256.HashData(bytes)),
+            Playbook = normalized!,
+            PlaybookSha256 = BatchPlaybookPolicy.ComputeSha256(normalized!)
+        };
+        var client = new PackageArtifactClient(
+            new EndpointArtifactTransport(new Uri("http://127.0.0.1:5052/agent-hub"),
+                new NoToken()),
+            Microsoft.Extensions.Options.Options.Create(
+                new EndpointAgents.Platform.Windows.Windows.WindowsRemediationOptions
+                {
+                    StagingRoot = _root,
+                    RequireProtectedAcl = false,
+                    RequireAdministrator = false
+                }));
+        var staged = client.GetStagedPath(descriptor);
+        Directory.CreateDirectory(Path.GetDirectoryName(staged)!);
+        await File.WriteAllBytesAsync(staged, bytes, TestContext.Current.CancellationToken);
+        var runner = new PackageRunner(client);
+
+        var result = await runner.RunAsync(staged, descriptor,
+            TestContext.Current.CancellationToken);
+        await File.AppendAllTextAsync(staged, "rem tampered\r\n",
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.State == OfficeBugfixRunStates.Completed, result.ToString());
+        Assert.False(result.RestartRequired);
+        await Assert.ThrowsAsync<InvalidDataException>(() => runner.RunAsync(staged,
+            descriptor, TestContext.Current.CancellationToken));
+    }
+
+    private sealed class NoToken : IEndpointArtifactAuthorizationProvider
+    {
+        public Task<string?> GetBearerTokenAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<string?>(null);
+    }
+
     // ---- Descriptor and command checks ----
 
     [Fact]
@@ -259,7 +311,7 @@ public sealed class PackageRunnerTests : IDisposable
         var playbook = V3() with { Arguments = ["/quiet"] };
         BatchPlaybookPolicy.TryNormalize(playbook, out var normalized, out _);
         return new PackageDescriptor("spooler-reset", "Reset spooler", "Clears jobs",
-            PackageFileTypes.Bat, "Tool.bat", new string('A', 64),
+            PackageFileTypes.Bat, "spooler-reset.bat", new string('A', 64),
             PackageRoutes.Download("spooler-reset"), normalized!,
             BatchPlaybookPolicy.ComputeSha256(normalized!), [], null, null, null, null,
             ["Printing is stuck"]);

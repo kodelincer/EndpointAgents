@@ -183,11 +183,17 @@ public sealed class BatPackageLoaderTests : IDisposable
             RequireProtectedAcl = false
         }), new HostingEnvironment { ContentRootPath = root });
 
-        var status = Assert.Single(await repository.GetPackageStatusesAsync(
-            TestContext.Current.CancellationToken));
+        var statuses = await repository.GetPackageStatusesAsync(
+            TestContext.Current.CancellationToken);
 
-        Assert.Equal("office-activation-repair", status.Id);
-        Assert.True(status.Status == BatPackageStatuses.Ready, string.Join(" ", status.Reasons));
+        Assert.Equal(["no-input-repair-sample", "office-activation-repair"],
+            statuses.Select(status => status.Id).Order(StringComparer.Ordinal));
+        foreach (var status in statuses)
+            Assert.True(status.Status == BatPackageStatuses.Ready,
+                $"{status.Id}: {string.Join(" ", status.Reasons)}");
+        Assert.Equal("no-input-repair-sample", Assert.Single(
+            await repository.GetRepairPackagesAsync(
+                TestContext.Current.CancellationToken)).Descriptor.PackageId);
     }
 
     private static BatchPlaybook Playbook() => new(2,

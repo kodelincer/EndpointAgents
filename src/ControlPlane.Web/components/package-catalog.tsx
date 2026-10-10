@@ -3,7 +3,7 @@
 import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, Package, RefreshCw, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getPackageInventory } from "@/lib/control-plane";
-import { describeStep, finishRules, packageCompatibility, packageStatus } from "@/lib/packages";
+import { describeRun, describeStep, finishRules, packageCompatibility, packageStatus } from "@/lib/packages";
 import type { BatPackage, PackageInventory } from "@/lib/types";
 
 /** Read-only operator view of FileRepository\packages and why each package is or is not offered. */
@@ -34,8 +34,8 @@ export function PackageCatalog() {
 
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="packages-title">
-      <div><div className="file-heading-mark"><Package size={17} /></div><div><h1 id="packages-title">BAT packages</h1>
-        <p>Reviewed BAT files with their playbooks. Only Ready packages are offered to endpoints.</p></div></div>
+      <div><div className="file-heading-mark"><Package size={17} /></div><div><h1 id="packages-title">Packages</h1>
+        <p>Reviewed BAT and EXE files with their playbooks. Only Ready packages are offered to endpoints; general packages run without asking the user.</p></div></div>
       <button className="secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
     </section>
 
@@ -45,8 +45,8 @@ export function PackageCatalog() {
 
     {loading ? <div className="file-list" aria-label="Loading packages"><div className="file-skeleton" /></div> : packages.length === 0 ?
       <section className="file-empty"><span className="empty-icon"><Package size={23} /></span><h2>No packages yet</h2>
-        <p>Create one with <code>scripts\new-bat-package.ps1</code>; see “How to add a package” below.</p></section> :
-      <section className="file-list" aria-label="BAT packages">{packages.map(item =>
+        <p>Create one with <code>scripts\new-package.ps1</code>; see “How to add a package” below.</p></section> :
+      <section className="file-list" aria-label="Packages">{packages.map(item =>
         <PackageRow key={item.id} item={item} inventory={inventory!} open={open === item.id}
           onToggle={() => setOpen(open === item.id ? undefined : item.id)} />)}</section>}
 
@@ -62,10 +62,11 @@ function PackageRow({ item, inventory, open, onToggle }:
     <div className={`package-status-icon ${status.tone}`}><Icon size={18} /></div>
     <div className="file-row-main">
       <div className="file-row-title"><strong>{item.displayName || item.id}</strong>
-        <span className="file-chip">{item.id}</span>{item.kind && <span className="file-chip">{item.kind}</span>}
+        <span className="file-chip">{item.id}</span>{item.kind && <span className="file-chip">{item.kind}</span>}{item.fileType && <span className="file-chip">{item.fileType.toUpperCase()}</span>}
         <span className={`package-status ${status.tone}`}>{status.label}</span></div>
       {item.description && <p className="file-description">{item.description}</p>}
       <p className="file-compatibility">{packageCompatibility(item)}</p>
+      {item.symptoms && item.symptoms.length > 0 && <p className="file-compatibility">Matches: {item.symptoms.map(symptom => <span key={symptom} className="file-chip" dir="auto">{symptom}</span>)}</p>}
       {item.reasons.length > 0 && <ul className="package-reasons">{item.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       {item.warnings.length > 0 && <ul className="package-warnings">{item.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
       <button type="button" className="package-toggle" onClick={onToggle} aria-expanded={open}>
@@ -80,21 +81,23 @@ function PackageDetail({ item, inventory }: { item: BatPackage; inventory: Packa
   return <div className="package-detail">
     {item.playbook ? <>
       <h3>Playbook (version {item.playbook.version})</h3>
-      <ol className="package-steps">{item.playbook.steps.map((step, index) => <li key={index}>{describeStep(step, index)}</li>)}</ol>
+      <ul>{describeRun(item).map(line => <li key={line}>{line}</li>)}</ul>
+      {item.playbook.steps.length > 0 && <ol className="package-steps">{item.playbook.steps.map((step, index) => <li key={index}>{describeStep(step, index)}</li>)}</ol>}
       <h3>Finish rules</h3>
       <ul>{finishRules(item.playbook, limits.defaultGuiDialogGraceSeconds).map(rule => <li key={rule}>{rule}</li>)}</ul>
     </> : <p>No readable playbook.</p>}
     <h3>Hashes</h3>
     <dl className="package-hashes">
-      <div><dt>BAT file</dt><dd>{item.batFileName ?? "—"}{item.batSizeBytes ? ` · ${item.batSizeBytes} bytes` : ""}</dd></div>
-      <div><dt>BAT SHA-256 pinned</dt><dd>{item.pinnedBatSha256 ?? "not set"}</dd></div>
-      <div><dt>BAT SHA-256 on disk</dt><dd>{item.actualBatSha256 ?? "—"}</dd></div>
+      <div><dt>File</dt><dd>{item.batFileName ?? "—"}{item.batSizeBytes ? ` · ${item.batSizeBytes} bytes` : ""}</dd></div>
+      {item.fileType === "exe" && <div><dt>Signed by</dt><dd>{item.signer ?? "no embedded signature"}</dd></div>}
+      <div><dt>File SHA-256 pinned</dt><dd>{item.pinnedBatSha256 ?? "not set"}</dd></div>
+      <div><dt>File SHA-256 on disk</dt><dd>{item.actualBatSha256 ?? "—"}</dd></div>
       <div><dt>Playbook SHA-256 pinned</dt><dd>{item.pinnedPlaybookSha256 ?? "not set"}</dd></div>
       <div><dt>Playbook SHA-256 computed</dt><dd>{item.computedPlaybookSha256 ?? "—"}</dd></div>
       {item.supportFiles.map(file => <div key={file.fileName}><dt>files\{file.fileName}</dt><dd>{file.sha256}</dd></div>)}
     </dl>
     <h3>Limits</h3>
-    <p className="package-limits">Up to {limits.maxSteps} steps and {limits.maxResponses} answers, {limits.minStepTimeoutSeconds}–{limits.maxStepTimeoutSeconds} s per step, {limits.maxRunMinutes} minutes and {Math.round(limits.maxOutputBytes / 1024)} KB of output per run. Answers are at most {limits.maxResponseCharacters} characters and never contain passwords or keys.</p>
+    <p className="package-limits">Up to {limits.maxSteps} steps and {limits.maxResponses} answers, {limits.minStepTimeoutSeconds}–{limits.maxStepTimeoutSeconds} s per step, {item.playbook?.timeoutSeconds ? `${item.playbook.timeoutSeconds} s` : `${limits.maxRunMinutes} minutes`} and {Math.round(limits.maxOutputBytes / 1024)} KB of output per run. Answers are at most {limits.maxResponseCharacters} characters and never contain passwords or keys.</p>
     {item.review && <><h3>Review</h3><p className="package-limits">{[item.review.reviewedBy && `Reviewed by ${item.review.reviewedBy}`,
       item.review.reviewedOn && `on ${item.review.reviewedOn}`, item.review.source && `Source: ${item.review.source}`,
       item.review.notes].filter(Boolean).join(" · ")}</p></>}
@@ -106,10 +109,10 @@ function HowToAddPackage() {
   return <section className="package-howto" aria-labelledby="howto-title">
     <h2 id="howto-title">How to add a package</h2>
     <ol>
-      <li>Review the BAT and get it from a trusted source.</li>
-      <li>Create the package folder: <code>.\scripts\new-bat-package.ps1 -Bat &lt;file.bat&gt; -Id &lt;id&gt; -Kind office</code></li>
-      <li>Find each screen, one round at a time: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Execute -Discover</code> and add a playbook step for it.</li>
-      <li>Fill in the success text, failure texts, compatibility and review, and remove every TODO.</li>
+      <li>Review the BAT or EXE and get it from a trusted source.</li>
+      <li>Create the package folder: <code>.\scripts\new-package.ps1 -File &lt;file.bat or file.exe&gt; -Id &lt;id&gt;</code>, adding <code>-NoInput</code> when the file needs no answers.</li>
+      <li>For a file with screens, find each one, one round at a time: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Execute -Discover</code> and add a playbook step for it.</li>
+      <li>Fill in the symptoms users would describe, any fixed arguments, the success and failure texts, compatibility and review, and remove every TODO.</li>
       <li>Check and record the hashes: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Fix</code> until the status is Ready.</li>
       <li>Copy the folder to the control plane’s <code>FileRepository\packages</code>, refresh this page, and test on one PC before rollout.</li>
     </ol>

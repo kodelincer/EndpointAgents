@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 2,
+  "id": "no-input-repair-sample",
+  "displayName": "Print spooler reset (simulation)",
+  "description": "Harmless mock that prints a spooler reset and changes nothing. Use it to test no-input packages end to end.",
+  "symptoms": [
+    "Printing is stuck or print jobs stay in the queue",
+    "پرینتر چاپ نمی‌کند و کارها در صف می‌مانند"
+  ],
+  "file": {
+    "type": "bat",
+    "fileName": "no-input-repair-sample.bat",
+    "sha256": "E4CDBC1ACB5569B58E9C8057C6512CB9BEFD5962B117D8B5106956A861F4B236",
+    "publisher": null
+  },
+  "compatibility": {
+    "minWindowsVersion": "10.0.17763",
+    "maxWindowsVersionExclusive": null
+  },
+  "supportFiles": [],
+  "playbook": {
+    "version": 3,
+    "arguments": [
+      "/quiet"
+    ],
+    "steps": [],
+    "timeoutSeconds": 120,
+    "successExitCodes": [
+      0
+    ],
+    "restartExitCodes": [
+      3010
+    ],
+    "successMarker": "Spooler reset completed.",
+    "failureMarkers": [
+      "ERROR:"
+    ]
+  },
+  "playbookSha256": "AAA89A519E27D42CD756DE439220F864E675265CD11F41FAFF803C62D95EA32A",
+  "review": {
+    "reviewedBy": "EndpointAgents developers",
+    "reviewedOn": "2026-10-10",
+    "source": "deploy/samples/no-input-repair-sample.bat",
+    "notes": "Simulation only."
+  }
+}

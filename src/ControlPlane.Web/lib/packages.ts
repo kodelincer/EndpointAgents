@@ -38,11 +38,31 @@ export function describeStep(step: PlaybookStep, index: number) {
   return `${index + 1}. ${choices.join("; or ")} (${extras.join(", ")}).`;
 }
 
+/** How the endpoint starts the file: which program, which fixed arguments, and whether it gets input. */
+export function describeRun(item: BatPackage) {
+  const playbook = item.playbook;
+  const program = item.fileType === "exe"
+    ? `Runs the EXE directly${item.exeSubsystem ? ` (${item.exeSubsystem === "GUI" ? "windowed" : "console"} program)` : ""}`
+    : "Runs the BAT through cmd.exe";
+  const args = playbook?.arguments?.length
+    ? ` with the fixed arguments ${playbook.arguments.map(argument => `"${argument}"`).join(" ")}`
+    : " without arguments";
+  const input = playbook && playbook.steps.length === 0
+    ? "No input: nothing is typed, input is closed at start, and the run waits for the file to finish."
+    : `Answers ${playbook?.steps.length ?? 0} screen${playbook?.steps.length === 1 ? "" : "s"} as listed below.`;
+  return [`${program}${args}, hidden, as the endpoint service.`, input];
+}
+
 /** How the endpoint decides that a run succeeded. */
 export function finishRules(playbook: Playbook, defaultGraceSeconds: number) {
   const codes = playbook.successExitCodes?.length ? playbook.successExitCodes : [0];
   return [
     `Exit code must be ${codes.join(" or ")}.`,
+    playbook.restartExitCodes?.length
+      ? `Exit code ${playbook.restartExitCodes.join(" or ")} means it worked and the PC needs a restart.`
+      : undefined,
+    playbook.timeoutSeconds
+      ? `Stops as failed after ${playbook.timeoutSeconds} s in total.` : undefined,
     playbook.successMarker ? `Output must contain "${playbook.successMarker}".` : undefined,
     playbook.failureMarkers?.length
       ? `Stops as failed if the output shows ${playbook.failureMarkers.map(marker => `"${marker}"`).join(", ")}.`
@@ -69,6 +89,12 @@ export function packageCompatibility(item: BatPackage) {
       `Windows ${windows.minWindowsVersion} to < ${windows.maxWindowsVersionExclusive}`,
       windows.editionIds?.length ? `editions ${windows.editionIds.join(", ")}` : "all editions"
     ].join(" · ");
+  }
+  if (item.kind === "general") {
+    const range = item.compatibility;
+    return range?.minWindowsVersion || range?.maxWindowsVersionExclusive
+      ? `Windows ${range.minWindowsVersion ?? "any"} to < ${range.maxWindowsVersionExclusive ?? "latest"}`
+      : "Any Windows version";
   }
   return "No compatibility declared";
 }

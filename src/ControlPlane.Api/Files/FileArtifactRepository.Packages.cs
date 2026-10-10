@@ -386,7 +386,7 @@ public sealed partial class FileArtifactRepository
         var publisher = manifest.File?.Publisher?.Trim();
         if (string.IsNullOrEmpty(publisher)) publisher = null;
         FileArtifact? file = null;
-        if (!PackageDescriptorPolicy.IsValidFileName(type, fileName))
+        if (!PackageDescriptorPolicy.IsValidSourceFileName(type, fileName))
             Invalid("file.type must be \"bat\" or \"exe\", and file.fileName the name of a matching .bat or .exe inside the package folder.");
         else
         {
@@ -453,10 +453,12 @@ public sealed partial class FileArtifactRepository
         // Supporting files in <package>/files/.
         IReadOnlyList<BatchSupportFile>? supportFiles = null;
         var supportDirectory = Path.Combine(directory, PackageSupportDirectoryName);
+        var stagedName = PackageFileTypes.IsKnown(type)
+            ? PackageDescriptorPolicy.StagedFileName(folder, type) : fileName;
         var supportEntries = manifest.SupportFiles ?? [];
-        if (supportEntries.Any(entry => entry?.FileName?.Equals(fileName,
+        if (supportEntries.Any(entry => entry?.FileName?.Equals(stagedName,
                 StringComparison.OrdinalIgnoreCase) == true))
-            Invalid("A supporting file cannot have the same name as the package file.");
+            Invalid($"A supporting file cannot be named like the staged package file ({stagedName}).");
         else
         {
             var (loaded, supportError) = await LoadSupportFilesAsync(supportDirectory,
@@ -489,7 +491,7 @@ public sealed partial class FileArtifactRepository
             return new LoadedPackage(packageStatus, null, null);
 
         var descriptor = new PackageDescriptor(folder, displayName, description, type,
-            fileName, file!.Sha256, PackageRoutes.Download(folder), playbook!,
+            stagedName, file!.Sha256, PackageRoutes.Download(folder), playbook!,
             computedPlaybook!, supportFiles!,
             supportFiles!.Count == 0 ? null
                 : BatchSupportFilePolicy.ComputeBundleSha256(file.Sha256, supportFiles),

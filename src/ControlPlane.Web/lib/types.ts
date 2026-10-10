@@ -50,13 +50,17 @@ export type PlaybookStep = PlaybookChoice & {
 export type Playbook = {
   version: number; steps: PlaybookStep[]; successExitCodes?: number[] | null;
   successMarker?: string | null; failureMarkers?: string[] | null;
-  guiDialogGraceSeconds?: number | null;
+  guiDialogGraceSeconds?: number | null; arguments?: string[] | null;
+  timeoutSeconds?: number | null; restartExitCodes?: number[] | null;
 };
 export type PackageStatus = "Ready" | "ReadyWithWarnings" | "HashMismatch"
   | "InvalidPlaybook" | "LintRejected" | "Invalid";
 export type BatPackage = {
   id: string; folder: string; status: PackageStatus; reasons: string[]; warnings: string[];
-  kind?: "office" | "windows" | null; displayName?: string | null; description?: string | null;
+  kind?: "office" | "windows" | "general" | null; displayName?: string | null; description?: string | null;
+  fileType?: "bat" | "exe" | string | null; symptoms?: string[] | null;
+  compatibility?: { minWindowsVersion?: string | null; maxWindowsVersionExclusive?: string | null } | null;
+  signer?: string | null; exeSubsystem?: "Console" | "GUI" | string | null;
   batFileName?: string | null; pinnedBatSha256?: string | null; actualBatSha256?: string | null;
   batSizeBytes?: number | null; pinnedPlaybookSha256?: string | null;
   computedPlaybookSha256?: string | null; playbook?: Playbook | null;
@@ -78,6 +82,8 @@ export type PackageInventory = {
     maxSteps: number; maxResponses: number; maxResponseCharacters: number;
     minStepTimeoutSeconds: number; maxStepTimeoutSeconds: number;
     defaultGuiDialogGraceSeconds: number; maxRunMinutes: number; maxOutputBytes: number;
+    defaultRunTimeoutSeconds?: number; minRunTimeoutSeconds?: number;
+    maxRunTimeoutSeconds?: number; maxArguments?: number;
   };
   packages: BatPackage[];
 };

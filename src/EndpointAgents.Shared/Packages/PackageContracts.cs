@@ -63,11 +63,21 @@ public static class PackageDescriptorPolicy
             || char.IsAsciiDigit(character) || character is '-' or '_' or '.')
         && char.IsAsciiLetterOrDigit(id[0]) && char.IsAsciiLetterOrDigit(id[^1]);
 
-    public static bool IsValidFileName(string? type, string? fileName) =>
+    /// <summary>
+    /// Whether an administrator's file name inside the package folder has the
+    /// extension of its declared type. Endpoints stage it as <see cref="StagedFileName"/>.
+    /// </summary>
+    public static bool IsValidSourceFileName(string? type, string? fileName) =>
         PackageFileTypes.IsKnown(type)
-        && BatchSupportFilePolicy.IsValidName(fileName)
-        && fileName!.EndsWith(PackageFileTypes.Extension(type!),
+        && fileName is { Length: > 0 and <= 128 }
+        && Path.GetFileName(fileName) == fileName
+        && fileName.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
+        && fileName.EndsWith(PackageFileTypes.Extension(type!),
             StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The name a package file is staged and run under: <c>&lt;id&gt;.&lt;type&gt;</c>.</summary>
+    public static string StagedFileName(string packageId, string type) =>
+        $"{packageId}{PackageFileTypes.Extension(type)}";
 
     /// <summary>
     /// Checks everything the endpoint relies on before it downloads or runs a package,
@@ -79,7 +89,9 @@ public static class PackageDescriptorPolicy
         playbook = null;
         if (descriptor is null
             || !IsValidId(descriptor.PackageId)
-            || !IsValidFileName(descriptor.FileType, descriptor.FileName)
+            || !PackageFileTypes.IsKnown(descriptor.FileType)
+            || descriptor.FileName != StagedFileName(descriptor.PackageId,
+                descriptor.FileType)
             || !BatchSupportFilePolicy.IsSha256(descriptor.Sha256)
             || descriptor.DownloadPath != PackageRoutes.Download(descriptor.PackageId)
             || !BatchSupportFilePolicy.IsSha256(descriptor.PlaybookSha256)

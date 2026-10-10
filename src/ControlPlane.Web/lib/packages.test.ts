@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeStep, finishRules, isPublished, packageCompatibility, packageStatus } from "./packages";
+import { describeRun, describeStep, finishRules, isPublished, packageCompatibility, packageStatus } from "./packages";
 import type { BatPackage } from "./types";
 
 const ready: BatPackage = {
@@ -49,5 +49,26 @@ describe("package presentation", () => {
       minWindowsVersion: "10.0.19041", maxWindowsVersionExclusive: "10.0.30000" } }))
       .toBe("Windows 10.0.19041 to < 10.0.30000 · all editions");
     expect(packageCompatibility({ ...ready, office: null })).toBe("No compatibility declared");
+    expect(packageCompatibility({ ...ready, office: null, kind: "general",
+      compatibility: { minWindowsVersion: "10.0.17763" } }))
+      .toBe("Windows 10.0.17763 to < latest");
+    expect(packageCompatibility({ ...ready, office: null, kind: "general" }))
+      .toBe("Any Windows version");
+  });
+
+  it("describes how a general package runs", () => {
+    const noInput: BatPackage = { ...ready, office: null, kind: "general", fileType: "exe",
+      exeSubsystem: "GUI", playbook: { version: 3, steps: [], arguments: ["/quiet", "/norestart"],
+        timeoutSeconds: 600, restartExitCodes: [3010] } };
+    expect(describeRun(noInput)).toEqual([
+      'Runs the EXE directly (windowed program) with the fixed arguments "/quiet" "/norestart", hidden, as the endpoint service.',
+      "No input: nothing is typed, input is closed at start, and the run waits for the file to finish."]);
+    expect(finishRules(noInput.playbook!, 15)).toEqual([
+      "Exit code must be 0.", "Exit code 3010 means it worked and the PC needs a restart.",
+      "Stops as failed after 600 s in total.", "A window left open for 15 s stops the run."]);
+    expect(describeRun({ ...noInput, fileType: "bat", exeSubsystem: null, playbook: {
+      version: 2, steps: [{ expect: "Menu", send: "1", submit: "line", timeoutSeconds: 30 }] } }))
+      .toEqual(["Runs the BAT through cmd.exe without arguments, hidden, as the endpoint service.",
+        "Answers 1 screen as listed below."]);
   });
 });

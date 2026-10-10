@@ -30,7 +30,12 @@ if (options is null)
     return 2;
 }
 
-var json = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
+// Relaxed escaping keeps Persian symptoms readable when --fix rewrites package.json.
+var json = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+{
+    WriteIndented = true,
+    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+};
 return options.PackageFolder is { } folder
     ? await RunPackageAsync(Path.GetFullPath(folder), options, json)
     : await RunLooseAsync(options, json);
@@ -87,7 +92,7 @@ static async Task<int> RunPackageAsync(string folder, LabOptions options,
             ? (manifest.File?.FileName ?? string.Empty,
                 manifest.File?.Type?.Trim().ToLowerInvariant() ?? string.Empty)
             : (manifest.Bat?.FileName ?? string.Empty, PackageFileTypes.Bat);
-        if (!PackageDescriptorPolicy.IsValidFileName(fileType, fileName))
+        if (!PackageDescriptorPolicy.IsValidSourceFileName(fileType, fileName))
         {
             Console.WriteLine("Cannot run: the package file name or type is invalid.");
             return 1;
