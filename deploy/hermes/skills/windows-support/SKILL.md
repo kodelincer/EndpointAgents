@@ -12,10 +12,11 @@ For a Windows activation, license, unlicensed, or activation-warning problem:
 3. If the result is `Licensed`, explain that Windows reports as activated and stop.
 4. If the probe failed, explain that activation could not be verified and stop.
 5. Call `mcp_controlplane_list_repair_attempts` once with exactly
-   `{ "runCapability": "<the supplied run capability>" }`. Select the first ID in
-   `compatibleBugfixArtifactIds` (already in the administrator's try order) that is not
-   among the attempts' `artifactId` values. If the list is empty, or every compatible ID
-   was already tried, escalate (see "Closing the ticket").
+   `{ "runCapability": "<the supplied run capability>" }`. Choose the next repair with
+   "Try order" below: the first listed ID that is in `compatibleBugfixArtifactIds` and is
+   not among the attempts' `artifactId` values. If no listed ID qualifies, use the first
+   other compatible ID that was not tried. If the compatible list is empty, or every
+   compatible ID was already tried, escalate (see "Closing the ticket").
 6. Call `mcp_controlplane_run_windows_activation_repair` once with exactly
    `{ "runCapability": "<the supplied run capability>", "artifactId": "<selected compatible ID>" }`.
    ControlPlane pins the BAT and playbook revisions and binds the action to the endpoint
@@ -25,6 +26,16 @@ For a Windows activation, license, unlicensed, or activation-warning problem:
    fresh result is `Licensed`. If execution completed but Windows remains unlicensed,
    report both facts. If execution failed and Windows remains unlicensed, report both
    failures.
+
+## Try order
+
+Administrators keep this list. When one repair does not solve the activation problem,
+the next one in this list is tried. Add, remove, or reorder repair IDs here; no code
+change is needed. An ID that is not compatible with the user's PC is skipped.
+
+1. `windows-activation-repair`
+
+## Other Windows problems
 
 For another Windows problem, ask for the specific symptom when it is unclear. Call
 `mcp_controlplane_endpoint_get_info` only when machine, version, network, proxy, or

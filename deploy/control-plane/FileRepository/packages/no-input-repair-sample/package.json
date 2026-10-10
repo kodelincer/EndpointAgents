@@ -3,6 +3,8 @@
   "id": "no-input-repair-sample",
   "displayName": "Print spooler reset (simulation)",
   "description": "Harmless mock that prints a spooler reset and changes nothing. Use it to test no-input packages end to end.",
+  "problem": "printing-stuck",
+  "order": 100,
   "symptoms": [
     "Printing is stuck or print jobs stay in the queue",
     "پرینتر چاپ نمی‌کند و کارها در صف می‌مانند"

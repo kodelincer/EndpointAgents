@@ -20,11 +20,12 @@ activation warning:
    remains valid evidence when the probe is unavailable.
 4. For an unhealthy result, or an explicit activation problem when the probe is
    unavailable, call `mcp_controlplane_list_repair_attempts` once with exactly
-   `{ "runCapability": "<the supplied run capability>" }`. Then select the first artifact
-   ID in `compatibleBugfixArtifactIds` (that list is already in the administrator's try
-   order) that is not among the attempts' `artifactId` values. If the list is empty,
-   say that no compatible approved repair is installed and escalate (see "Closing the
-   ticket"). If every compatible ID was already tried, escalate.
+   `{ "runCapability": "<the supplied run capability>" }`. Choose the next repair with
+   "Try order" below: the first listed ID that is in `compatibleBugfixArtifactIds` and is
+   not among the attempts' `artifactId` values. If no listed ID qualifies, use the first
+   other compatible ID that was not tried. If the compatible list is empty, say that no
+   compatible approved repair is installed and escalate (see "Closing the ticket"). If
+   every compatible ID was already tried, escalate.
 5. Call `mcp_controlplane_office_runtime_status` once with exactly
    `{ "runCapability": "<the supplied run capability>" }`.
 6. If inspection fails, explain that Office applications could not be checked and
@@ -44,6 +45,16 @@ activation warning:
    result satisfies the complete healthy KMS rule from step 3. If execution completed
    but activation is still unhealthy, say both facts. If execution failed and activation
    is unhealthy, report both failures.
+
+## Try order
+
+Administrators keep this list. When one repair does not solve the activation problem,
+the next one in this list is tried. Add, remove, or reorder repair IDs here; no code
+change is needed. An ID that is not compatible with the user's PC is skipped.
+
+1. `office-activation-repair`
+
+## Other Office problems
 
 For a generic Office problem that does not mention activation, licensing, Product
 Unlicensed, or the red activation warning, ask for the symptom. Do not propose the
