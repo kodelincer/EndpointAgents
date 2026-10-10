@@ -289,6 +289,15 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
             .Select(item => item.GetString()).ToArray();
         Assert.Contains("runCapability", windowsRepairRequired);
         Assert.Contains("artifactId", windowsRepairRequired);
+
+        Assert.Contains(tools.EnumerateArray(), tool =>
+            tool.GetProperty("name").GetString() == "find_repair_packages");
+        var packageRun = tools.EnumerateArray().Single(tool =>
+            tool.GetProperty("name").GetString() == "run_repair_package");
+        var packageRunInputs = packageRun.GetProperty("inputSchema")
+            .GetProperty("properties").EnumerateObject()
+            .Select(property => property.Name).Order().ToArray();
+        Assert.Equal(["packageId", "runCapability"], packageRunInputs);
     }
 
     [Fact]
@@ -308,6 +317,12 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await remote.GetAsync("/api/files/office/bugfix/catalog",
                 TestCancellation)).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized,
+            (await remote.GetAsync("/api/files/repair-packages/catalog",
+                TestCancellation)).StatusCode);
+        // The operator package status view stays loopback-only.
+        Assert.Equal(HttpStatusCode.Forbidden,
+            (await remote.GetAsync("/api/files/packages", TestCancellation)).StatusCode);
     }
 
     [Fact]

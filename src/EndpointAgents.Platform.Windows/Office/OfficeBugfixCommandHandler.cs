@@ -302,6 +302,8 @@ public sealed class OfficeBugfixCommandHandler(
             OfficeBugfixRunStates.Completed => (0, string.Empty),
             OfficeBugfixRunStates.PromptTimedOut => (408,
                 "The approved Office repair did not show the expected prompt before its timeout."),
+            OfficeBugfixRunStates.TimedOut => (408,
+                "The approved Office repair did not finish before its time limit."),
             OfficeBugfixRunStates.ExitedBeforePlaybookCompleted => (409,
                 "The approved Office repair exited before all approved playbook steps completed."),
             OfficeBugfixRunStates.OutputLimitExceeded => (413,

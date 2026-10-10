@@ -166,7 +166,7 @@ file to `C:\ProgramData\EndpointAgents\Hermes\SOUL.md`. ControlPlane sends only
 run-specific capability and retry data; it does not read or synchronize
 `SOUL.md` at runtime.
 
-Promote the reviewed `office-support` and `windows-support` skills. The Windows skill
+Promote the reviewed `office-support`, `windows-support` and `repair-packages` skills. The Windows skill
 allows general Windows intake but restricts automated remediation to activation.
 
 Do not promote `ibsng-support` until IBSng tools and actions are deliberately
@@ -175,8 +175,8 @@ tool permission that ControlPlane or the Hermes MCP allowlist has withheld.
 
 When using the service layout from this guide, the manual filesystem target is
 `C:\ProgramData\EndpointAgents\Hermes\skills`. Stop Hermes, replace only the
-reviewed `office-support` and `windows-support` skill folders, then start Hermes
-and verify that both appear in the selected API-server profile and that the
+reviewed `office-support`, `windows-support` and `repair-packages` skill folders, then start Hermes
+and verify that all three appear in the selected API-server profile and that the
 profile uses the promoted `SOUL.md`. The same promotion can be performed through
 Hermes Desktop if it manages that exact profile.
 
@@ -246,6 +246,8 @@ Only these tools are visible to Hermes:
 - `office_activation_status`
 - `office_runtime_status`
 - `run_office_activation_repair`
+- `find_repair_packages`
+- `run_repair_package`
 - `propose_endpoint_action`
 
 The dedicated Windows repair tool supplies only the fixed Windows activation artifact.
@@ -254,6 +256,13 @@ ID. Both dispatch filename-and-SHA-pinned commands to the endpoint and user boun
 run capability and create no approval card. The Windows endpoint repeats its activation
 check before execution; the Office endpoint also checks again that Office applications
 are closed.
+
+`find_repair_packages` lists the published schema 2 repair packages (id, display
+name, description, symptoms and Windows range only). `run_repair_package` accepts one
+of those ids, pins its file, playbook and supporting-file hashes, and dispatches
+`system.package_run` to the bound endpoint without an approval card: every package is
+administrator-reviewed, and the endpoint runs only the playbook's fixed arguments and
+answers. See `docs/bat-packages.md`.
 
 The generic proposal tool accepts only cataloged Office and Windows remediation
 methods. It stores the exact method and parameters with the run, conversation,

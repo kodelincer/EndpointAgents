@@ -25,7 +25,9 @@ Flows:
 Authority boundary: ControlPlane.Api, not Hermes, owns device/user identity, consent, command allow-listing
 and audit. Hermes never gets an `agentId`; a per-run capability resolves server-side to one device + user SID.
 Read-only diagnostics run automatically; Windows/Office activation repairs run automatically only via their
-dedicated pinned tools; anything else goes through `propose_endpoint_action` and needs the user's Tray approval.
+dedicated pinned tools; administrator-reviewed catalog packages (schema 2, BAT or EXE) run automatically via
+`run_repair_package` when their symptoms match; anything else goes through `propose_endpoint_action` and needs the
+user's Tray approval.
 
 ## Build, run, test (no Visual Studio needed: .NET 10 SDK + Node)
 

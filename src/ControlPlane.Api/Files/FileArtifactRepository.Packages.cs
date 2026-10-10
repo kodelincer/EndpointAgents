@@ -1,24 +1,62 @@
 using EndpointAgents.Shared.Office;
+using EndpointAgents.Shared.Packages;
 using EndpointAgents.Shared.Windows;
 using System.Text.Json;
 
 namespace ControlPlane.Api.Files;
 
+public sealed record RepairPackageArtifact(
+    FileArtifact File,
+    PackageDescriptor Descriptor,
+    string SupportDirectory);
+
 /// <summary>
-/// Loads BAT packages from <c>FileRepository/packages/&lt;id&gt;/package.json</c> and adds
-/// the publishable ones to the existing Office and Windows bugfix catalogs, so the
-/// endpoint routes and descriptors stay unchanged. Legacy manifests keep working.
+/// Loads packages from <c>FileRepository/packages/&lt;id&gt;/package.json</c>. Schema 1
+/// BAT packages join the existing Office and Windows bugfix catalogs, so those endpoint
+/// routes and descriptors stay unchanged; schema 2 packages (BAT or EXE) form the
+/// general repair catalog. Legacy manifests keep working.
 /// </summary>
 public sealed partial class FileArtifactRepository
 {
     public const string PackagesDirectoryName = "packages";
     public const string PackageManifestFileName = "package.json";
     public const string PackageSupportDirectoryName = "files";
+    public const string GeneralPackageKind = "general";
+    private const int MaxDisplayNameCharacters = 120;
+    private const int MaxDescriptionCharacters = 500;
 
     public string PackagesRootPath => Path.Combine(_rootPath, PackagesDirectoryName);
 
     private sealed record LoadedPackage(BatPackageStatus Status,
-        OfficeBugfixFileArtifact? Office, WindowsBugfixFileArtifact? Windows);
+        OfficeBugfixFileArtifact? Office, WindowsBugfixFileArtifact? Windows,
+        RepairPackageArtifact? General = null);
+
+    /// <summary>Published schema 2 packages, ordered by id.</summary>
+    public async Task<IReadOnlyList<RepairPackageArtifact>> GetRepairPackagesAsync(
+        CancellationToken cancellationToken) =>
+        (await LoadPackagesAsync(cancellationToken))
+            .Select(package => package.General)
+            .OfType<RepairPackageArtifact>()
+            .ToArray();
+
+    public async Task<RepairPackageArtifact?> GetRepairPackageAsync(string packageId,
+        CancellationToken cancellationToken)
+    {
+        if (!PackageDescriptorPolicy.IsValidId(packageId)) return null;
+        return (await GetRepairPackagesAsync(cancellationToken)).SingleOrDefault(item =>
+            item.Descriptor.PackageId == packageId);
+    }
+
+    public async Task<FileArtifact?> GetRepairPackageSupportFileAsync(string packageId,
+        string fileName, CancellationToken cancellationToken)
+    {
+        var package = await GetRepairPackageAsync(packageId, cancellationToken);
+        var entry = package?.Descriptor.SupportFiles.SingleOrDefault(item =>
+            item.FileName == fileName);
+        return entry is null ? null : await InspectFileAsync(
+            Path.Combine(package!.SupportDirectory, fileName), entry.Sha256,
+            cancellationToken);
+    }
 
     public async Task<IReadOnlyList<BatPackageStatus>> GetPackageStatusesAsync(
         CancellationToken cancellationToken)
@@ -31,6 +69,7 @@ public sealed partial class FileArtifactRepository
         var taken = legacyOffice.Concat(legacyWindows)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         return packages.Select(package => taken.Contains(package.Status.Id)
+                && package.Status.Kind != GeneralPackageKind
                 && BatPackageStatuses.IsPublished(package.Status.Status)
                 ? package.Status with
                 {
@@ -153,12 +192,15 @@ public sealed partial class FileArtifactRepository
         if (manifestText.Contains("TODO", StringComparison.Ordinal))
             return Rejected($"{PackageManifestFileName} still contains TODO markers; replace each one.");
 
-        if (manifest.SchemaVersion != 1)
-            return Rejected("schemaVersion must be 1.");
+        if (manifest.SchemaVersion is not 1 and not 2)
+            return Rejected("schemaVersion must be 1 or 2.");
         if (manifest.Id != folder)
             return Rejected($"id '{manifest.Id}' must equal the folder name '{folder}'.");
         if (!ArtifactIdPattern().IsMatch(folder) || !char.IsAsciiLetterOrDigit(folder[^1]))
             return Rejected("The package id must use lowercase letters, numbers, dots, underscores, or hyphens and end with a letter or number.");
+        if (manifest.SchemaVersion == 2)
+            return await LoadGeneralPackageAsync(directory, folder, manifest,
+                cancellationToken);
         if ((manifest.Office is null) == (manifest.Windows is null))
             return Rejected("package.json must contain exactly one of \"office\" or \"windows\".");
 
@@ -264,15 +306,7 @@ public sealed partial class FileArtifactRepository
             warnings.AddRange(lint.Warnings);
         }
 
-        string[] severity =
-        [
-            BatPackageStatuses.Invalid, BatPackageStatuses.HashMismatch,
-            BatPackageStatuses.InvalidPlaybook, BatPackageStatuses.LintRejected
-        ];
-        var status = reasons.Count > 0
-            ? severity.First(level => reasons.Any(reason => reason.Status == level))
-            : warnings.Count > 0 ? BatPackageStatuses.ReadyWithWarnings
-            : BatPackageStatuses.Ready;
+        var status = OverallStatus(reasons, warnings);
         var packageStatus = new BatPackageStatus(folder, directory, status,
             reasons.Select(reason => reason.Reason).ToArray(), warnings, kind,
             manifest.DisplayName, manifest.Description, batName.Length == 0 ? null : batName,
@@ -290,5 +324,178 @@ public sealed partial class FileArtifactRepository
             : new LoadedPackage(packageStatus, null, new WindowsBugfixFileArtifact(bat!,
                 CreateWindowsBugfixDescriptor(windowsEntry!, playbook!, bat!.Sha256,
                     supportFiles!), supportDirectory));
+    }
+
+    private static string OverallStatus(
+        IReadOnlyList<(string Status, string Reason)> reasons,
+        IReadOnlyList<string> warnings)
+    {
+        string[] severity =
+        [
+            BatPackageStatuses.Invalid, BatPackageStatuses.HashMismatch,
+            BatPackageStatuses.InvalidPlaybook, BatPackageStatuses.LintRejected
+        ];
+        return reasons.Count > 0
+            ? severity.First(level => reasons.Any(reason => reason.Status == level))
+            : warnings.Count > 0 ? BatPackageStatuses.ReadyWithWarnings
+            : BatPackageStatuses.Ready;
+    }
+
+    /// <summary>
+    /// Validates a schema 2 general repair package: a BAT or EXE, the symptoms the
+    /// agent matches requests against, a version 1-3 playbook, and an optional Windows
+    /// version range.
+    /// </summary>
+    private async Task<LoadedPackage> LoadGeneralPackageAsync(string directory,
+        string folder, BatPackageManifest manifest, CancellationToken cancellationToken)
+    {
+        var reasons = new List<(string Status, string Reason)>();
+        var warnings = new List<string>();
+        void Invalid(string reason) => reasons.Add((BatPackageStatuses.Invalid, reason));
+
+        if (manifest.Bat is not null || manifest.Office is not null
+            || manifest.Windows is not null)
+            Invalid("Schema 2 packages describe their file in \"file\"; remove \"bat\", \"office\" and \"windows\".");
+        var displayName = manifest.DisplayName?.Trim() ?? string.Empty;
+        var description = manifest.Description?.Trim() ?? string.Empty;
+        if (displayName.Length is 0 or > MaxDisplayNameCharacters)
+            Invalid($"displayName must contain 1 to {MaxDisplayNameCharacters} characters.");
+        if (description.Length is 0 or > MaxDescriptionCharacters)
+            Invalid($"description must contain 1 to {MaxDescriptionCharacters} characters.");
+
+        var symptoms = (manifest.Symptoms ?? [])
+            .Select(symptom => symptom?.Trim() ?? string.Empty).ToArray();
+        if (symptoms.Length is 0 or > PackageDescriptorPolicy.MaximumSymptoms
+            || symptoms.Any(symptom => symptom.Length is 0
+                or > PackageDescriptorPolicy.MaximumSymptomCharacters))
+            Invalid($"symptoms must list 1 to {PackageDescriptorPolicy.MaximumSymptoms} phrases of up to {PackageDescriptorPolicy.MaximumSymptomCharacters} characters that describe the problem in the user's words.");
+
+        var minWindows = manifest.Compatibility?.MinWindowsVersion?.Trim();
+        var maxWindows = manifest.Compatibility?.MaxWindowsVersionExclusive?.Trim();
+        if (string.IsNullOrEmpty(minWindows)) minWindows = null;
+        if (string.IsNullOrEmpty(maxWindows)) maxWindows = null;
+        if (!ValidVersion(minWindows) || !ValidVersion(maxWindows)
+            || minWindows is not null && maxWindows is not null
+            && Version.Parse(minWindows) >= Version.Parse(maxWindows))
+            Invalid("compatibility.minWindowsVersion and maxWindowsVersionExclusive must be versions such as 10.0.19041, with the minimum below the maximum.");
+
+        // The file and its pinned hash.
+        var type = manifest.File?.Type?.Trim().ToLowerInvariant() ?? string.Empty;
+        var fileName = manifest.File?.FileName ?? string.Empty;
+        var pinnedFile = NormalizeSha256(manifest.File?.Sha256);
+        var publisher = manifest.File?.Publisher?.Trim();
+        if (string.IsNullOrEmpty(publisher)) publisher = null;
+        FileArtifact? file = null;
+        if (!PackageDescriptorPolicy.IsValidFileName(type, fileName))
+            Invalid("file.type must be \"bat\" or \"exe\", and file.fileName the name of a matching .bat or .exe inside the package folder.");
+        else
+        {
+            file = await InspectFileAsync(Path.Combine(directory, fileName), null,
+                cancellationToken);
+            if (file is null)
+                Invalid($"{fileName} is missing, empty, too large, redirected, or untrusted.");
+            else if (pinnedFile is null)
+                reasons.Add((BatPackageStatuses.HashMismatch,
+                    $"file.sha256 is not set; the file's SHA-256 is {file.Sha256}."));
+            else if (pinnedFile != file.Sha256)
+                reasons.Add((BatPackageStatuses.HashMismatch,
+                    $"{fileName} has SHA-256 {file.Sha256} but package.json pins {pinnedFile}. The file changed after review."));
+        }
+
+        // Playbook and its pinned hash.
+        string? computedPlaybook = null;
+        if (!BatchPlaybookPolicy.TryNormalize(manifest.Playbook, out var playbook,
+                out var playbookError))
+            reasons.Add((BatPackageStatuses.InvalidPlaybook, $"Playbook: {playbookError}"));
+        else
+        {
+            computedPlaybook = BatchPlaybookPolicy.ComputeSha256(playbook!);
+            var pinnedPlaybook = NormalizeSha256(manifest.PlaybookSha256);
+            if (pinnedPlaybook is null)
+                reasons.Add((BatPackageStatuses.InvalidPlaybook,
+                    $"playbookSha256 is not set; the playbook hashes to {computedPlaybook}."));
+            else if (pinnedPlaybook != computedPlaybook)
+                reasons.Add((BatPackageStatuses.InvalidPlaybook,
+                    $"The playbook hashes to {computedPlaybook} but package.json pins {pinnedPlaybook}. Review the change, then update playbookSha256."));
+        }
+
+        // BAT lint, or EXE subsystem and signer.
+        string? subsystem = null;
+        string? signer = null;
+        if (file is not null && type == PackageFileTypes.Bat)
+        {
+            if (publisher is not null)
+                Invalid("file.publisher applies only to EXE files.");
+            var lint = BatScriptLint.Inspect(
+                await File.ReadAllTextAsync(file.FullPath, cancellationToken));
+            reasons.AddRange(lint.Errors.Select(error =>
+                (BatPackageStatuses.LintRejected, $"Lint: {error}")));
+            warnings.AddRange(lint.Warnings);
+        }
+        else if (file is not null)
+        {
+            subsystem = ExecutableInspector.ReadSubsystem(file.FullPath);
+            signer = ExecutableInspector.ReadSignerSubject(file.FullPath);
+            if (subsystem is null)
+                Invalid($"{fileName} is not a Windows console or GUI executable.");
+            else if (subsystem == ExecutableInspector.Gui && playbook?.Steps.Count > 0)
+                reasons.Add((BatPackageStatuses.InvalidPlaybook,
+                    $"{fileName} is a windowed (GUI) program, so it cannot answer console prompts. Use playbook version 3 with no steps and the program's silent-mode arguments."));
+            if (publisher is not null && !publisher.Equals(signer,
+                    StringComparison.OrdinalIgnoreCase))
+                Invalid(signer is null
+                    ? $"file.publisher pins '{publisher}' but {fileName} is not signed."
+                    : $"file.publisher pins '{publisher}' but {fileName} is signed by '{signer}'.");
+            if (signer is null)
+                warnings.Add($"{fileName} has no embedded Authenticode signature. Its SHA-256 pin still protects it, but prefer files signed by their vendor.");
+        }
+
+        // Supporting files in <package>/files/.
+        IReadOnlyList<BatchSupportFile>? supportFiles = null;
+        var supportDirectory = Path.Combine(directory, PackageSupportDirectoryName);
+        var supportEntries = manifest.SupportFiles ?? [];
+        if (supportEntries.Any(entry => entry?.FileName?.Equals(fileName,
+                StringComparison.OrdinalIgnoreCase) == true))
+            Invalid("A supporting file cannot have the same name as the package file.");
+        else
+        {
+            var (loaded, supportError) = await LoadSupportFilesAsync(supportDirectory,
+                folder, supportEntries, PackageRoutes.SupportFilePrefix(folder),
+                cancellationToken);
+            if (supportError is not null)
+                reasons.Add((supportError.Contains("hash",
+                        StringComparison.OrdinalIgnoreCase)
+                    ? BatPackageStatuses.HashMismatch : BatPackageStatuses.Invalid,
+                    supportError));
+            else supportFiles = loaded;
+        }
+
+        var status = OverallStatus(reasons, warnings);
+        var compatibility = minWindows is null && maxWindows is null ? null
+            : new PackageCompatibilityManifest
+            {
+                MinWindowsVersion = minWindows,
+                MaxWindowsVersionExclusive = maxWindows
+            };
+        var packageStatus = new BatPackageStatus(folder, directory, status,
+            reasons.Select(reason => reason.Reason).ToArray(), warnings,
+            GeneralPackageKind, manifest.DisplayName, manifest.Description,
+            fileName.Length == 0 ? null : fileName, pinnedFile, file?.Sha256,
+            file?.SizeBytes, NormalizeSha256(manifest.PlaybookSha256), computedPlaybook,
+            playbook ?? manifest.Playbook, supportEntries, null, null, manifest.Review,
+            PackageFileTypes.IsKnown(type) ? type : manifest.File?.Type ?? string.Empty,
+            symptoms, compatibility, signer, subsystem);
+        if (!BatPackageStatuses.IsPublished(status))
+            return new LoadedPackage(packageStatus, null, null);
+
+        var descriptor = new PackageDescriptor(folder, displayName, description, type,
+            fileName, file!.Sha256, PackageRoutes.Download(folder), playbook!,
+            computedPlaybook!, supportFiles!,
+            supportFiles!.Count == 0 ? null
+                : BatchSupportFilePolicy.ComputeBundleSha256(file.Sha256, supportFiles),
+            NormalizeVersion(minWindows), NormalizeVersion(maxWindows), publisher,
+            symptoms);
+        return new LoadedPackage(packageStatus, null, null,
+            new RepairPackageArtifact(file, descriptor, supportDirectory));
     }
 }

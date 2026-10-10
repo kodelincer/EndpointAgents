@@ -50,11 +50,16 @@ public sealed class WindowsBugfixRunner(
                 || !BatchPlaybookPolicy.ComputeSha256(playbook!).Equals(
                     descriptor.PlaybookSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The Windows playbook is not approved.");
+            // Windows repairs start the BAT without arguments; only catalog packages take them.
+            if (BatchPlaybookPolicy.HasArguments(playbook))
+                throw new InvalidDataException("Windows repair playbooks cannot pass arguments.");
             var menuResult = await OfficeBugfixRunner.RunProcessAsync(
                 OfficeBugfixRunner.CreateStartInfo(Path.GetFullPath(path)),
-                playbook!, cancellationToken, Timeout);
+                playbook!, cancellationToken,
+                BatchPlaybookPolicy.GetRunTimeout(playbook!) ?? Timeout);
             return new WindowsBugfixRunResult(menuResult.ExitCode,
-                menuResult.State == OfficeBugfixRunStates.PromptTimedOut,
+                menuResult.State is OfficeBugfixRunStates.PromptTimedOut
+                    or OfficeBugfixRunStates.TimedOut,
                 menuResult.State, menuResult.CompletedStepCount,
                 menuResult.FailedStepIndex, menuResult.OutputTail);
         }

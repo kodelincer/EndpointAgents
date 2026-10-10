@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "office-activation-repair",
+  "displayName": "Office activation repair test",
+  "description": "Harmless test BAT for the automatic Office activation repair flow.",
+  "bat": {
+    "fileName": "office-activation-repair.bat",
+    "sha256": "4D3A23755DDBD7EA948E7B9A066D06BF7E2CA533F39ABA18EAE9A8A075AEC0D2"
+  },
+  "supportFiles": [],
+  "playbook": {
+    "version": 1,
+    "steps": [
+      {
+        "expect": "Select an item",
+        "send": "1",
+        "submit": "line",
+        "timeoutSeconds": 30
+      },
+      {
+        "expect": "Continue with harmless sample? [Y/N]",
+        "send": "Y",
+        "submit": "key",
+        "timeoutSeconds": 30
+      }
+    ]
+  },
+  "playbookSha256": "0D2F0660786A23628192B1EBBD24EDEE46101435C6C94E1CF49892A51EFA946B",
+  "office": {
+    "minOfficeVersion": "16.0",
+    "maxOfficeVersionExclusive": "17.0",
+    "officeProductReleaseIds": [
+      "ProPlus2021Volume"
+    ]
+  },
+  "review": {
+    "reviewedBy": "EndpointAgents maintainers",
+    "reviewedOn": "2026-10-06",
+    "source": "Repository sample; prints a menu and changes nothing.",
+    "notes": "Development sample, migrated from office-bugfix-managers.json."
+  }
+}

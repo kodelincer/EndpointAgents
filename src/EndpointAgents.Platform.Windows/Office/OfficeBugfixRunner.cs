@@ -38,6 +38,9 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
             || !BatchPlaybookPolicy.ComputeSha256(playbook!).Equals(
                 descriptor.PlaybookSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("The Office repair playbook is not approved.");
+        // Office repairs start the BAT without arguments; only catalog packages take them.
+        if (BatchPlaybookPolicy.HasArguments(playbook))
+            throw new InvalidDataException("Office repair playbooks cannot pass arguments.");
         if (!BatchSupportFilePolicy.IsValidBundle(descriptor.Sha256,
                 descriptor.SupportFiles, descriptor.BundleSha256,
                 $"/api/files/office/bugfix/{descriptor.ArtifactId}/file"))
@@ -112,11 +115,13 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
         using var process = new Process { StartInfo = startInfo };
         Task[] pumps = [];
         var completedSteps = 0;
+        var waitingForExit = false;
         int? processId = null;
 
         using var overall = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken);
-        overall.CancelAfter(overallTimeout ?? Timeout);
+        overall.CancelAfter(overallTimeout
+            ?? BatchPlaybookPolicy.GetRunTimeout(normalized) ?? Timeout);
         using var monitorStop = CancellationTokenSource.CreateLinkedTokenSource(
             overall.Token);
         try
@@ -133,6 +138,10 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                 PumpAsync(process.StandardOutput, collector),
                 PumpAsync(process.StandardError, collector)
             ];
+            // A no-input run gets end-of-input at once, so a stray pause or set /p
+            // continues instead of waiting for an answer that will never come.
+            if (normalized.Steps.Count == 0 && startInfo.RedirectStandardInput)
+                process.StandardInput.Close();
 
             var steps = normalized!.Steps;
             var index = 0;
@@ -240,6 +249,7 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
                 }
             }
 
+            waitingForExit = true;
             var exitTask = process.WaitForExitAsync(overall.Token);
             var winner = await Task.WhenAny(exitTask, collector.OutputLimitTask,
                 collector.ReaderFailureTask, collector.FailureMarkerTask,
@@ -270,6 +280,7 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
             return Result(processId, TryGetExitCode(process),
                 cancellationToken.IsCancellationRequested
                     ? OfficeBugfixRunStates.Cancelled
+                    : waitingForExit ? OfficeBugfixRunStates.TimedOut
                     : OfficeBugfixRunStates.PromptTimedOut,
                 completedSteps,
                 completedSteps < normalized!.Steps.Count ? completedSteps : null);
@@ -481,7 +492,8 @@ public sealed class OfficeBugfixRunner(IOptions<OfficeRemediationOptions> option
     {
         if (collector.FailureMarkerTask.IsCompleted)
             return OfficeBugfixRunStates.FailureMarkerDetected;
-        if (!BatchPlaybookPolicy.GetSuccessExitCodes(playbook).Contains(exitCode))
+        if (!BatchPlaybookPolicy.GetSuccessExitCodes(playbook).Contains(exitCode)
+            && !BatchPlaybookPolicy.IsRestartExitCode(playbook, exitCode))
             return OfficeBugfixRunStates.ProcessFailed;
         if (playbook.SuccessMarker is { } marker && !collector.TranscriptContains(marker))
             return OfficeBugfixRunStates.SuccessMarkerMissing;
@@ -502,6 +514,8 @@ public static class OfficeBugfixRunStates
     public const string SuccessMarkerMissing = "SuccessMarkerMissing";
     public const string RepeatLimitExceeded = "RepeatLimitExceeded";
     public const string GuiDialogBlocked = "GuiDialogBlocked";
+    /// <summary>Every step was answered, but the run passed its overall time limit.</summary>
+    public const string TimedOut = "TimedOut";
 }
 
 public sealed record OfficeBugfixRunResult(

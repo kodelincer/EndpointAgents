@@ -4,10 +4,16 @@ using EndpointAgents.Shared.Windows;
 namespace ControlPlane.Api.Files;
 
 /// <summary>
-/// One BAT package: <c>FileRepository/packages/&lt;id&gt;/package.json</c> next to its
-/// BAT and an optional <c>files/</c> folder of supporting files. Exactly one of
-/// <see cref="Office"/> or <see cref="Windows"/> says which catalog it joins.
+/// One package: <c>FileRepository/packages/&lt;id&gt;/package.json</c> next to its
+/// file and an optional <c>files/</c> folder of supporting files.
 /// </summary>
+/// <remarks>
+/// Schema 1 holds a <see cref="Bat"/> and exactly one of <see cref="Office"/> or
+/// <see cref="Windows"/>, which says which activation catalog it joins. Schema 2 is
+/// a general repair package: a BAT or EXE in <see cref="File"/>, the
+/// <see cref="Symptoms"/> the agent matches against the user's request, and an
+/// optional Windows <see cref="Compatibility"/> range.
+/// </remarks>
 public sealed class BatPackageManifest
 {
     public int SchemaVersion { get; set; } = 1;
@@ -15,6 +21,9 @@ public sealed class BatPackageManifest
     public string DisplayName { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public BatPackageFile? Bat { get; set; }
+    public PackageFileManifest? File { get; set; }
+    public List<string> Symptoms { get; set; } = [];
+    public PackageCompatibilityManifest? Compatibility { get; set; }
     public List<BatchSupportFileManifestEntry> SupportFiles { get; set; } = [];
     public BatchPlaybook? Playbook { get; set; }
     public string PlaybookSha256 { get; set; } = string.Empty;
@@ -27,6 +36,22 @@ public sealed class BatPackageFile
 {
     public string FileName { get; set; } = string.Empty;
     public string Sha256 { get; set; } = string.Empty;
+}
+
+public sealed class PackageFileManifest
+{
+    /// <summary><c>bat</c> or <c>exe</c>.</summary>
+    public string Type { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string Sha256 { get; set; } = string.Empty;
+    /// <summary>Optional exact Authenticode signer subject an EXE must carry.</summary>
+    public string? Publisher { get; set; }
+}
+
+public sealed class PackageCompatibilityManifest
+{
+    public string? MinWindowsVersion { get; set; }
+    public string? MaxWindowsVersionExclusive { get; set; }
 }
 
 public sealed class BatPackageOffice
@@ -88,4 +113,9 @@ public sealed record BatPackageStatus(
     IReadOnlyList<BatchSupportFileManifestEntry> SupportFiles,
     BatPackageOffice? Office,
     BatPackageWindows? Windows,
-    BatPackageReview? Review);
+    BatPackageReview? Review,
+    string FileType = "bat",
+    IReadOnlyList<string>? Symptoms = null,
+    PackageCompatibilityManifest? Compatibility = null,
+    string? Signer = null,
+    string? ExeSubsystem = null);

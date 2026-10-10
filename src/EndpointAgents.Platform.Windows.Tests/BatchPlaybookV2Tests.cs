@@ -460,7 +460,7 @@ public sealed class BatchPlaybookV2Tests
         new BatchPlaybook(1, [Step("Prompt", "1", maxRepeats: 2)]),
         new BatchPlaybook(1, [new BatchPlaybookStep("Prompt", "1", "line", 30)],
             SuccessExitCodes: [0]),
-        new BatchPlaybook(3, [new BatchPlaybookStep("Prompt", "1", "line", 30)]),
+        new BatchPlaybook(4, [new BatchPlaybookStep("Prompt", "1", "line", 30)]),
         V2(Step("Prompt", "1", maxRepeats: 0)),
         V2(Step("Prompt", "1", maxRepeats: BatchPlaybookPolicy.MaximumRepeats + 1)),
         V2(Step("Prompt", "1", alternatives: new BatchPlaybookChoice("Other",

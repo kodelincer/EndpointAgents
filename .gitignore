@@ -200,6 +200,10 @@ PublishScripts/
 **/[Pp]ackages/*
 # except build/, which is used as an MSBuild target.
 !**/[Pp]ackages/build/
+# except the control-plane package catalog, whose folders are reviewed source.
+!deploy/control-plane/FileRepository/packages/*
+# and source folders named Packages (NuGet restore never writes under src).
+!src/**/[Pp]ackages/*
 # Uncomment if necessary however generally it will be regenerated when needed
 #!**/[Pp]ackages/repositories.config
 # NuGet v3's project.json files produces more ignorable files

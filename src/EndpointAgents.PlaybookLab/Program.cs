@@ -1,15 +1,17 @@
 using ControlPlane.Api.Files;
 using EndpointAgents.Platform.Windows.Office;
+using EndpointAgents.Platform.Windows.Packages;
 using EndpointAgents.Shared.Office;
+using EndpointAgents.Shared.Packages;
 using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
-// Administrator authoring aid for BAT packages. It hashes, lints and validates a BAT
-// and its playbook with the control plane's own rules, and with --execute runs it
-// through the real endpoint runner as the current user (the BAT really runs).
+// Administrator authoring aid for packages. It hashes, lints and validates a BAT or
+// EXE and its playbook with the control plane's own rules, and with --execute runs it
+// through the real endpoint runner as the current user (the file really runs).
 
 var options = ParseArguments(args);
 if (options is null)
@@ -62,7 +64,11 @@ static async Task<int> RunPackageAsync(string folder, LabOptions options,
     foreach (var reason in status.Reasons) Console.WriteLine($"  FIX   {reason}");
     foreach (var warning in status.Warnings) Console.WriteLine($"  WARN  {warning}");
     if (status.ActualBatSha256 is not null)
-        Console.WriteLine($"BAT SHA-256:      {status.ActualBatSha256}");
+        Console.WriteLine($"File SHA-256:     {status.ActualBatSha256} ({status.FileType})");
+    if (status.ExeSubsystem is not null)
+        Console.WriteLine($"EXE subsystem:    {status.ExeSubsystem}");
+    if (status.FileType == PackageFileTypes.Exe)
+        Console.WriteLine($"Signed by:        {status.Signer ?? "(not signed)"}");
     if (status.ComputedPlaybookSha256 is not null)
         Console.WriteLine($"Playbook SHA-256: {status.ComputedPlaybookSha256}");
     var ok = BatPackageStatuses.IsPublished(status.Status);
@@ -77,7 +83,16 @@ static async Task<int> RunPackageAsync(string folder, LabOptions options,
             Console.WriteLine($"Cannot run: the playbook is invalid ({error}).");
             return 1;
         }
-        var result = await ExecuteAsync(Path.Combine(folder, manifest.Bat!.FileName),
+        var (fileName, fileType) = manifest.SchemaVersion == 2
+            ? (manifest.File?.FileName ?? string.Empty,
+                manifest.File?.Type?.Trim().ToLowerInvariant() ?? string.Empty)
+            : (manifest.Bat?.FileName ?? string.Empty, PackageFileTypes.Bat);
+        if (!PackageDescriptorPolicy.IsValidFileName(fileType, fileName))
+        {
+            Console.WriteLine("Cannot run: the package file name or type is invalid.");
+            return 1;
+        }
+        var result = await ExecuteAsync(Path.Combine(folder, fileName), fileType,
             playbook!, options);
         ok &= options.Discover || result;
     }
@@ -92,6 +107,9 @@ static async Task FixHashesAsync(string folder, string manifestPath,
     if (manifest.Bat?.FileName is { Length: > 0 } batName
         && File.Exists(Path.Combine(folder, batName)))
         node["bat"]!["sha256"] = HashFile(Path.Combine(folder, batName));
+    if (manifest.File?.FileName is { Length: > 0 } fileName
+        && File.Exists(Path.Combine(folder, fileName)))
+        node["file"]!["sha256"] = HashFile(Path.Combine(folder, fileName));
     if (node["supportFiles"] is JsonArray files)
         foreach (var file in files.OfType<JsonObject>())
             if (file["fileName"]?.GetValue<string>() is { } name
@@ -124,11 +142,12 @@ static async Task<int> RunLooseAsync(LabOptions options, JsonSerializerOptions j
     }
     Console.WriteLine($"Playbook SHA-256: {BatchPlaybookPolicy.ComputeSha256(normalized!)}");
     if (options.Execute)
-        ok &= await ExecuteAsync(options.BatPath!, normalized!, options) || options.Discover;
+        ok &= await ExecuteAsync(options.BatPath!, PackageFileTypes.Bat, normalized!,
+            options) || options.Discover;
     return ok ? 0 : 1;
 }
 
-static async Task<bool> ExecuteAsync(string batPath, BatchPlaybook playbook,
+static async Task<bool> ExecuteAsync(string path, string fileType, BatchPlaybook playbook,
     LabOptions options)
 {
     if (options.Discover)
@@ -137,19 +156,23 @@ static async Task<bool> ExecuteAsync(string batPath, BatchPlaybook playbook,
         // next screen in its output tail.
         BatchPlaybookPolicy.TryNormalize(playbook with
         {
-            Version = 2,
+            Version = Math.Max(playbook.Version, 2),
             Steps = [.. playbook.Steps, new BatchPlaybookStep(
                 "__playbook_lab_discover__", "x", "key", 5)]
         }, out var discover, out _);
         playbook = discover!;
     }
-    var startInfo = OfficeBugfixRunner.CreateStartInfo(Path.GetFullPath(batPath));
+    var startInfo = PackageRunner.CreateStartInfo(Path.GetFullPath(path), fileType,
+        playbook.Arguments ?? []);
     foreach (var (name, value) in options.Environment)
         startInfo.Environment[name] = value;
     var result = await OfficeBugfixRunner.RunProcessAsync(startInfo, playbook,
         CancellationToken.None);
     Console.WriteLine($"Run state:        {result.State}");
     Console.WriteLine($"Exit code:        {result.ExitCode?.ToString() ?? "-"}");
+    if (result.State == OfficeBugfixRunStates.Completed
+        && BatchPlaybookPolicy.IsRestartExitCode(playbook, result.ExitCode))
+        Console.WriteLine("Restart needed:   yes (restart exit code)");
     Console.WriteLine($"Responses sent:   {result.CompletedStepCount}");
     if (result.FailedStepIndex is { } failed)
         Console.WriteLine($"Waiting at step:  {failed}");

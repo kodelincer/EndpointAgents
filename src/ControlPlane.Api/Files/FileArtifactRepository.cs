@@ -567,6 +567,9 @@ public sealed partial class FileArtifactRepository
         if (!BatchPlaybookPolicy.TryNormalize(entry.Playbook, out playbook,
                 out var playbookError))
             return Fail($"Invalid playbook: {playbookError}", out error);
+        if (BatchPlaybookPolicy.HasArguments(playbook))
+            return Fail("Invalid playbook: arguments are supported only by schema 2 catalog packages.",
+                out error);
         error = null;
         return true;
     }
@@ -756,6 +759,9 @@ public sealed partial class FileArtifactRepository
         if (!BatchPlaybookPolicy.TryNormalize(entry.Playbook, out playbook,
                 out var playbookError))
             return Fail($"Invalid playbook: {playbookError}", out error);
+        if (BatchPlaybookPolicy.HasArguments(playbook))
+            return Fail("Invalid playbook: arguments are supported only by schema 2 catalog packages.",
+                out error);
         error = null;
         return true;
     }

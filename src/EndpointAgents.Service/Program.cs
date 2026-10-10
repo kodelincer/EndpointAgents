@@ -3,6 +3,7 @@ using EndpointAgents.Platform.Windows.EndpointInfo;
 using EndpointAgents.Platform.Windows;
 using EndpointAgents.Platform.Windows.Ibsng;
 using EndpointAgents.Platform.Windows.Office;
+using EndpointAgents.Platform.Windows.Packages;
 using EndpointAgents.Platform.Windows.UserSessions;
 using EndpointAgents.Platform.Windows.Windows;
 using EndpointAgents.Shared.Office;
@@ -136,6 +137,8 @@ builder.Services.AddSingleton<IEndpointArtifactAuthorizationProvider,
 builder.Services.AddSingleton<EndpointArtifactTransport>();
 builder.Services.AddSingleton<WindowsArtifactClient>();
 builder.Services.AddSingleton<WindowsBugfixRunner>();
+builder.Services.AddSingleton<PackageArtifactClient>();
+builder.Services.AddSingleton<PackageRunner>();
 builder.Services.AddSingleton<ITrayCommandClient, TrayCommandClient>();
 builder.Services.AddSingleton(provider => new Uri(
     provider.GetRequiredService<IOptions<ControlPlaneOptions>>().Value.HubUrl));
@@ -153,6 +156,7 @@ builder.Services.AddSingleton<IEndpointCommandHandler, OfficeBugfixCommandHandle
 builder.Services.AddSingleton<IEndpointCommandHandler, WindowsActivationStatusCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, WindowsActivationBugfixCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, WindowsHelloSampleCommandHandler>();
+builder.Services.AddSingleton<IEndpointCommandHandler, PackageRunCommandHandler>();
 
 // AgentWorker owns the SignalR connection. Register the concrete singleton so
 // the local IPC bridge can submit helpdesk requests through the same connection.

@@ -11,6 +11,7 @@ using ControlPlane.Api.Support;
 using ControlPlane.Api.Tools;
 using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Office;
+using EndpointAgents.Shared.Packages;
 using EndpointAgents.Shared.Windows;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -300,12 +301,47 @@ app.MapGet("/api/files/packages", async (FileArtifactRepository repository,
         minStepTimeoutSeconds = BatchPlaybookPolicy.MinimumStepTimeoutSeconds,
         maxStepTimeoutSeconds = BatchPlaybookPolicy.MaximumStepTimeoutSeconds,
         defaultGuiDialogGraceSeconds = BatchPlaybookPolicy.DefaultGuiDialogGraceSeconds,
-        // Enforced by the endpoint runner (OfficeBugfixRunner).
+        // Versions 1 and 2 use the endpoint runner's fixed limit (OfficeBugfixRunner);
+        // version 3 playbooks set their own timeoutSeconds within these bounds.
         maxRunMinutes = 8,
+        defaultRunTimeoutSeconds = BatchPlaybookPolicy.DefaultRunTimeoutSeconds,
+        minRunTimeoutSeconds = BatchPlaybookPolicy.MinimumRunTimeoutSeconds,
+        maxRunTimeoutSeconds = BatchPlaybookPolicy.MaximumRunTimeoutSeconds,
+        maxArguments = BatchPlaybookPolicy.MaximumArguments,
         maxOutputBytes = 1024 * 1024
     },
     packages = await repository.GetPackageStatusesAsync(cancellationToken)
 }));
+// Endpoint-facing general repair catalog (schema 2 packages).
+app.MapGet(PackageRoutes.Catalog, async (FileArtifactRepository repository,
+    CancellationToken cancellationToken) => Results.Ok(new PackageCatalog(
+        (await repository.GetRepairPackagesAsync(cancellationToken))
+            .Select(item => item.Descriptor).ToArray())))
+    .RequireAuthorization();
+app.MapGet(PackageRoutes.Root + "/{packageId}/file/{fileName}",
+    async (string packageId, string fileName, HttpContext context,
+        FileArtifactRepository repository, CancellationToken cancellationToken) =>
+    {
+        var file = await repository.GetRepairPackageSupportFileAsync(packageId,
+            fileName, cancellationToken);
+        if (file is null) return Results.NotFound();
+        context.Response.Headers["X-Artifact-Sha256"] = file.Sha256;
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        return Results.File(file.FullPath, "application/octet-stream", file.FileName);
+    }).RequireAuthorization();
+app.MapGet(PackageRoutes.Root + "/{packageId}", async (string packageId,
+    HttpContext context, FileArtifactRepository repository,
+    CancellationToken cancellationToken) =>
+{
+    var package = await repository.GetRepairPackageAsync(packageId, cancellationToken);
+    if (package is null)
+        return Results.NotFound(new { message = "The approved package is not available." });
+    context.Response.Headers["X-Artifact-Sha256"] = package.File.Sha256;
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    return Results.File(package.File.FullPath, "application/octet-stream",
+        package.File.FileName, package.File.LastModifiedUtc,
+        enableRangeProcessing: true);
+}).RequireAuthorization();
 app.MapGet("/api/files/ibsng-dialer", async (HttpContext context,
     FileArtifactRepository repository, CancellationToken cancellationToken) =>
 {

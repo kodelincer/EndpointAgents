@@ -4,6 +4,7 @@ using ControlPlane.Api.Commands;
 using ControlPlane.Api.Files;
 using ControlPlane.Api.Hermes;
 using EndpointAgents.Shared.Chat;
+using EndpointAgents.Shared.Packages;
 using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Windows;
 using ModelContextProtocol.Server;
@@ -128,6 +129,52 @@ public sealed class EndpointSupportTools
             "software.office_bugfix_run", artifactId, "Office repair",
             "run_office_activation_repair", ChatProgressActivity.OfficeActivationRepair,
             cancellationToken);
+
+    [McpServerTool(Name = "find_repair_packages"), Description(
+        "List the administrator-approved repair packages and the symptoms each one fixes. Choose at most one package whose symptoms match the user's problem; if none match, do not run anything.")]
+    public static async Task<string> FindRepairPackages(
+        ChatStore store,
+        FileArtifactRepository files,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        CancellationToken cancellationToken)
+    {
+        var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+        if (scope is null)
+            return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+        var packages = await files.GetRepairPackagesAsync(cancellationToken);
+        await store.WriteToolAuditAsync(scope, "find_repair_packages", "success",
+            null, cancellationToken);
+        return ToolResultSanitizer.Sanitize(new
+        {
+            ok = true,
+            packages = packages.Select(item => new
+            {
+                packageId = item.Descriptor.PackageId,
+                displayName = item.Descriptor.DisplayName,
+                description = item.Descriptor.Description,
+                symptoms = item.Descriptor.Symptoms,
+                minWindowsVersion = item.Descriptor.MinWindowsVersion,
+                maxWindowsVersionExclusive = item.Descriptor.MaxWindowsVersionExclusive
+            })
+        });
+    }
+
+    [McpServerTool(Name = "run_repair_package"), Description(
+        "Run one administrator-approved repair package on the user's PC by the exact packageId from find_repair_packages. It runs unattended with the administrator's fixed arguments and answers; nothing else can be passed.")]
+    public static Task<string> RunRepairPackage(
+        ChatStore store,
+        AgentRegistry registry,
+        CommandCatalog catalog,
+        FileArtifactRepository files,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        [Description("The exact packageId returned by find_repair_packages.")]
+        string packageId,
+        CancellationToken cancellationToken) =>
+        RunAutomaticRepairAsync(store, registry, catalog, files, runCapability,
+            PackageCommands.Run, packageId, "repair package", "run_repair_package",
+            ChatProgressActivity.EndpointCheck, cancellationToken);
 
     private static async Task<string> RunAutomaticRepairAsync(
         ChatStore store,
@@ -371,6 +418,14 @@ public sealed class EndpointSupportTools
                 artifact.Descriptor.FileName, artifact.Descriptor.Sha256,
                 artifact.Descriptor.PlaybookSha256,
                 artifact.Descriptor.BundleSha256);
+        }
+        if (method == PackageCommands.Run)
+        {
+            var package = await files.GetRepairPackageAsync(artifactId,
+                cancellationToken);
+            return package is null ? null : PinArtifact(artifactId,
+                package.Descriptor.FileName, package.Descriptor.Sha256,
+                package.Descriptor.PlaybookSha256, package.Descriptor.BundleSha256);
         }
         if (method == "software.office_remediation_run")
         {

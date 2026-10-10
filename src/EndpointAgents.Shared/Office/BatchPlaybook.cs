@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace EndpointAgents.Shared.Office;
 
@@ -13,7 +14,10 @@ public static class BatchPlaybookSubmitKinds
 /// <remarks>
 /// Version 1 is a strictly linear list of prompts. Version 2 adds per-step
 /// alternatives, optional and bounded repeating steps, accepted exit codes, and
-/// literal success/failure output markers. All matching is literal.
+/// literal success/failure output markers. Version 3 allows zero steps (a no-input
+/// run whose standard input is closed at start), fixed literal command-line
+/// arguments, an overall run timeout, and exit codes that mean "succeeded, restart
+/// needed". All matching is literal.
 /// </remarks>
 public sealed record BatchPlaybook(
     int Version,
@@ -21,7 +25,10 @@ public sealed record BatchPlaybook(
     IReadOnlyList<int>? SuccessExitCodes = null,
     string? SuccessMarker = null,
     IReadOnlyList<string>? FailureMarkers = null,
-    int? GuiDialogGraceSeconds = null);
+    int? GuiDialogGraceSeconds = null,
+    IReadOnlyList<string>? Arguments = null,
+    int? TimeoutSeconds = null,
+    IReadOnlyList<int>? RestartExitCodes = null);
 
 public sealed record BatchPlaybookStep(
     string Expect,
@@ -40,7 +47,7 @@ public sealed record BatchPlaybookChoice(
 
 public static class BatchPlaybookPolicy
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
     public const int MinimumSteps = 1;
     public const int MaximumSteps = 32;
     public const int MaximumResponseCharacters = 64;
@@ -55,6 +62,16 @@ public static class BatchPlaybookPolicy
     public const int DefaultGuiDialogGraceSeconds = 15;
     public const int MinimumGuiDialogGraceSeconds = 5;
     public const int MaximumGuiDialogGraceSeconds = 600;
+    public const int MaximumArguments = 16;
+    public const int MaximumArgumentCharacters = 128;
+    public const int DefaultRunTimeoutSeconds = 480;
+    public const int MinimumRunTimeoutSeconds = 30;
+    public const int MaximumRunTimeoutSeconds = 3600;
+
+    // Letters, digits, spaces and the punctuation that switches and paths need.
+    // Quotes, %, !, ^, &, |, <, > and parentheses are excluded so cmd.exe cannot
+    // reinterpret an argument when a BAT is started through it.
+    private const string ArgumentPunctuation = " -_./\\:=,+@#";
 
     private static readonly IReadOnlyList<int> DefaultSuccessExitCodes = [0];
 
@@ -75,18 +92,38 @@ public static class BatchPlaybookPolicy
         TimeSpan.FromSeconds(playbook.GuiDialogGraceSeconds
             ?? DefaultGuiDialogGraceSeconds);
 
+    /// <summary>The playbook's own overall run limit; versions 1 and 2 leave it to the runner.</summary>
+    public static TimeSpan? GetRunTimeout(BatchPlaybook playbook) =>
+        playbook.TimeoutSeconds is int seconds ? TimeSpan.FromSeconds(seconds) : null;
+
+    /// <summary>Exit codes that mean the run succeeded but Windows must restart.</summary>
+    public static bool IsRestartExitCode(BatchPlaybook playbook, int? exitCode) =>
+        exitCode is int code && playbook.RestartExitCodes?.Contains(code) == true;
+
+    public static bool HasArguments(BatchPlaybook? playbook) =>
+        playbook?.Arguments is { Count: > 0 };
+
     public static bool TryNormalize(BatchPlaybook? playbook,
         out BatchPlaybook? normalized, out string? error)
     {
         normalized = null;
         if (playbook is null)
             return Fail("A playbook is required.", out error);
-        if (playbook.Version is not 1 and not 2)
-            return Fail("The playbook version must be 1 or 2.", out error);
-        var isV2 = playbook.Version == 2;
+        if (playbook.Version is < 1 or > CurrentVersion)
+            return Fail("The playbook version must be 1, 2 or 3.", out error);
+        var isV2 = playbook.Version >= 2;
+        var isV3 = playbook.Version == 3;
         if (playbook.Steps is null
-            || playbook.Steps.Count is < MinimumSteps or > MaximumSteps)
-            return Fail("A playbook must contain between 1 and 32 ordered steps.",
+            || playbook.Steps.Count < (isV3 ? 0 : MinimumSteps)
+            || playbook.Steps.Count > MaximumSteps)
+            return Fail(isV3
+                    ? "A version 3 playbook can contain at most 32 ordered steps."
+                    : "A playbook must contain between 1 and 32 ordered steps.",
+                out error);
+        if (!isV3 && (playbook.Arguments is not null
+                || playbook.TimeoutSeconds is not null
+                || playbook.RestartExitCodes is not null))
+            return Fail("Arguments, timeoutSeconds and restartExitCodes require playbook version 3.",
                 out error);
         if (!isV2 && (playbook.SuccessExitCodes is not null
                 || playbook.SuccessMarker is not null
@@ -184,12 +221,53 @@ public static class BatchPlaybookPolicy
             return Fail($"guiDialogGraceSeconds must be between {MinimumGuiDialogGraceSeconds} and {MaximumGuiDialogGraceSeconds}.",
                 out error);
 
-        normalized = new BatchPlaybook(2, steps, exitCodes.Order().ToArray(),
-            successMarker, failureMarkers,
-            playbook.GuiDialogGraceSeconds ?? DefaultGuiDialogGraceSeconds);
+        var grace = playbook.GuiDialogGraceSeconds ?? DefaultGuiDialogGraceSeconds;
+        if (!isV3)
+        {
+            normalized = new BatchPlaybook(2, steps, exitCodes.Order().ToArray(),
+                successMarker, failureMarkers, grace);
+            error = null;
+            return true;
+        }
+
+        var arguments = playbook.Arguments ?? [];
+        if (arguments.Count > MaximumArguments)
+            return Fail($"arguments can contain at most {MaximumArguments} values.",
+                out error);
+        for (var index = 0; index < arguments.Count; index++)
+            if (!IsValidArgument(arguments[index]))
+                return Fail($"Argument {index} must be 1 to {MaximumArgumentCharacters} characters of letters, digits, spaces or - _ . / \\ : = , + @ #, and must not contain secrets.",
+                    out error);
+
+        var timeout = playbook.TimeoutSeconds ?? DefaultRunTimeoutSeconds;
+        if (timeout is < MinimumRunTimeoutSeconds or > MaximumRunTimeoutSeconds)
+            return Fail($"timeoutSeconds must be between {MinimumRunTimeoutSeconds} and {MaximumRunTimeoutSeconds}.",
+                out error);
+
+        var restartCodes = playbook.RestartExitCodes ?? [];
+        if (restartCodes.Count > MaximumExitCodes
+            || restartCodes.Distinct().Count() != restartCodes.Count)
+            return Fail($"restartExitCodes must contain at most {MaximumExitCodes} distinct values.",
+                out error);
+        if (restartCodes.Intersect(exitCodes).Any())
+            return Fail("An exit code cannot be in both successExitCodes and restartExitCodes.",
+                out error);
+
+        normalized = new BatchPlaybook(3, steps, exitCodes.Order().ToArray(),
+            successMarker, failureMarkers, grace, arguments.ToArray(), timeout,
+            restartCodes.Order().ToArray());
         error = null;
         return true;
     }
+
+    private static bool IsValidArgument(string? argument) =>
+        argument is { Length: >= 1 and <= MaximumArgumentCharacters }
+        && argument.Trim().Length > 0
+        && argument.All(character => char.IsAsciiLetterOrDigit(character)
+            || ArgumentPunctuation.Contains(character))
+        && !ContainsSensitiveResponse(argument)
+        // A product key embedded in a switch such as /key:XXXXX-XXXXX-...
+        && !Regex.IsMatch(argument, "[A-Za-z0-9]{5}(-[A-Za-z0-9]{5}){4}");
 
     public static string ComputeSha256(BatchPlaybook playbook)
     {
@@ -221,7 +299,7 @@ public static class BatchPlaybookPolicy
                 writer.Write(step.Optional);
                 writer.Write(step.MaxRepeats);
             }
-            if (normalized.Version == 2)
+            if (normalized.Version >= 2)
             {
                 writer.Write(normalized.SuccessExitCodes!.Count);
                 foreach (var code in normalized.SuccessExitCodes) writer.Write(code);
@@ -230,6 +308,14 @@ public static class BatchPlaybookPolicy
                 writer.Write(normalized.FailureMarkers!.Count);
                 foreach (var marker in normalized.FailureMarkers) writer.Write(marker);
                 writer.Write(normalized.GuiDialogGraceSeconds!.Value);
+            }
+            if (normalized.Version == 3)
+            {
+                writer.Write(normalized.Arguments!.Count);
+                foreach (var argument in normalized.Arguments) writer.Write(argument);
+                writer.Write(normalized.TimeoutSeconds!.Value);
+                writer.Write(normalized.RestartExitCodes!.Count);
+                foreach (var code in normalized.RestartExitCodes) writer.Write(code);
             }
         }
         return Convert.ToHexString(SHA256.HashData(stream.GetBuffer()
