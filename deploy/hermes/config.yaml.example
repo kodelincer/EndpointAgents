@@ -47,6 +47,7 @@ mcp_servers:
     tools:
       include:
         - endpoint_get_info
+        - endpoint_system_info
         - windows_activation_status
         - office_inventory
         - office_activation_status

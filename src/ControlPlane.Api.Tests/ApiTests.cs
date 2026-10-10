@@ -65,6 +65,7 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
         Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync("/api/agents", TestCancellation)).StatusCode);
         var commands = await _client.GetFromJsonAsync<Command[]>("/api/commands", TestCancellation);
         Assert.Contains(commands!, command => command.Method == "endpoint.get_info");
+        Assert.Contains(commands!, command => command.Method == "system.get_info");
         Assert.Contains(commands!, command => command.Method == "software.office_inventory");
         Assert.Contains(commands!, command => command.Method == "software.office_activation_status");
         Assert.Contains(commands!, command => command.Method == "system.windows_activation_status");
@@ -278,6 +279,14 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
             tool.GetProperty("name").GetString() == "mark_problem_resolved");
         Assert.Equal(new[] { "runCapability" }, resolveTool.GetProperty("inputSchema")
             .GetProperty("required").EnumerateArray().Select(item => item.GetString()).ToArray());
+        var systemInfo = tools.EnumerateArray().Single(tool =>
+            tool.GetProperty("name").GetString() == "endpoint_system_info");
+        var systemInfoSchema = systemInfo.GetProperty("inputSchema");
+        var systemInfoRequired = systemInfoSchema.GetProperty("required").EnumerateArray()
+            .Select(item => item.GetString()).ToArray();
+        Assert.Contains("runCapability", systemInfoRequired);
+        Assert.DoesNotContain("sections", systemInfoRequired);
+        Assert.True(systemInfoSchema.GetProperty("properties").TryGetProperty("sections", out _));
         var officeRepair = tools.EnumerateArray().Single(tool =>
             tool.GetProperty("name").GetString() == "run_office_activation_repair");
         var repairRequired = officeRepair.GetProperty("inputSchema")
