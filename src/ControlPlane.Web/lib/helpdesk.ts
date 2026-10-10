@@ -1,6 +1,7 @@
 import type { HelpdeskConversationDetail, HelpdeskConversationSummary } from "./types";
 
-const statusOrder = { New: 0, Open: 1, Resolved: 2 } as const;
+// Escalated conversations need a person, so they come first.
+const statusOrder = { Escalated: 0, New: 1, Open: 2, Resolved: 3 } as const;
 
 export function mergeHelpdeskConversations(current: HelpdeskConversationSummary[],
   incoming: HelpdeskConversationSummary[]) {
@@ -24,4 +25,23 @@ export function mergeHelpdeskDetail(current: HelpdeskConversationDetail | undefi
     messages: [...messages.values()].sort((a, b) => a.sequence - b.sequence),
     trace: [...trace.values()].sort((a, b) => a.timestampUtc.localeCompare(b.timestampUtc))
   };
+}
+
+export type RepairAttemptView = {
+  artifactId: string; tool: string; outcome: string; error?: string | null; attemptedAtUtc: string;
+};
+
+/** Repairs the agent ran in this conversation, oldest first, from its timeline. */
+export function repairAttempts(detail: HelpdeskConversationDetail): RepairAttemptView[] {
+  return detail.trace
+    .filter(item => item.eventType === "agent.repair_attempt")
+    .map(item => {
+      const payload = item.payload as Record<string, unknown>;
+      return {
+        artifactId: String(payload.ArtifactId ?? ""), tool: String(payload.ToolName ?? ""),
+        outcome: String(payload.Outcome ?? item.outcome),
+        error: typeof payload.Error === "string" ? payload.Error : null,
+        attemptedAtUtc: String(payload.AttemptedAtUtc ?? item.timestampUtc)
+      };
+    });
 }

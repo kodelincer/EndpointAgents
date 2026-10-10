@@ -12,13 +12,13 @@ import {
   runHelpdeskDiagnostic, sendHelpdeskReply
 } from "@/lib/control-plane";
 import { connectionLabel } from "@/lib/support";
-import { mergeHelpdeskConversations, mergeHelpdeskDetail } from "@/lib/helpdesk";
+import { mergeHelpdeskConversations, mergeHelpdeskDetail, repairAttempts } from "@/lib/helpdesk";
 import type {
   ChatMessage, HelpdeskConversationDetail, HelpdeskConversationSummary,
   HelpdeskTraceEvent, SupportRequest
 } from "@/lib/types";
 
-const statusOptions = ["All", "New", "Open", "Resolved"] as const;
+const statusOptions = ["All", "Escalated", "New", "Open", "Resolved"] as const;
 const diagnosticOptions = [
   ["endpoint.get_info", "Endpoint information"],
   ["system.get_info", "System information"],
@@ -187,7 +187,7 @@ function ConversationDetail({ detail, busy, onMutate }: {
       <label><span>Status</span><select value={conversation.status} disabled={busy}
         onChange={event => void onMutate(() => patchHelpdeskConversation(conversation.conversationId,
           { status: event.target.value }))}>
-        <option>New</option><option>Open</option><option>Resolved</option>
+        <option>Escalated</option><option>New</option><option>Open</option><option>Resolved</option>
       </select></label>
       <button type="button" className={operator ? "takeover active" : "takeover"} disabled={busy}
         onClick={() => void onMutate(() => patchHelpdeskConversation(conversation.conversationId,
@@ -195,6 +195,8 @@ function ConversationDetail({ detail, busy, onMutate }: {
         {operator ? <Bot size={14} /> : <ShieldCheck size={14} />}{operator ? "Return to Hermes" : "Take over"}
       </button>
     </div></header>
+
+    <EscalationPanel detail={detail} />
 
     <nav className="support-detail-tabs" aria-label="Conversation detail">
       <button className={tab === "transcript" ? "selected" : ""} onClick={() => setTab("transcript")}>
@@ -253,11 +255,39 @@ function ConversationDetail({ detail, busy, onMutate }: {
         <label><span className="sr-only">Filter raw trace direction</span><select value={traceDirection}
           onChange={event => setTraceDirection(event.target.value)}><option>All</option>
           <option value="AgentToControlPlane">Inbound from agent</option>
-          <option value="ControlPlaneToAgent">Outbound to agent</option></select></label></div>
+          <option value="ControlPlaneToAgent">Outbound to agent</option>
+          <option value="Agent">Support agent decisions</option></select></label></div>
       <p className="raw-notice">Authentication tokens, run capabilities, and authorization headers are never included.</p>
       <div className="trace-list">{filteredTrace.map(item => <Trace key={item.eventId} item={item} />)}</div>
     </div>}
   </article>;
+}
+
+/** Why the support agent handed this conversation over, and every repair it already tried. */
+function EscalationPanel({ detail }: { detail: HelpdeskConversationDetail }) {
+  const conversation = detail.conversation;
+  const attempts = repairAttempts(detail);
+  if (!conversation.escalationReason && attempts.length === 0) return null;
+  return <section className={`escalation-panel ${conversation.status === "Escalated" ? "open" : ""}`}
+    aria-label="Agent escalation">
+    {conversation.escalationReason && <>
+      <h3><LifeBuoy size={14} />{conversation.status === "Escalated" ? "Needs the helpdesk" : "Was escalated"}
+        {conversation.escalatedAtUtc && <time>{new Date(conversation.escalatedAtUtc).toLocaleString()}</time>}</h3>
+      <p className="escalation-reason">{conversation.escalationReason}</p>
+      {conversation.escalationSummary && <p className="escalation-summary">{conversation.escalationSummary}</p>}
+    </>}
+    {attempts.length > 0 && <>
+      <h4>Repairs the agent tried</h4>
+      <ol className="escalation-attempts">{attempts.map(attempt =>
+        <li key={`${attempt.attemptedAtUtc}-${attempt.artifactId}`}>
+          <code>{attempt.artifactId}</code>
+          <span className={`trace-outcome ${attempt.outcome === "Completed" ? "success" : "error"}`}>
+            {attempt.outcome === "Completed" ? "Finished" : "Failed"}</span>
+          <time>{new Date(attempt.attemptedAtUtc).toLocaleString()}</time>
+          {attempt.error && <span className="escalation-error">{attempt.error}</span>}
+        </li>)}</ol>
+    </>}
+  </section>;
 }
 
 function Message({ message }: { message: ChatMessage }) {
@@ -273,8 +303,8 @@ function Trace({ item }: { item: HelpdeskTraceEvent }) {
   const [copied, setCopied] = useState(false);
   const json = JSON.stringify(item.payload, null, 2);
   return <details className="trace-event"><summary>
-    <span className={`trace-direction ${item.direction === "AgentToControlPlane" ? "inbound" : "outbound"}`}>
-      {item.direction === "AgentToControlPlane" ? "IN" : "OUT"}</span>
+    <span className={`trace-direction ${item.direction === "AgentToControlPlane" ? "inbound" : item.direction === "Agent" ? "agent" : "outbound"}`}>
+      {item.direction === "AgentToControlPlane" ? "IN" : item.direction === "Agent" ? "AI" : "OUT"}</span>
     <code>{item.eventType}</code><span className={`trace-outcome ${item.outcome.toLowerCase()}`}>{item.outcome}</span>
     <time>{new Date(item.timestampUtc).toLocaleTimeString()}</time></summary>
     <div className="trace-json"><button type="button" onClick={() => void navigator.clipboard.writeText(json).then(() => {

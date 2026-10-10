@@ -42,7 +42,9 @@ public static class HelpdeskStatus
     public const string New = "New";
     public const string Open = "Open";
     public const string Resolved = "Resolved";
-    public static bool IsValid(string? value) => value is New or Open or Resolved;
+    /// <summary>The agent could not solve the problem and handed it to the helpdesk team.</summary>
+    public const string Escalated = "Escalated";
+    public static bool IsValid(string? value) => value is New or Open or Resolved or Escalated;
 }
 
 public static class HelpdeskResponder
@@ -66,7 +68,10 @@ public sealed record HelpdeskConversationSummary(
     string TextDirection,
     string MachineName = "",
     string Version = "",
-    bool IsOnline = false);
+    bool IsOnline = false,
+    string? EscalationReason = null,
+    string? EscalationSummary = null,
+    DateTimeOffset? EscalatedAtUtc = null);
 
 public sealed record HelpdeskTraceEvent(
     string EventId,

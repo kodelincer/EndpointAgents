@@ -34,7 +34,8 @@ public sealed partial class ChatStore
                     COALESCE((SELECT text_direction FROM messages latest
                               WHERE latest.conversation_id = c.conversation_id AND latest.body <> ''
                               ORDER BY latest.sequence DESC LIMIT 1), 'auto'),
-                    COALESCE(d.machine_name, '')
+                    COALESCE(d.machine_name, ''), '', 0,
+                    c.escalation_reason, c.escalation_summary, c.escalated_at_utc
                 FROM conversations c
                 LEFT JOIN devices d ON d.agent_id = c.agent_id
                 WHERE c.is_active = 1
@@ -46,7 +47,8 @@ public sealed partial class ChatStore
                        OR EXISTS (SELECT 1 FROM messages searched
                                   WHERE searched.conversation_id = c.conversation_id
                                     AND searched.body LIKE $like))
-                ORDER BY CASE c.helpdesk_status WHEN 'New' THEN 0 WHEN 'Open' THEN 1 ELSE 2 END,
+                ORDER BY CASE c.helpdesk_status WHEN 'Escalated' THEN 0 WHEN 'New' THEN 1
+                    WHEN 'Open' THEN 2 ELSE 3 END,
                     c.updated_at_utc DESC
                 LIMIT $limit;
                 """;
@@ -417,7 +419,8 @@ public sealed partial class ChatStore
                 COALESCE((SELECT text_direction FROM messages latest
                           WHERE latest.conversation_id = c.conversation_id AND latest.body <> ''
                           ORDER BY latest.sequence DESC LIMIT 1), 'auto'),
-                COALESCE(d.machine_name, '')
+                COALESCE(d.machine_name, ''), '', 0,
+                c.escalation_reason, c.escalation_summary, c.escalated_at_utc
             FROM conversations c LEFT JOIN devices d ON d.agent_id = c.agent_id
             WHERE c.conversation_id = $id AND c.is_active = 1;
             """;
@@ -430,5 +433,8 @@ public sealed partial class ChatStore
         new(reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetInt32(3),
             Parse(reader.GetString(4)), Parse(reader.GetString(5)), reader.GetInt64(6),
             reader.GetString(7), reader.GetString(8), reader.GetInt32(9), reader.GetString(10),
-            reader.GetString(11), reader.GetString(12));
+            reader.GetString(11), reader.GetString(12),
+            EscalationReason: reader.IsDBNull(15) ? null : reader.GetString(15),
+            EscalationSummary: reader.IsDBNull(16) ? null : reader.GetString(16),
+            EscalatedAtUtc: reader.IsDBNull(17) ? null : Parse(reader.GetString(17)));
 }

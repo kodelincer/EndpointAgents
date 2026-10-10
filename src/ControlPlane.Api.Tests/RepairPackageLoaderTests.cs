@@ -173,6 +173,34 @@ public sealed class RepairPackageLoaderTests : IDisposable
     }
 
     [Fact]
+    public async Task PackagesForTheSameProblemAreListedInTryOrder()
+    {
+        await WritePackageAsync("spooler-b", edit: package =>
+        {
+            package["problem"] = "printing-stuck";
+            package["order"] = 10;
+        });
+        await WritePackageAsync("spooler-a", edit: package =>
+        {
+            package["problem"] = "printing-stuck";
+            package["order"] = 20;
+        });
+        await WritePackageAsync("bad-order", edit: package => package["order"] = 0);
+
+        var repository = CreateRepository();
+        var packages = await repository.GetRepairPackagesAsync(
+            TestContext.Current.CancellationToken);
+        var statuses = await repository.GetPackageStatusesAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(["spooler-b", "spooler-a"],
+            packages.Select(item => item.Descriptor.PackageId));
+        Assert.All(packages, item => Assert.Equal("printing-stuck", item.Problem));
+        Assert.Equal(BatPackageStatuses.Invalid,
+            statuses.Single(item => item.Id == "bad-order").Status);
+    }
+
+    [Fact]
     public async Task GeneralPackageMayShareAnIdWithAnActivationRepair()
     {
         await WritePackageAsync("windows-activation-repair");

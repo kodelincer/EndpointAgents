@@ -270,8 +270,10 @@ Only these tools are visible to Hermes:
 - `run_office_activation_repair`
 - `find_repair_packages`
 - `run_repair_package`
+- `list_repair_attempts`
 - `propose_endpoint_action`
 - `mark_problem_resolved`
+- `escalate_to_helpdesk`
 
 `mark_problem_resolved` only sets the run's own conversation to Resolved. The skills ask the user
 whether the problem is solved and call it only after a clear yes; a later user message reopens
@@ -284,12 +286,25 @@ run capability and create no approval card. The Windows endpoint repeats its act
 check before execution; the Office endpoint also checks again that Office applications
 are closed.
 
-`find_repair_packages` lists the published schema 2 repair packages (id, display
-name, description, symptoms and Windows range only). `run_repair_package` accepts one
-of those ids, pins its file, playbook and supporting-file hashes, and dispatches
-`system.package_run` to the bound endpoint without an approval card: every package is
-administrator-reviewed, and the endpoint runs only the playbook's fixed arguments and
-answers. See `docs/bat-packages.md`.
+`find_repair_packages` lists the published schema 2 repair packages (id, problem, try
+order, display name, description, symptoms, Windows range, and whether it already ran in
+this conversation). `run_repair_package` accepts one of those ids, pins its file, playbook
+and supporting-file hashes, and dispatches `system.package_run` to the bound endpoint
+without an approval card: every package is administrator-reviewed, and the endpoint runs
+only the playbook's fixed arguments and answers. See `docs/bat-packages.md`.
+
+### Fallback repairs and escalation
+
+One problem can have several approved repairs (several activation repairs compatible with
+the PC, or several packages with the same `problem`). Every repair tool records an attempt
+in the conversation's helpdesk timeline. The skills run the first untried repair in
+administrator order, ask whether the problem is solved, and on a "no" run the next one;
+`list_repair_attempts` tells them what already ran. When nothing untried is left, nothing
+fits, or the user asks for a person, `escalate_to_helpdesk` moves the conversation to the
+**Escalated** status with a one-line reason and a short summary. Escalated conversations
+sort first in the dashboard Helpdesk tab, show the reason, summary and every attempt, and
+are never removed by retention until someone resolves them. Escalation changes nothing on
+the endpoint.
 
 The generic proposal tool accepts only cataloged Office and Windows remediation
 methods. It stores the exact method and parameters with the run, conversation,

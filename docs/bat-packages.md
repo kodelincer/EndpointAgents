@@ -1,7 +1,9 @@
-# Adding a BAT package
+# Adding a package (BAT or EXE)
 
 This guide shows an administrator how to turn a vendor's BAT file into a package that
-endpoints can run unattended. You need a PC with this repository and the .NET 10 SDK;
+endpoints can run unattended. EXE files, files that need no input, and fallback
+packages for the same problem are covered in
+[General repair packages](#general-repair-packages-exe-files-no-input-runs-fallbacks). You need a PC with this repository and the .NET 10 SDK;
 the control plane server only receives the finished package folder.
 
 A **package** is one folder:
@@ -174,6 +176,51 @@ review, `-Fix` and copy again.
 Run the repair on one test endpoint first and confirm the expected result. Then pilot
 it on a few users before relying on it. If the agent needs a rule for choosing between
 packages, update the relevant Hermes skill in `deploy\hermes\skills`.
+
+## General repair packages: EXE files, no-input runs, fallbacks
+
+The steps above build an Office or Windows **activation** package (`schemaVersion: 1`,
+`-Kind office` or `windows`). Every other fix is a **general repair package**
+(`schemaVersion: 2`, the default `-Kind general`). It can hold a BAT or an EXE, and the
+support agent picks it by the symptoms you list. It runs on the user's PC without asking
+them, because you reviewed it.
+
+```powershell
+# A file that needs no answers: it just runs to the end.
+.\scripts\new-package.ps1 -File C:\Vendor\SpoolerFix.exe -Id spooler-fix -NoInput
+# A file with menus: leave out -NoInput and discover the screens as in step 3.
+.\scripts\new-package.ps1 -File C:\Vendor\NetReset.bat -Id net-reset
+```
+
+A harmless worked example is checked in at
+`deploy\control-plane\FileRepository\packages\no-input-repair-sample`.
+
+What is different in a general `package.json`:
+
+| Field | Meaning |
+| --- | --- |
+| `file.type`, `file.fileName`, `file.sha256` | `bat` or `exe`, the file in the folder, and its pinned hash. Endpoints stage it as `<id>.bat` or `<id>.exe`. |
+| `file.publisher` | Optional. The exact signer subject of a signed EXE; endpoints then refuse the file unless Windows verifies that signature. `new-package.ps1` fills it in when the EXE is validly signed. |
+| `symptoms` | 1-16 short phrases in the user's words (Persian is fine). The agent runs a package only when the user's problem matches them. |
+| `problem`, `order` | Packages with the same `problem` (for example `printing-stuck`) are alternatives. The agent tries the lowest `order` first (1-999, default 100), asks the user whether it worked, and on a "no" runs the next one. When none is left it hands the conversation to the helpdesk. `order` also sets the try order of activation packages. |
+| `compatibility` | Optional `minWindowsVersion` / `maxWindowsVersionExclusive`. |
+| `playbook.version: 3` | Allows the extra fields below. |
+| `playbook.steps: []` | No input. Nothing is typed, input is closed at start (a stray `pause` or `set /p` returns at once), and the run waits for the file to end. |
+| `playbook.arguments` | Up to 16 fixed arguments, such as `["/quiet", "/norestart"]`. Letters, digits, spaces and `- _ . / \ : = , + @ #` only; never passwords or keys. |
+| `playbook.timeoutSeconds` | Overall limit for the whole run, 30-3600 (default 480). |
+| `playbook.restartExitCodes` | Exit codes that mean "worked, restart needed", such as `[3010]`. The agent asks the user to restart; nothing restarts automatically. |
+
+EXE rules: a **console** EXE may answer screens like a BAT. A **windowed (GUI)** EXE, which
+includes most installers, may only run with `steps: []` and its silent-mode arguments. If
+it opens a window anyway, the run stops after `guiDialogGraceSeconds`. An EXE without an
+embedded signature is published with a warning; the SHA-256 pin still protects it.
+
+Try it exactly as an endpoint would, then pin the hashes:
+
+```powershell
+.\scripts\test-bat-playbook.ps1 -Package <folder> -Execute
+.\scripts\test-bat-playbook.ps1 -Package <folder> -Fix
+```
 
 ## Legacy manifests
 

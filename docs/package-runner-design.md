@@ -1,6 +1,9 @@
 # Generalized package runner (BAT and EXE) - design proposal
 
-Status: proposal, not built yet. Branch `claude/package-runner` (based on `claude/package-catalog`).
+Status: built on branch `claude/package-runner`. The admin guide is `docs/bat-packages.md`. Decisions taken:
+general packages run without asking the user (every package is admin-reviewed), unsigned EXEs
+publish with a warning, and packages for one `problem` are tried in `order`, with escalation to
+the helpdesk when none solves it.
 
 ## Goal
 

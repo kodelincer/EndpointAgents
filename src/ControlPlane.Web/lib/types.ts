@@ -61,6 +61,7 @@ export type BatPackage = {
   fileType?: "bat" | "exe" | string | null; symptoms?: string[] | null;
   compatibility?: { minWindowsVersion?: string | null; maxWindowsVersionExclusive?: string | null } | null;
   signer?: string | null; exeSubsystem?: "Console" | "GUI" | string | null;
+  problem?: string | null; order?: number;
   batFileName?: string | null; pinnedBatSha256?: string | null; actualBatSha256?: string | null;
   batSizeBytes?: number | null; pinnedPlaybookSha256?: string | null;
   computedPlaybookSha256?: string | null; playbook?: Playbook | null;
@@ -121,9 +122,10 @@ export type SupportRequest = {
 export type HelpdeskConversationSummary = {
   conversationId: string; agentId: string; userName: string; sessionId: number;
   createdAtUtc: string; updatedAtUtc: string; lastSequence: number;
-  status: "New" | "Open" | "Resolved"; responderMode: "Hermes" | "Operator";
+  status: "New" | "Open" | "Resolved" | "Escalated"; responderMode: "Hermes" | "Operator";
   unreadCount: number; preview: string; textDirection: "auto" | "ltr" | "rtl";
   machineName: string; version: string; isOnline: boolean;
+  escalationReason?: string | null; escalationSummary?: string | null; escalatedAtUtc?: string | null;
 };
 export type ChatMessage = {
   messageId: string; conversationId: string; sequence: number; role: 0 | 1 | 2 | 3;
@@ -132,7 +134,7 @@ export type ChatMessage = {
 };
 export type HelpdeskTraceEvent = {
   eventId: string; conversationId: string; sequence?: number | null;
-  timestampUtc: string; direction: "AgentToControlPlane" | "ControlPlaneToAgent";
+  timestampUtc: string; direction: "AgentToControlPlane" | "ControlPlaneToAgent" | "Agent";
   eventType: string; outcome: string; payload: unknown;
 };
 export type HelpdeskConversationDetail = {

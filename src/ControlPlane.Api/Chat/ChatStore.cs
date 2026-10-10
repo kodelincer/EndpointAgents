@@ -174,6 +174,12 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
                 "INTEGER NOT NULL DEFAULT 0", cancellationToken);
             await EnsureColumnAsync(connection, "conversations", "resolved_at_utc",
                 "TEXT NULL", cancellationToken);
+            await EnsureColumnAsync(connection, "conversations", "escalation_reason",
+                "TEXT NULL", cancellationToken);
+            await EnsureColumnAsync(connection, "conversations", "escalation_summary",
+                "TEXT NULL", cancellationToken);
+            await EnsureColumnAsync(connection, "conversations", "escalated_at_utc",
+                "TEXT NULL", cancellationToken);
         }
         finally
         {
@@ -1350,6 +1356,8 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
                 SELECT c.conversation_id
                 FROM conversations c
                 WHERE c.updated_at_utc < $cutoff
+                  -- Unsolved cases stay until the helpdesk team resolves them.
+                  AND c.helpdesk_status <> 'Escalated'
                   AND NOT EXISTS (
                     SELECT 1 FROM agent_runs r
                     WHERE r.conversation_id = c.conversation_id

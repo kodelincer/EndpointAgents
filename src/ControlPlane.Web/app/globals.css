@@ -269,6 +269,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visibl
 .ticket-status.new { color: var(--action); background: color-mix(in oklch, var(--action) 10%, white); }
 .ticket-status.open { color: oklch(0.52 0.13 75); background: oklch(0.96 0.035 80); }
 .ticket-status.resolved { color: var(--success); background: color-mix(in oklch, var(--success) 10%, white); }
+.ticket-status.escalated { color: var(--danger); background: color-mix(in oklch, var(--danger) 10%, white); }
+.escalation-panel { margin: 0 18px 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); font-size: 12px; }
+.escalation-panel.open { border-color: color-mix(in oklch, var(--danger) 30%, white); background: color-mix(in oklch, var(--danger) 5%, white); }
+.escalation-panel h3 { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.escalation-panel h3 time { margin-left: auto; color: var(--muted); font: 10px var(--font-mono); }
+.escalation-panel h4 { margin: 12px 0 6px; color: var(--muted); font-size: 10px; font-weight: 650; }
+.escalation-reason { margin: 6px 0 0; font-weight: 650; }
+.escalation-summary { margin: 4px 0 0; color: var(--muted); line-height: 1.5; white-space: pre-wrap; }
+.escalation-attempts { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px; }
+.escalation-attempts li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.escalation-attempts code { font: 11px var(--font-mono); }
+.escalation-attempts time { color: var(--muted); font: 10px var(--font-mono); }
+.escalation-error { flex-basis: 100%; color: var(--muted); font-size: 11px; }
+.trace-direction.agent { color: oklch(0.45 0.14 300); background: oklch(0.95 0.03 300); }
 .unread-count { min-width: 18px; padding-inline: 5px; color: white; background: var(--action); font: 9px var(--font-mono); }
 .legacy-divider { padding: 10px 15px 8px; border-bottom: 1px solid var(--line); color: var(--muted); background: var(--surface-2); font-size: 9px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
 .support-list > button.legacy { opacity: .82; }

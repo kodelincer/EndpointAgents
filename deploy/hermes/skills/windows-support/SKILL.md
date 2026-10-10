@@ -11,9 +11,11 @@ For a Windows activation, license, unlicensed, or activation-warning problem:
 2. Briefly summarize only the sanitized activation state. Never expose raw diagnostic data.
 3. If the result is `Licensed`, explain that Windows reports as activated and stop.
 4. If the probe failed, explain that activation could not be verified and stop.
-5. Select one ID from `compatibleBugfixArtifactIds` in the status result. If the list
-   is empty, explain that no compatible approved repair is available. If multiple IDs
-   remain, stop for administrator selection rather than guessing.
+5. Call `mcp_controlplane_list_repair_attempts` once with exactly
+   `{ "runCapability": "<the supplied run capability>" }`. Select the first ID in
+   `compatibleBugfixArtifactIds` (already in the administrator's try order) that is not
+   among the attempts' `artifactId` values. If the list is empty, or every compatible ID
+   was already tried, escalate (see "Closing the ticket").
 6. Call `mcp_controlplane_run_windows_activation_repair` once with exactly
    `{ "runCapability": "<the supplied run capability>", "artifactId": "<selected compatible ID>" }`.
    ControlPlane pins the BAT and playbook revisions and binds the action to the endpoint
@@ -45,9 +47,19 @@ more information or to close an application.
 When the user's next message clearly says the problem is solved (for example «بله، حل شد»,
 «درست شد», «ممنون، مشکل برطرف شد»), call `mcp_controlplane_mark_problem_resolved` once with
 exactly `{ "runCapability": "<the supplied run capability>" }`, then confirm the closing in one
-short sentence. If they say it is not solved, do not call it; continue the workflow or
-explain what remains. Never call it on your own judgment, before the user confirms, or
-for an unrelated or out-of-scope request.
+short sentence. If they say it is not solved, do not call it; start the activation
+workflow again from step 1 so the next untried compatible repair runs. Never call it on
+your own judgment, before the user confirms, or for an unrelated or out-of-scope request.
+
+When no untried compatible repair is left and the user still has the problem, when no
+compatible repair exists, or when the user asks for a person, call
+`mcp_controlplane_escalate_to_helpdesk` once with exactly
+`{ "runCapability": "<the supplied run capability>", "reason": "<one English line>", "summary": "<short English summary>" }`,
+naming the Windows edition, the activation state, each repair tried and its result, and
+what the user said. Then tell the user that the helpdesk team will follow up.
+
+For a Windows problem other than activation, use the repair-packages skill when an
+approved package lists a matching symptom.
 Use only the ControlPlane tools above. Never use terminal, filesystem, browser, web,
 code execution, memory, cron, delegation, learning, or skill-management tools. Never
 request passwords, product keys, tokens, endpoint identifiers, paths, URLs, commands,

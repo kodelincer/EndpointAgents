@@ -5,30 +5,43 @@ description: Fix a user's PC problem with an administrator-approved repair packa
 
 # Repair Packages
 
-Administrators publish reviewed repair packages. Each one lists the symptoms it fixes.
-The package's file, arguments, and every answer to its screens are fixed by the
-administrator; you only decide whether one package matches the user's problem.
+Administrators publish reviewed repair packages. Each one lists the symptoms it fixes and
+belongs to a `problem`; packages with the same `problem` are alternatives, listed in the
+order to try them. The package's file, arguments, and every answer to its screens are
+fixed by the administrator; you only decide which problem matches the user's request.
 
 1. If the problem is unclear, ask one short question about the symptom first.
 2. Call `mcp_controlplane_find_repair_packages` once with
    `{ "runCapability": "<the supplied run capability>" }`.
 3. Compare the user's description with each package's `symptoms`, `displayName`, and
-   `description`. Choose a package only when its symptoms clearly describe the same
-   problem. If none match, or if two different packages match equally, say that no
-   approved automatic fix is available and suggest contacting the help desk. Never
-   guess and never pick the "closest" package for an unrelated problem.
-4. Tell the user in one short sentence what you are about to fix, then call
+   `description`. Choose a `problem` only when its packages' symptoms clearly describe
+   the same problem. Never guess and never pick the "closest" package for an unrelated
+   problem. If none match, or two different problems match equally, go to step 7.
+4. Within the chosen problem, take the first package in the listed order whose
+   `alreadyTried` is false. If every package of that problem was already tried, go to
+   step 7.
+5. Tell the user in one short sentence what you are about to fix, then call
    `mcp_controlplane_run_repair_package` once with exactly
    `{ "runCapability": "<the supplied run capability>", "packageId": "<chosen packageId>" }`.
    The package runs without an approval prompt because the administrator already
-   approved it.
-5. Report the result plainly:
+   approved it. Run at most one package per reply.
+6. Report the result plainly and end with one short question asking whether the problem
+   is solved, for example «آیا مشکل شما حل شد؟»:
    - `ok: true` with `restartRequired: true`: the fix finished and the PC needs a
-     restart; ask the user to restart when convenient. Never restart it yourself.
-   - `ok: true`: the fix finished. Ask the user to check whether the problem is gone.
-   - `ok: false`: say the automatic fix did not finish and suggest contacting the help
-     desk. Do not run the same package again, and do not try a different package for
-     the same problem in this conversation.
+     restart; ask the user to restart and then say whether it is solved. Never restart
+     it yourself.
+   - `ok: true`: the fix finished.
+   - `ok: false`: the automatic fix did not finish.
+   When the user answers yes, call `mcp_controlplane_mark_problem_resolved` once with
+   exactly `{ "runCapability": "<the supplied run capability>" }` and confirm in one short
+   sentence. When the user answers no, or the run failed, start again at step 2 for the
+   same problem: the next untried package is the next fallback.
+7. When no package fits, or every package for the problem has been tried and the user
+   still has the problem, call `mcp_controlplane_escalate_to_helpdesk` once with exactly
+   `{ "runCapability": "<the supplied run capability>", "reason": "<one English line>", "summary": "<short English summary>" }`.
+   The summary names the problem, the packages tried and their results, and what the
+   user said. Then tell the user that the helpdesk team will follow up. Also escalate
+   when the user asks for a person.
 
 Use only the ControlPlane tools above. Never use terminal, filesystem, browser, web,
 code execution, memory, cron, delegation, learning, or skill-management tools. Never

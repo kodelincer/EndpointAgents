@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeHelpdeskConversations, mergeHelpdeskDetail } from "./helpdesk";
+import { mergeHelpdeskConversations, mergeHelpdeskDetail, repairAttempts } from "./helpdesk";
 import type { HelpdeskConversationDetail, HelpdeskConversationSummary } from "./types";
 
 const summary = (conversationId: string, status: HelpdeskConversationSummary["status"],
@@ -36,5 +36,36 @@ describe("helpdesk reconciliation", () => {
     const result = mergeHelpdeskDetail(base, incoming);
     expect(result.messages.map(item => item.messageId)).toEqual(["one", "two"]);
     expect(result.trace.map(item => item.eventId)).toEqual(["one", "two"]);
+  });
+});
+
+describe("helpdesk escalation", () => {
+  it("lists escalated conversations first", () => {
+    const result = mergeHelpdeskConversations([], [
+      summary("new", "New", "2026-01-03T00:00:00Z"),
+      summary("stuck", "Escalated", "2026-01-01T00:00:00Z")]);
+    expect(result.map(item => item.conversationId)).toEqual(["stuck", "new"]);
+  });
+
+  it("reads repair attempts from the timeline in order", () => {
+    const detail: HelpdeskConversationDetail = {
+      conversation: summary("c", "Escalated", "2026-01-01T00:00:00Z"),
+      messages: [], actions: [], progressEvents: [],
+      trace: [
+        { eventId: "1", conversationId: "c", timestampUtc: "2026-01-01T00:00:01Z",
+          direction: "Agent", eventType: "agent.repair_attempt", outcome: "Success",
+          payload: { ToolName: "run_repair_package", ArtifactId: "spooler-a",
+            Outcome: "Completed", Error: null, AttemptedAtUtc: "2026-01-01T00:00:01Z" } },
+        { eventId: "2", conversationId: "c", timestampUtc: "2026-01-01T00:00:02Z",
+          direction: "Agent", eventType: "agent.escalation", outcome: "Escalated",
+          payload: { reason: "Still broken" } },
+        { eventId: "3", conversationId: "c", timestampUtc: "2026-01-01T00:00:03Z",
+          direction: "Agent", eventType: "agent.repair_attempt", outcome: "Error",
+          payload: { ToolName: "run_repair_package", ArtifactId: "spooler-b",
+            Outcome: "Failed", Error: "timed out", AttemptedAtUtc: "2026-01-01T00:00:03Z" } }
+      ]
+    };
+    expect(repairAttempts(detail).map(item => `${item.artifactId}:${item.outcome}:${item.error ?? ""}`))
+      .toEqual(["spooler-a:Completed:", "spooler-b:Failed:timed out"]);
   });
 });

@@ -5,10 +5,14 @@ using System.Text.Json;
 
 namespace ControlPlane.Api.Files;
 
+/// <param name="Problem">Groups packages that fix the same problem.</param>
+/// <param name="Order">Try order within <paramref name="Problem"/>, lower first.</param>
 public sealed record RepairPackageArtifact(
     FileArtifact File,
     PackageDescriptor Descriptor,
-    string SupportDirectory);
+    string SupportDirectory,
+    string Problem,
+    int Order = BatPackageOrdering.Default);
 
 /// <summary>
 /// Loads packages from <c>FileRepository/packages/&lt;id&gt;/package.json</c>. Schema 1
@@ -31,12 +35,15 @@ public sealed partial class FileArtifactRepository
         OfficeBugfixFileArtifact? Office, WindowsBugfixFileArtifact? Windows,
         RepairPackageArtifact? General = null);
 
-    /// <summary>Published schema 2 packages, ordered by id.</summary>
+    /// <summary>Published schema 2 packages, by problem, then try order, then id.</summary>
     public async Task<IReadOnlyList<RepairPackageArtifact>> GetRepairPackagesAsync(
         CancellationToken cancellationToken) =>
         (await LoadPackagesAsync(cancellationToken))
             .Select(package => package.General)
             .OfType<RepairPackageArtifact>()
+            .OrderBy(item => item.Problem, StringComparer.Ordinal)
+            .ThenBy(item => item.Order)
+            .ThenBy(item => item.Descriptor.PackageId, StringComparer.Ordinal)
             .ToArray();
 
     public async Task<RepairPackageArtifact?> GetRepairPackageAsync(string packageId,
@@ -98,8 +105,11 @@ public sealed partial class FileArtifactRepository
             }
             artifacts.Add(package.Office);
         }
+        // Endpoints list compatible repairs in catalog order, and the agent tries them
+        // in that order, so the administrator's package order comes first.
         return new OfficeBugfixCatalogSnapshot(artifacts
-            .OrderBy(item => new[] { item.Descriptor.MinOfficeVersion }
+            .OrderBy(item => item.Order)
+            .ThenBy(item => new[] { item.Descriptor.MinOfficeVersion }
                 .Concat(item.Descriptor.AdditionalCompatibility?.Select(rule =>
                     rule.MinOfficeVersion) ?? [])
                 .Select(Version.Parse).Min())
@@ -126,7 +136,8 @@ public sealed partial class FileArtifactRepository
             artifacts.Add(package.Windows);
         }
         return new WindowsBugfixCatalogSnapshot(artifacts
-            .OrderBy(item => item.Descriptor.MinWindowsVersion is null
+            .OrderBy(item => item.Order)
+            .ThenBy(item => item.Descriptor.MinWindowsVersion is null
                 ? new Version(0, 0)
                 : new[] { item.Descriptor.MinWindowsVersion }
                     .Concat(item.Descriptor.AdditionalCompatibility?.Select(rule =>
@@ -207,6 +218,10 @@ public sealed partial class FileArtifactRepository
         var reasons = new List<(string Status, string Reason)>();
         var warnings = new List<string>();
         var kind = manifest.Office is not null ? "office" : "windows";
+        if (!BatPackageOrdering.IsValid(manifest.Order))
+            reasons.Add((BatPackageStatuses.Invalid,
+                $"order must be between {BatPackageOrdering.Minimum} and {BatPackageOrdering.Maximum}."));
+        var order = manifest.Order ?? BatPackageOrdering.Default;
 
         // BAT file and its pinned hash.
         var batName = manifest.Bat?.FileName ?? string.Empty;
@@ -313,17 +328,17 @@ public sealed partial class FileArtifactRepository
             pinnedBat, bat?.Sha256, bat?.SizeBytes,
             NormalizeSha256(manifest.PlaybookSha256), computedPlaybook,
             playbook ?? manifest.Playbook, manifest.SupportFiles ?? [], manifest.Office,
-            manifest.Windows, manifest.Review);
+            manifest.Windows, manifest.Review, Order: order);
         if (!BatPackageStatuses.IsPublished(status))
             return new LoadedPackage(packageStatus, null, null);
 
         return officeEntry is not null
             ? new LoadedPackage(packageStatus, new OfficeBugfixFileArtifact(bat!,
                 CreateOfficeBugfixDescriptor(officeEntry, playbook!, bat!.Sha256,
-                    supportFiles!), supportDirectory), null)
+                    supportFiles!), supportDirectory, order), null)
             : new LoadedPackage(packageStatus, null, new WindowsBugfixFileArtifact(bat!,
                 CreateWindowsBugfixDescriptor(windowsEntry!, playbook!, bat!.Sha256,
-                    supportFiles!), supportDirectory));
+                    supportFiles!), supportDirectory, order));
     }
 
     private static string OverallStatus(
@@ -369,6 +384,15 @@ public sealed partial class FileArtifactRepository
             || symptoms.Any(symptom => symptom.Length is 0
                 or > PackageDescriptorPolicy.MaximumSymptomCharacters))
             Invalid($"symptoms must list 1 to {PackageDescriptorPolicy.MaximumSymptoms} phrases of up to {PackageDescriptorPolicy.MaximumSymptomCharacters} characters that describe the problem in the user's words.");
+
+        // Packages with the same problem are alternatives, tried in order until one works.
+        var problem = string.IsNullOrWhiteSpace(manifest.Problem) ? folder
+            : manifest.Problem.Trim();
+        if (!ArtifactIdPattern().IsMatch(problem) || !char.IsAsciiLetterOrDigit(problem[^1]))
+            Invalid("problem must use lowercase letters, numbers, dots, underscores or hyphens, such as \"printing-stuck\".");
+        if (!BatPackageOrdering.IsValid(manifest.Order))
+            Invalid($"order must be between {BatPackageOrdering.Minimum} and {BatPackageOrdering.Maximum}.");
+        var order = manifest.Order ?? BatPackageOrdering.Default;
 
         var minWindows = manifest.Compatibility?.MinWindowsVersion?.Trim();
         var maxWindows = manifest.Compatibility?.MaxWindowsVersionExclusive?.Trim();
@@ -486,7 +510,7 @@ public sealed partial class FileArtifactRepository
             file?.SizeBytes, NormalizeSha256(manifest.PlaybookSha256), computedPlaybook,
             playbook ?? manifest.Playbook, supportEntries, null, null, manifest.Review,
             PackageFileTypes.IsKnown(type) ? type : manifest.File?.Type ?? string.Empty,
-            symptoms, compatibility, signer, subsystem);
+            symptoms, compatibility, signer, subsystem, problem, order);
         if (!BatPackageStatuses.IsPublished(status))
             return new LoadedPackage(packageStatus, null, null);
 
@@ -498,6 +522,6 @@ public sealed partial class FileArtifactRepository
             NormalizeVersion(minWindows), NormalizeVersion(maxWindows), publisher,
             symptoms);
         return new LoadedPackage(packageStatus, null, null,
-            new RepairPackageArtifact(file, descriptor, supportDirectory));
+            new RepairPackageArtifact(file, descriptor, supportDirectory, problem, order));
     }
 }

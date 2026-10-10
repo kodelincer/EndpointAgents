@@ -24,6 +24,10 @@ public sealed class BatPackageManifest
     public PackageFileManifest? File { get; set; }
     public List<string> Symptoms { get; set; } = [];
     public PackageCompatibilityManifest? Compatibility { get; set; }
+    /// <summary>Groups packages that fix the same problem; the agent tries them by <see cref="Order"/>.</summary>
+    public string? Problem { get; set; }
+    /// <summary>Try order within a problem (lower first), 1-999; defaults to 100.</summary>
+    public int? Order { get; set; }
     public List<BatchSupportFileManifestEntry> SupportFiles { get; set; } = [];
     public BatchPlaybook? Playbook { get; set; }
     public string PlaybookSha256 { get; set; } = string.Empty;
@@ -118,4 +122,15 @@ public sealed record BatPackageStatus(
     IReadOnlyList<string>? Symptoms = null,
     PackageCompatibilityManifest? Compatibility = null,
     string? Signer = null,
-    string? ExeSubsystem = null);
+    string? ExeSubsystem = null,
+    string? Problem = null,
+    int Order = BatPackageOrdering.Default);
+
+public static class BatPackageOrdering
+{
+    public const int Default = 100;
+    public const int Minimum = 1;
+    public const int Maximum = 999;
+
+    public static bool IsValid(int? order) => order is null or (>= Minimum and <= Maximum);
+}

@@ -305,6 +305,9 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
 
         Assert.Contains(tools.EnumerateArray(), tool =>
             tool.GetProperty("name").GetString() == "find_repair_packages");
+        foreach (var name in new[] { "list_repair_attempts", "escalate_to_helpdesk" })
+            Assert.Contains(tools.EnumerateArray(), tool =>
+                tool.GetProperty("name").GetString() == name);
         var packageRun = tools.EnumerateArray().Single(tool =>
             tool.GetProperty("name").GetString() == "run_repair_package");
         var packageRunInputs = packageRun.GetProperty("inputSchema")

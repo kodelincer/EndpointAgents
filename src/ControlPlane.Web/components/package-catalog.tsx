@@ -65,7 +65,7 @@ function PackageRow({ item, inventory, open, onToggle }:
         <span className="file-chip">{item.id}</span>{item.kind && <span className="file-chip">{item.kind}</span>}{item.fileType && <span className="file-chip">{item.fileType.toUpperCase()}</span>}
         <span className={`package-status ${status.tone}`}>{status.label}</span></div>
       {item.description && <p className="file-description">{item.description}</p>}
-      <p className="file-compatibility">{packageCompatibility(item)}</p>
+      <p className="file-compatibility">{packageCompatibility(item)}{item.problem && ` · problem ${item.problem}, try order ${item.order ?? 100}`}</p>
       {item.symptoms && item.symptoms.length > 0 && <p className="file-compatibility">Matches: {item.symptoms.map(symptom => <span key={symptom} className="file-chip" dir="auto">{symptom}</span>)}</p>}
       {item.reasons.length > 0 && <ul className="package-reasons">{item.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       {item.warnings.length > 0 && <ul className="package-warnings">{item.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}

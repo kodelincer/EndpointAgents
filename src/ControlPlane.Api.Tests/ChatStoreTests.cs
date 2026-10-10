@@ -866,6 +866,49 @@ public sealed class ChatStoreTests : IClassFixture<ControlPlaneApiFactory>
             await command.ExecuteScalarAsync(TestCancellation)));
     }
 
+    [Fact]
+    public async Task RepairAttemptsAndEscalationAreKeptForTheHelpdesk()
+    {
+        var agentId = Guid.NewGuid().ToString("D");
+        var identity = new ChatIdentity("S-1-5-21-111-222-333-9101", "user", 3);
+        var conversation = await _store.OpenConversationAsync(agentId, identity,
+            TestCancellation);
+        await _store.SubmitMessageAsync(agentId, new ChatMessageSubmission(
+            Guid.NewGuid().ToString("N"), conversation.ConversationId,
+            "Printing is stuck", "ltr", identity), TestCancellation);
+        var lease = await LeaseRunForAgentAsync(agentId);
+        var scope = (await _store.ResolveCapabilityAsync(lease.Capability,
+            TestCancellation))!;
+
+        await _store.RecordRepairAttemptAsync(scope, "run_repair_package", "spooler-a",
+            true, null, TestCancellation);
+        await _store.RecordRepairAttemptAsync(scope, "run_repair_package", "spooler-b",
+            false, "The package did not finish before its time limit.", TestCancellation);
+        var attempts = await _store.GetRepairAttemptsAsync(conversation.ConversationId,
+            TestCancellation);
+        Assert.Equal(["spooler-a", "spooler-b"], attempts.Select(item => item.ArtifactId));
+        Assert.Equal(RepairAttemptOutcomes.Failed, attempts[1].Outcome);
+
+        Assert.True(await _store.EscalateConversationAsync(scope,
+            "Both spooler packages ran and printing is still stuck.",
+            "User reports stuck print jobs. Tried spooler-a (finished), spooler-b (timed out).",
+            TestCancellation));
+        var escalated = (await _store.GetHelpdeskConversationAsync(
+            conversation.ConversationId, 0, TestCancellation))!;
+        Assert.Equal(HelpdeskStatus.Escalated, escalated.Conversation.Status);
+        Assert.StartsWith("Both spooler", escalated.Conversation.EscalationReason);
+        Assert.NotNull(escalated.Conversation.EscalatedAtUtc);
+        Assert.Contains(escalated.Trace, item => item.EventType == ChatStore.EscalationEventType);
+        Assert.Equal(2, escalated.Trace.Count(item =>
+            item.EventType == ChatStore.RepairAttemptEventType));
+        // Escalated conversations sort first and can be filtered.
+        Assert.Contains(await _store.GetHelpdeskConversationsAsync(200,
+            HelpdeskStatus.Escalated, null, TestCancellation),
+            item => item.ConversationId == conversation.ConversationId);
+        Assert.False(await _store.EscalateConversationAsync(scope, " ", "x",
+            TestCancellation));
+    }
+
     private async Task<ChatRunLease> LeaseRunForAgentAsync(
         string agentId, int historyLimit = 20)
     {

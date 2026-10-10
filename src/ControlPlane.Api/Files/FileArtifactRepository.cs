@@ -26,7 +26,8 @@ public sealed record OfficeArtifactCatalogSnapshot(
 public sealed record OfficeBugfixFileArtifact(
     FileArtifact File,
     OfficeBugfixArtifactDescriptor Descriptor,
-    string? SupportDirectory = null);
+    string? SupportDirectory = null,
+    int Order = BatPackageOrdering.Default);
 
 public sealed record OfficeBugfixCatalogSnapshot(
     IReadOnlyList<OfficeBugfixFileArtifact> Artifacts,
@@ -35,7 +36,8 @@ public sealed record OfficeBugfixCatalogSnapshot(
 public sealed record WindowsBugfixFileArtifact(
     FileArtifact File,
     WindowsBugfixArtifactDescriptor Descriptor,
-    string? SupportDirectory = null);
+    string? SupportDirectory = null,
+    int Order = BatPackageOrdering.Default);
 
 public sealed record WindowsBugfixCatalogSnapshot(
     IReadOnlyList<WindowsBugfixFileArtifact> Artifacts,

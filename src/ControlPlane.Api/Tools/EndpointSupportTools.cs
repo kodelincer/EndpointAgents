@@ -156,7 +156,7 @@ public sealed class EndpointSupportTools
             cancellationToken);
 
     [McpServerTool(Name = "find_repair_packages"), Description(
-        "List the administrator-approved repair packages and the symptoms each one fixes. Choose at most one package whose symptoms match the user's problem; if none match, do not run anything.")]
+        "List the administrator-approved repair packages, grouped by problem in the order to try them, with the symptoms each fixes and whether it already ran in this conversation.")]
     public static async Task<string> FindRepairPackages(
         ChatStore store,
         FileArtifactRepository files,
@@ -168,6 +168,10 @@ public sealed class EndpointSupportTools
         if (scope is null)
             return """{"ok":false,"error":"The run capability is invalid or expired."}""";
         var packages = await files.GetRepairPackagesAsync(cancellationToken);
+        var tried = (await store.GetRepairAttemptsAsync(scope.ConversationId,
+                cancellationToken))
+            .Select(attempt => attempt.ArtifactId)
+            .ToHashSet(StringComparer.Ordinal);
         await store.WriteToolAuditAsync(scope, "find_repair_packages", "success",
             null, cancellationToken);
         return ToolResultSanitizer.Sanitize(new
@@ -176,6 +180,9 @@ public sealed class EndpointSupportTools
             packages = packages.Select(item => new
             {
                 packageId = item.Descriptor.PackageId,
+                problem = item.Problem,
+                order = item.Order,
+                alreadyTried = tried.Contains(item.Descriptor.PackageId),
                 displayName = item.Descriptor.DisplayName,
                 description = item.Descriptor.Description,
                 symptoms = item.Descriptor.Symptoms,
@@ -183,6 +190,58 @@ public sealed class EndpointSupportTools
                 maxWindowsVersionExclusive = item.Descriptor.MaxWindowsVersionExclusive
             })
         });
+    }
+
+    [McpServerTool(Name = "list_repair_attempts"), Description(
+        "List the repairs already run in this conversation, oldest first, with whether each finished. Use it before choosing a repair so the same one is not run twice.")]
+    public static async Task<string> ListRepairAttempts(
+        ChatStore store,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        CancellationToken cancellationToken)
+    {
+        var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+        if (scope is null)
+            return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+        var attempts = await store.GetRepairAttemptsAsync(scope.ConversationId,
+            cancellationToken);
+        return ToolResultSanitizer.Sanitize(new
+        {
+            ok = true,
+            attempts = attempts.Select(attempt => new
+            {
+                artifactId = attempt.ArtifactId,
+                tool = attempt.ToolName,
+                outcome = attempt.Outcome
+            })
+        });
+    }
+
+    [McpServerTool(Name = "escalate_to_helpdesk"), Description(
+        "Hand this conversation to the human helpdesk team when no approved repair fits, every matching repair was tried and the user says the problem remains, or the user asks for a person. It changes nothing on the endpoint.")]
+    public static async Task<string> EscalateToHelpdesk(
+        ChatStore store,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        [Description("One short English line: why the agent could not solve it.")]
+        string reason,
+        [Description("A short English summary for the helpdesk: the problem, what was checked and tried, and what the user said.")]
+        string summary,
+        CancellationToken cancellationToken)
+    {
+        var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+        if (scope is null)
+            return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+        if (string.IsNullOrWhiteSpace(reason))
+            return """{"ok":false,"error":"A reason is required."}""";
+        // The text is stored for operators; keep secrets and identifiers out of it.
+        var escalated = await store.EscalateConversationAsync(scope,
+            PromptRedactor.RedactSecrets(reason), PromptRedactor.RedactSecrets(summary ?? ""),
+            cancellationToken);
+        await store.WriteToolAuditAsync(scope, "escalate_to_helpdesk",
+            escalated ? "escalated" : "error", null, cancellationToken);
+        return escalated ? """{"ok":true,"state":"Escalated"}"""
+            : """{"ok":false,"error":"The conversation is not available."}""";
     }
 
     [McpServerTool(Name = "run_repair_package"), Description(
@@ -244,6 +303,8 @@ public sealed class EndpointSupportTools
         var succeeded = response.Error is null;
         await store.WriteToolAuditAsync(scope, toolName,
             succeeded ? "success" : "error", response.Error?.Message, cancellationToken);
+        await store.RecordRepairAttemptAsync(scope, toolName, artifactId, succeeded,
+            response.Error?.Message, cancellationToken);
         await store.WriteProgressAsync(scope.RunId, ChatProgressStage.ActionCompleted,
             activity,
             succeeded ? ChatProgressOutcome.Success : ChatProgressOutcome.Failure,

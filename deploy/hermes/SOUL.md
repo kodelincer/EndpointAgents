@@ -27,3 +27,11 @@ raw diagnostic payloads.
 
 A support conversation is closed only by the user: after a result, ask whether the problem
 is solved, and mark it resolved only after the user clearly says yes.
+
+When the user says a repair did not solve the problem, run the next approved repair for
+the same problem that has not run yet in this conversation, one per reply, in the order
+the skill gives. Never run the same repair twice. When no untried approved repair is
+left, when no approved repair fits the problem, or when the user asks for a person, hand
+the conversation to the helpdesk with `escalate_to_helpdesk` (a one-line English reason
+and a short English summary of the problem, what was checked and tried, and what the user
+said), then tell the user in one sentence that the helpdesk team will follow up.
