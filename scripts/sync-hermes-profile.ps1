@@ -4,7 +4,7 @@ param(
     [string]$ProfileName = "endpointagents",
     [string]$HermesHome = (Join-Path $env:LOCALAPPDATA "hermes\profiles\endpointagents"),
     # Reviewed skill folders (deploy\hermes\skills) promoted into the profile.
-    [string[]]$Skills = @("office-support", "windows-support", "system-info"),
+    [string[]]$Skills = @("office-support", "windows-support", "system-info", "repair-packages"),
     # First-time setup: write config.yaml and .env (API-server and MCP keys are taken from
     # src\ControlPlane.Api\appsettings.Development.json, the provider key from -SourceHermesHome).
     [switch]$Provision,
@@ -46,6 +46,24 @@ $soulTo = Join-Path $HermesHome "SOUL.md"
 if ((Get-FileHash $soulFrom).Hash -ne (Get-FileHash $soulTo -ErrorAction SilentlyContinue).Hash) {
     $stale += "SOUL.md"
 }
+
+# The MCP tool allow-list ("tools: include:") must match config.yaml.example, or Hermes
+# never sees a newly added ControlPlane tool. Only that list is synced; keys and the
+# provider in the profile's config.yaml are left alone.
+function Get-ToolIncludes([string[]]$Lines) {
+    $start = [array]::IndexOf(($Lines | ForEach-Object { $_.Trim() }), "include:")
+    if ($start -lt 0) { return @() }
+    $end = $start + 1
+    while ($end -lt $Lines.Count -and $Lines[$end] -match '^\s+-\s') { $end++ }
+    return [pscustomobject]@{ Start = $start; End = $end; Items = $Lines[($start + 1)..($end - 1)] }
+}
+$profileConfig = Join-Path $HermesHome "config.yaml"
+$exampleIncludes = Get-ToolIncludes (Get-Content (Join-Path $source "config.yaml.example"))
+$profileLines = if (Test-Path -LiteralPath $profileConfig) { @(Get-Content -LiteralPath $profileConfig) } else { @() }
+$profileIncludes = Get-ToolIncludes $profileLines
+$toolsStale = $profileIncludes -and $exampleIncludes -and
+    (($profileIncludes.Items -join "`n") -ne ($exampleIncludes.Items -join "`n"))
+if ($toolsStale) { $stale += "MCP tool allow-list" }
 
 if ($Check) {
     if ($stale.Count -eq 0) { Write-Host "Hermes profile '$ProfileName' is in sync."; exit 0 }
@@ -102,5 +120,11 @@ foreach ($skill in $Skills) {
 }
 Copy-Item -LiteralPath $soulFrom -Destination $soulTo -Force
 Write-Host "Synced SOUL.md"
+if (-not $Provision -and $toolsStale) {
+    $updated = @($profileLines[0..$profileIncludes.Start]) + $exampleIncludes.Items +
+        @(if ($profileIncludes.End -lt $profileLines.Count) { $profileLines[$profileIncludes.End..($profileLines.Count - 1)] })
+    [IO.File]::WriteAllLines($profileConfig, [string[]]$updated, [Text.UTF8Encoding]::new($false))
+    Write-Host "Synced the MCP tool allow-list in config.yaml"
+}
 Write-Host "Done. Restart the profile gateway so Hermes reloads: hermes -p $ProfileName gateway run"
 
