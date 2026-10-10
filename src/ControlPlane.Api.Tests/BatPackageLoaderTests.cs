@@ -177,10 +177,19 @@ public sealed class BatPackageLoaderTests : IDisposable
         var root = AppContext.BaseDirectory;
         while (!File.Exists(Path.Combine(root, "EndpointAgents.slnx")))
             root = Path.GetDirectoryName(root)!;
+        // The checked-in packages are signed with the development key that
+        // appsettings.Development.json trusts.
+        using var settings = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(root,
+            "src", "ControlPlane.Api", "appsettings.Development.json"),
+            TestContext.Current.CancellationToken));
+        var devKeys = settings.RootElement.GetProperty("FileRepository")
+            .GetProperty("TrustedPackageSigningKeys").EnumerateArray()
+            .Select(key => key.GetString()!).ToList();
         var repository = new FileArtifactRepository(Options.Create(new FileRepositoryOptions
         {
             RootPath = Path.Combine(root, "deploy", "control-plane", "FileRepository"),
-            RequireProtectedAcl = false
+            RequireProtectedAcl = false,
+            TrustedPackageSigningKeys = devKeys
         }), new HostingEnvironment { ContentRootPath = root });
 
         var statuses = await repository.GetPackageStatusesAsync(
@@ -205,12 +214,16 @@ public sealed class BatPackageLoaderTests : IDisposable
             TestContext.Current.CancellationToken));
 
     private FileArtifactRepository CreateRepository() => new(
-        Options.Create(new FileRepositoryOptions { RootPath = _root, RequireProtectedAcl = false }),
+        Options.Create(new FileRepositoryOptions
+        {
+            RootPath = _root, RequireProtectedAcl = false,
+            TrustedPackageSigningKeys = [TestPackageSigner.PublicKey]
+        }),
         new HostingEnvironment { ContentRootPath = _root });
 
     private async Task<string> WritePackageAsync(string id, bool windows = false,
         (string Name, string Content)? supportFile = null, string bat = Bat,
-        Action<JsonObject>? edit = null)
+        Action<JsonObject>? edit = null, bool sign = true)
     {
         var folder = Directory.CreateDirectory(Path.Combine(_root, "packages", id)).FullName;
         var batBytes = Encoding.ASCII.GetBytes(bat);
@@ -259,6 +272,7 @@ public sealed class BatPackageLoaderTests : IDisposable
                 ["officeProductReleaseIds"] = new JsonArray()
             };
         edit?.Invoke(package);
+        if (sign) TestPackageSigner.Sign(package, folder);
         await File.WriteAllTextAsync(Path.Combine(folder, "package.json"),
             package.ToJsonString(), TestContext.Current.CancellationToken);
         return folder;

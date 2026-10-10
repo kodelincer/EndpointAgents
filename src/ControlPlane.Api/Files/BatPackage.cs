@@ -24,6 +24,8 @@ public sealed class BatPackageManifest
     public PackageFileManifest? File { get; set; }
     public List<string> Symptoms { get; set; } = [];
     public PackageCompatibilityManifest? Compatibility { get; set; }
+    /// <summary>The administrator's signature over this revision (test-bat-playbook.ps1 -Sign).</summary>
+    public EndpointAgents.Shared.Packages.PackageSignature? Signature { get; set; }
     /// <summary>Groups packages that fix the same problem; the agent tries them by <see cref="Order"/>.</summary>
     public string? Problem { get; set; }
     /// <summary>Try order within a problem (lower first), 1-999; defaults to 100.</summary>
@@ -92,6 +94,8 @@ public static class BatPackageStatuses
     public const string InvalidPlaybook = "InvalidPlaybook";
     public const string LintRejected = "LintRejected";
     public const string Invalid = "Invalid";
+    /// <summary>Not signed, or not signed by a trusted administrator key.</summary>
+    public const string Unsigned = "Unsigned";
 
     public static bool IsPublished(string status) =>
         status is Ready or ReadyWithWarnings;

@@ -321,6 +321,9 @@ public sealed partial class FileArtifactRepository
             warnings.AddRange(lint.Warnings);
         }
 
+        CheckSignature(reasons, warnings, folder, $"{folder}.bat", bat?.Sha256,
+            computedPlaybook, supportFiles, null, manifest.Signature);
+
         var status = OverallStatus(reasons, warnings);
         var packageStatus = new BatPackageStatus(folder, directory, status,
             reasons.Select(reason => reason.Reason).ToArray(), warnings, kind,
@@ -335,10 +338,43 @@ public sealed partial class FileArtifactRepository
         return officeEntry is not null
             ? new LoadedPackage(packageStatus, new OfficeBugfixFileArtifact(bat!,
                 CreateOfficeBugfixDescriptor(officeEntry, playbook!, bat!.Sha256,
-                    supportFiles!), supportDirectory, order), null)
+                    supportFiles!) with { Signature = manifest.Signature },
+                supportDirectory, order), null)
             : new LoadedPackage(packageStatus, null, new WindowsBugfixFileArtifact(bat!,
                 CreateWindowsBugfixDescriptor(windowsEntry!, playbook!, bat!.Sha256,
-                    supportFiles!), supportDirectory, order));
+                    supportFiles!) with { Signature = manifest.Signature },
+                supportDirectory, order));
+    }
+
+    /// <summary>
+    /// Checks the administrator's signature over the revision endpoints will receive.
+    /// Skipped while the file or playbook hashes are still wrong, which is reported first.
+    /// </summary>
+    private void CheckSignature(List<(string Status, string Reason)> reasons,
+        List<string> warnings, string packageId, string stagedName, string? fileSha256,
+        string? playbookSha256, IReadOnlyList<BatchSupportFile>? supportFiles,
+        string? publisher, PackageSignature? signature)
+    {
+        if (fileSha256 is null || playbookSha256 is null || supportFiles is null
+            || reasons.Any(reason => reason.Status is BatPackageStatuses.HashMismatch
+                or BatPackageStatuses.InvalidPlaybook))
+            return;
+        var statement = PackageSignaturePolicy.BuildStatement(packageId, stagedName,
+            fileSha256, playbookSha256, supportFiles.Count == 0 ? null
+                : BatchSupportFilePolicy.ComputeBundleSha256(fileSha256, supportFiles),
+            publisher);
+        if (PackageSignaturePolicy.Verify(statement, signature,
+                _options.TrustedPackageSigningKeys))
+            return;
+        var reason = signature is null
+            ? "The package is not signed. Sign it on the admin PC with: test-bat-playbook.ps1 -Package <folder> -Sign"
+            : _options.TrustedPackageSigningKeys.Count == 0
+                ? "No trusted signing key is configured on the control plane (FileRepository:TrustedPackageSigningKeys)."
+                : "The signature does not match this revision or a trusted key. Review the change, then sign it again with -Sign.";
+        if (_options.RequirePackageSignatures)
+            reasons.Add((BatPackageStatuses.Unsigned, reason));
+        else
+            warnings.Add(reason);
     }
 
     private static string OverallStatus(
@@ -348,7 +384,8 @@ public sealed partial class FileArtifactRepository
         string[] severity =
         [
             BatPackageStatuses.Invalid, BatPackageStatuses.HashMismatch,
-            BatPackageStatuses.InvalidPlaybook, BatPackageStatuses.LintRejected
+            BatPackageStatuses.InvalidPlaybook, BatPackageStatuses.LintRejected,
+            BatPackageStatuses.Unsigned
         ];
         return reasons.Count > 0
             ? severity.First(level => reasons.Any(reason => reason.Status == level))
@@ -465,13 +502,13 @@ public sealed partial class FileArtifactRepository
             else if (subsystem == ExecutableInspector.Gui && playbook?.Steps.Count > 0)
                 reasons.Add((BatPackageStatuses.InvalidPlaybook,
                     $"{fileName} is a windowed (GUI) program, so it cannot answer console prompts. Use playbook version 3 with no steps and the program's silent-mode arguments."));
-            if (publisher is not null && !publisher.Equals(signer,
-                    StringComparison.OrdinalIgnoreCase))
-                Invalid(signer is null
-                    ? $"file.publisher pins '{publisher}' but {fileName} is not signed."
-                    : $"file.publisher pins '{publisher}' but {fileName} is signed by '{signer}'.");
+            // Every EXE must carry its vendor's signature, pinned so endpoints verify it too.
             if (signer is null)
-                warnings.Add($"{fileName} has no embedded Authenticode signature. Its SHA-256 pin still protects it, but prefer files signed by their vendor.");
+                Invalid($"{fileName} has no embedded Authenticode signature. Only EXE files signed by their vendor can be packaged.");
+            else if (publisher is null)
+                Invalid($"Set file.publisher to \"{signer}\" so endpoints verify the vendor signature before running {fileName}.");
+            else if (!publisher.Equals(signer, StringComparison.OrdinalIgnoreCase))
+                Invalid($"file.publisher pins '{publisher}' but {fileName} is signed by '{signer}'.");
         }
 
         // Supporting files in <package>/files/.
@@ -495,6 +532,9 @@ public sealed partial class FileArtifactRepository
                     supportError));
             else supportFiles = loaded;
         }
+
+        CheckSignature(reasons, warnings, folder, stagedName, file?.Sha256,
+            computedPlaybook, supportFiles, publisher, manifest.Signature);
 
         var status = OverallStatus(reasons, warnings);
         var compatibility = minWindows is null && maxWindows is null ? null
@@ -520,7 +560,7 @@ public sealed partial class FileArtifactRepository
             supportFiles!.Count == 0 ? null
                 : BatchSupportFilePolicy.ComputeBundleSha256(file.Sha256, supportFiles),
             NormalizeVersion(minWindows), NormalizeVersion(maxWindows), publisher,
-            symptoms);
+            symptoms, manifest.Signature);
         return new LoadedPackage(packageStatus, null, null,
             new RepairPackageArtifact(file, descriptor, supportDirectory, problem, order));
     }

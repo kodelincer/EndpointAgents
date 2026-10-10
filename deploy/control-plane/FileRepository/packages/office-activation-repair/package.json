@@ -38,5 +38,9 @@
     "reviewedOn": "2026-10-06",
     "source": "Repository sample; prints a menu and changes nothing.",
     "notes": "Development sample, migrated from office-bugfix-managers.json."
+  },
+  "signature": {
+    "keyId": "0362074A9D82DF17",
+    "value": "DvjA4TSEro+B+KLKZZk2M02prU1uZ+brRtv3NDvJW54QNwBK+WFWVvo58mthWUaIqsGtP76272o5hG59+LQzng=="
   }
 }

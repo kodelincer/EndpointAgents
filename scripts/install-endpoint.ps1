@@ -5,7 +5,12 @@ param(
     [uri]$ControlPlaneHubUrl,
     [string]$EnrollmentCode = "",
     [ValidateSet("Debug", "Release")]
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    # Public key(s) of the administrators who sign packages (new-package-signing-key.ps1 -Show).
+    # Without one, the endpoint refuses every repair package.
+    [string[]]$PackageSigningPublicKey = @(),
+    # Also require signatures on Office and Windows activation repairs.
+    [switch]$RequireSignedActivationRepairs
 )
 
 $ErrorActionPreference = "Stop"
@@ -295,6 +300,11 @@ Set-ExactProtectedTreeAcl $serviceOutput
 $serviceSettings = Get-Content -LiteralPath $serviceSettingsPath -Raw | ConvertFrom-Json
 $serviceSettings.ControlPlane.HubUrl = $ControlPlaneHubUrl.AbsoluteUri
 $serviceSettings.ControlPlane.EnrollmentCode = $EnrollmentCode
+$serviceSettings.PackageSigning.TrustedPublicKeys = @($PackageSigningPublicKey)
+$serviceSettings.PackageSigning.RequireForActivationRepairs = [bool]$RequireSignedActivationRepairs
+if ($PackageSigningPublicKey.Count -eq 0) {
+    Write-Warning "No package signing key was given; this endpoint will refuse every repair package."
+}
 $serviceSettingsJson = ($serviceSettings | ConvertTo-Json -Depth 10) + [Environment]::NewLine
 Remove-Item -LiteralPath $serviceSettingsPath -Force
 [IO.File]::WriteAllText(

@@ -230,18 +230,75 @@ public sealed class PackageRunnerTests : IDisposable
         var staged = client.GetStagedPath(descriptor);
         Directory.CreateDirectory(Path.GetDirectoryName(staged)!);
         await File.WriteAllBytesAsync(staged, bytes, TestContext.Current.CancellationToken);
-        var runner = new PackageRunner(client);
+        using var adminKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = Convert.ToBase64String(adminKey.ExportSubjectPublicKeyInfo());
+        var signed = Signed(descriptor, adminKey, publicKey);
+        var runner = new PackageRunner(client, Microsoft.Extensions.Options.Options.Create(
+            new PackageSigningOptions { TrustedPublicKeys = [publicKey] }));
 
-        var result = await runner.RunAsync(staged, descriptor,
+        var result = await runner.RunAsync(staged, signed,
             TestContext.Current.CancellationToken);
+        // Unsigned, or signed by a key the endpoint does not trust: refused before running.
+        using var otherKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var foreign = Signed(descriptor, otherKey,
+            Convert.ToBase64String(otherKey.ExportSubjectPublicKeyInfo()));
+        await Assert.ThrowsAsync<InvalidDataException>(() => runner.RunAsync(staged,
+            descriptor, TestContext.Current.CancellationToken));
+        await Assert.ThrowsAsync<InvalidDataException>(() => runner.RunAsync(staged,
+            foreign, TestContext.Current.CancellationToken));
         await File.AppendAllTextAsync(staged, "rem tampered\r\n",
             TestContext.Current.CancellationToken);
 
         Assert.True(result.State == OfficeBugfixRunStates.Completed, result.ToString());
         Assert.False(result.RestartRequired);
         await Assert.ThrowsAsync<InvalidDataException>(() => runner.RunAsync(staged,
-            descriptor, TestContext.Current.CancellationToken));
+            signed, TestContext.Current.CancellationToken));
     }
+
+    [Fact]
+    public void SignatureCoversEveryPinnedValue()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = Convert.ToBase64String(key.ExportSubjectPublicKeyInfo());
+        var signed = Signed(Descriptor(), key, publicKey);
+
+        Assert.True(PackageSignaturePolicy.Verify(signed, [publicKey]));
+        Assert.False(PackageSignaturePolicy.Verify(signed, []));
+        Assert.False(PackageSignaturePolicy.Verify(signed with { Sha256 = new string('B', 64) },
+            [publicKey]));
+        Assert.False(PackageSignaturePolicy.Verify(
+            signed with { PlaybookSha256 = new string('C', 64) }, [publicKey]));
+        Assert.False(PackageSignaturePolicy.Verify(signed with { Publisher = "CN=Other" },
+            [publicKey]));
+        Assert.False(PackageSignaturePolicy.Verify(signed with { PackageId = "other" },
+            [publicKey]));
+        Assert.False(PackageSignaturePolicy.Verify(signed with
+            {
+                Signature = signed.Signature! with { Value = "not base64!" }
+            }, [publicKey]));
+    }
+
+    [Fact]
+    public void ExeWithoutPinnedPublisherIsRejected()
+    {
+        var exe = Descriptor() with
+        {
+            FileType = PackageFileTypes.Exe, FileName = "spooler-reset.exe"
+        };
+
+        Assert.False(PackageDescriptorPolicy.TryValidate(exe, out _));
+        Assert.True(PackageDescriptorPolicy.TryValidate(
+            exe with { Publisher = "CN=Contoso" }, out _));
+    }
+
+    private static PackageDescriptor Signed(PackageDescriptor descriptor, ECDsa key,
+        string publicKey) => descriptor with
+    {
+        Signature = PackageSignaturePolicy.Sign(PackageSignaturePolicy.BuildStatement(
+                descriptor.PackageId, descriptor.FileName, descriptor.Sha256,
+                descriptor.PlaybookSha256, descriptor.BundleSha256, descriptor.Publisher),
+            key, publicKey)
+    };
 
     private sealed class NoToken : IEndpointArtifactAuthorizationProvider
     {

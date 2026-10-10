@@ -6,6 +6,8 @@ using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Windows;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using EndpointAgents.Platform.Windows.Packages;
 using System.Runtime.Versioning;
 using System.Text.Json;
 
@@ -18,7 +20,8 @@ public sealed class WindowsActivationBugfixCommandHandler(
     IOfficeUserSessionSource sessions,
     ITrayCommandClient tray,
     WindowsBugfixRunner runner,
-    ILogger<WindowsActivationBugfixCommandHandler> logger) : IEndpointCommandHandler
+    ILogger<WindowsActivationBugfixCommandHandler> logger,
+    IOptions<PackageSigningOptions>? signing = null) : IEndpointCommandHandler
 {
     public string Method => "system.windows_activation_bugfix_run";
 
@@ -71,6 +74,12 @@ public sealed class WindowsActivationBugfixCommandHandler(
                     Environment.OSVersion.Version))
                 return RpcResponse.Failure(request.Id, 409,
                     "The requested Windows repair is not compatible with this Windows installation.");
+            if (signing?.Value.RequireForActivationRepairs == true
+                && !signing.Value.IsTrusted(descriptor.ArtifactId, descriptor.FileName,
+                    descriptor.Sha256, descriptor.PlaybookSha256, descriptor.BundleSha256,
+                    null, descriptor.Signature))
+                return RpcResponse.Failure(request.Id, 412,
+                    "The Windows repair is not signed by a trusted administrator key.");
             if (authorized && !(descriptor.Playbook is null
                     ? ChatActionApproval.MatchesArtifact(request.Params,
                         descriptor.FileName, descriptor.Sha256)

@@ -8,7 +8,8 @@ const statusText: Record<PackageStatus, { label: string; tone: StatusTone }> = {
   HashMismatch: { label: "Hash mismatch", tone: "blocked" },
   InvalidPlaybook: { label: "Invalid playbook", tone: "blocked" },
   LintRejected: { label: "Rejected by lint", tone: "blocked" },
-  Invalid: { label: "Invalid package", tone: "blocked" }
+  Invalid: { label: "Invalid package", tone: "blocked" },
+  Unsigned: { label: "Not signed", tone: "blocked" }
 };
 
 export function packageStatus(status: PackageStatus) {

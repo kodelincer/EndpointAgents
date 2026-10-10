@@ -49,7 +49,8 @@ public sealed record PackageDescriptor(
     string? MinWindowsVersion,
     string? MaxWindowsVersionExclusive,
     string? Publisher,
-    IReadOnlyList<string> Symptoms);
+    IReadOnlyList<string> Symptoms,
+    PackageSignature? Signature = null);
 
 public sealed record PackageCatalog(IReadOnlyList<PackageDescriptor> Packages);
 
@@ -90,6 +91,9 @@ public static class PackageDescriptorPolicy
         if (descriptor is null
             || !IsValidId(descriptor.PackageId)
             || !PackageFileTypes.IsKnown(descriptor.FileType)
+            // Every EXE must carry a pinned vendor signature, verified before it runs.
+            || descriptor.FileType == PackageFileTypes.Exe
+                && string.IsNullOrWhiteSpace(descriptor.Publisher)
             || descriptor.FileName != StagedFileName(descriptor.PackageId,
                 descriptor.FileType)
             || !BatchSupportFilePolicy.IsSha256(descriptor.Sha256)

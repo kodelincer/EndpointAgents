@@ -125,7 +125,8 @@ public sealed record OfficeBugfixArtifactDescriptor(
     string? MaxWindowsVersionExclusive = null,
     IReadOnlyList<BatchSupportFile>? SupportFiles = null,
     string? BundleSha256 = null,
-    IReadOnlyList<OfficeBugfixCompatibility>? AdditionalCompatibility = null);
+    IReadOnlyList<OfficeBugfixCompatibility>? AdditionalCompatibility = null,
+    EndpointAgents.Shared.Packages.PackageSignature? Signature = null);
 
 public sealed record OfficeBugfixCatalog(
     IReadOnlyList<OfficeBugfixArtifactDescriptor> Artifacts);

@@ -113,7 +113,7 @@ function HowToAddPackage() {
       <li>Create the package folder: <code>.\scripts\new-package.ps1 -File &lt;file.bat or file.exe&gt; -Id &lt;id&gt;</code>, adding <code>-NoInput</code> when the file needs no answers.</li>
       <li>For a file with screens, find each one, one round at a time: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Execute -Discover</code> and add a playbook step for it.</li>
       <li>Fill in the symptoms users would describe, any fixed arguments, the success and failure texts, compatibility and review, and remove every TODO.</li>
-      <li>Check and record the hashes: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Fix</code> until the status is Ready.</li>
+      <li>Check, record the hashes and sign the reviewed revision: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Fix -Sign</code> until the status is Ready. Create your signing key once with <code>.\scripts\new-package-signing-key.ps1</code>.</li>
       <li>Copy the folder to the control plane’s <code>FileRepository\packages</code>, refresh this page, and test on one PC before rollout.</li>
     </ol>
     <p>The full guide is <code>docs\bat-packages.md</code>.</p>

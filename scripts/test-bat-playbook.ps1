@@ -10,6 +10,9 @@ supporting-file and playbook hashes into package.json; use it only after reviewi
 the change. Without -Execute nothing is run. With -Execute the BAT really runs as the
 current user, answered exactly as an endpoint would answer it. -Discover additionally
 prints the screen that follows the last step, to write the next playbook step.
+-Sign signs the reviewed revision with this PC's package signing key (create it once with
+new-package-signing-key.ps1); endpoints refuse unsigned packages. Use -Fix -Sign together
+after every reviewed change.
 
 .EXAMPLE
 .\scripts\test-bat-playbook.ps1 -Package .\deploy\control-plane\FileRepository\packages\office-activation-repair -Validate
@@ -23,6 +26,8 @@ param(
     [Parameter(Mandatory, ParameterSetName = "Package")] [string]$Package,
     [Parameter(ParameterSetName = "Package")] [switch]$Validate,
     [Parameter(ParameterSetName = "Package")] [switch]$Fix,
+    [Parameter(ParameterSetName = "Package")] [switch]$Sign,
+    [Parameter(ParameterSetName = "Package")] [string]$KeyName = "EndpointAgents.PackageSigning",
     [Parameter(Mandatory, ParameterSetName = "Loose")] [string]$Bat,
     [Parameter(Mandatory, ParameterSetName = "Loose")] [string]$Playbook,
     [switch]$Execute,
@@ -41,6 +46,8 @@ $labArgs = if ($PSCmdlet.ParameterSetName -eq "Package") {
     @("--bat", (Resolve-Path $Bat).Path, "--playbook", (Resolve-Path $Playbook).Path)
 }
 if ($Fix) { $labArgs += "--fix" }
+if ($Sign) { $labArgs += @("--sign", "--key-name", $KeyName) }
+elseif ($PSCmdlet.ParameterSetName -eq "Package") { $labArgs += @("--key-name", $KeyName) }
 if ($Execute) { $labArgs += "--execute" }
 if ($Discover) { $labArgs += "--discover" }
 # powershell -File passes "A=1,B=2" as one string, so split on commas as well.

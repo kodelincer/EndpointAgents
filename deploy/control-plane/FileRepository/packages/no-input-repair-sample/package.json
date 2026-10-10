@@ -44,5 +44,9 @@
     "reviewedOn": "2026-10-10",
     "source": "deploy/samples/no-input-repair-sample.bat",
     "notes": "Simulation only."
+  },
+  "signature": {
+    "keyId": "0362074A9D82DF17",
+    "value": "N9I+2Ie0xmCRFn8BT6EALLPw2lRi/SdpOaaFNT4ncOqvSmOGHfqj3tUSh3dALwZRqdIPhC7ZzAjenEoocF2Grg=="
   }
 }

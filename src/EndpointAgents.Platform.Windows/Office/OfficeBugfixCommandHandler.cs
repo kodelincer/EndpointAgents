@@ -6,6 +6,8 @@ using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Rpc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using EndpointAgents.Platform.Windows.Packages;
 using System.Runtime.Versioning;
 using System.Text.Json;
 
@@ -22,7 +24,8 @@ public sealed class OfficeBugfixCommandHandler(
     IOfficeVolumeActivationProbe volumeProbe,
     OfficeArtifactDownloader downloader,
     OfficeBugfixRunner runner,
-    ILogger<OfficeBugfixCommandHandler> logger) : IEndpointCommandHandler
+    ILogger<OfficeBugfixCommandHandler> logger,
+    IOptions<PackageSigningOptions>? signing = null) : IEndpointCommandHandler
 {
     public string Method => "software.office_bugfix_run";
 
@@ -117,6 +120,12 @@ public sealed class OfficeBugfixCommandHandler(
             return RpcResponse.Failure(request.Id, 412,
                 "The Office repair catalog returned an invalid supporting-file revision.");
         descriptor = descriptor with { Playbook = normalizedPlaybook! };
+        if (signing?.Value.RequireForActivationRepairs == true
+            && !signing.Value.IsTrusted(descriptor.ArtifactId, descriptor.FileName,
+                descriptor.Sha256, descriptor.PlaybookSha256, descriptor.BundleSha256, null,
+                descriptor.Signature))
+            return RpcResponse.Failure(request.Id, 412,
+                "The Office repair is not signed by a trusted administrator key.");
         if (authorized && (!ChatActionApproval.MatchesArtifactAndPlaybook(
                 request.Params, descriptor.FileName, descriptor.Sha256,
                 descriptor.PlaybookSha256)

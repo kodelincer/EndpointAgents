@@ -200,7 +200,7 @@ What is different in a general `package.json`:
 | Field | Meaning |
 | --- | --- |
 | `file.type`, `file.fileName`, `file.sha256` | `bat` or `exe`, the file in the folder, and its pinned hash. Endpoints stage it as `<id>.bat` or `<id>.exe`. |
-| `file.publisher` | Optional. The exact signer subject of a signed EXE; endpoints then refuse the file unless Windows verifies that signature. `new-package.ps1` fills it in when the EXE is validly signed. |
+| `file.publisher` | Required for an EXE: the exact signer subject of its vendor signature. Endpoints refuse the file unless Windows verifies that signature. `new-package.ps1` fills it in when the EXE is validly signed. |
 | `symptoms` | 1-16 short phrases in the user's words (Persian is fine). The agent runs a package only when the user's problem matches them. |
 | `problem`, `order` | Optional defaults. Packages with the same `problem` (for example `printing-stuck`) are alternatives, tried lowest `order` first (1-999, default 100). The agent asks the user whether each one worked and on a "no" runs the next; when none is left it hands the conversation to the helpdesk. **The skill decides first:** a "Problem guides" entry in `deploy/hermes/skills/repair-packages/SKILL.md` (or "Try order" in the Office and Windows skills) overrides this order, so you steer fallbacks by editing the skill, then running `scripts/sync-hermes-profile.ps1`. |
 | `compatibility` | Optional `minWindowsVersion` / `maxWindowsVersionExclusive`. |
@@ -212,15 +212,45 @@ What is different in a general `package.json`:
 
 EXE rules: a **console** EXE may answer screens like a BAT. A **windowed (GUI)** EXE, which
 includes most installers, may only run with `steps: []` and its silent-mode arguments. If
-it opens a window anyway, the run stops after `guiDialogGraceSeconds`. An EXE without an
-embedded signature is published with a warning; the SHA-256 pin still protects it.
+it opens a window anyway, the run stops after `guiDialogGraceSeconds`. Only EXE files with
+a valid embedded vendor (Authenticode) signature can be packaged.
 
-Try it exactly as an endpoint would, then pin the hashes:
+Try it exactly as an endpoint would, then pin the hashes and sign:
 
 ```powershell
 .\scripts\test-bat-playbook.ps1 -Package <folder> -Execute
-.\scripts\test-bat-playbook.ps1 -Package <folder> -Fix
+.\scripts\test-bat-playbook.ps1 -Package <folder> -Fix -Sign
 ```
+
+## Signing packages with your key
+
+Every package (BAT or EXE, general or activation) must be signed by an administrator
+before the control plane publishes it and before an endpoint runs it. The signature
+covers the package id, the file hash, the playbook hash, the supporting files and the
+EXE publisher, so any change after review needs a new signature. The private key stays
+on your admin PC; the control plane only knows the public key, so even someone who
+changes files on the server cannot make an endpoint run them.
+
+1. Once, on your admin PC: `.\scripts\new-package-signing-key.ps1`. It prints a public key.
+   `-Show` prints it again later.
+2. Trust the public key on the control plane (`FileRepository:TrustedPackageSigningKeys` in
+   its `appsettings.json`, or `install-control-plane.ps1 -PackageSigningPublicKey <key>`)
+   and on endpoints (`PackageSigning:TrustedPublicKeys`, or
+   `install-endpoint.ps1 -PackageSigningPublicKey <key>`).
+3. After reviewing each package or change: `test-bat-playbook.ps1 -Package <folder> -Fix -Sign`.
+   The Packages tab shows **Not signed** until the signature matches a trusted key.
+
+Several keys can be trusted at once (a second administrator, or a new key if a PC is
+lost). The key cannot be copied off the PC on purpose.
+
+General repair packages always need a signature on the endpoint. Office and Windows
+activation repairs need one when the endpoint sets
+`PackageSigning:RequireForActivationRepairs` (installer switch
+`-RequireSignedActivationRepairs`). Turn that on after moving any legacy manifest entries
+below into signed packages, because legacy entries cannot be signed.
+
+The packages checked into this repository are signed with a development key on the
+original developer's PC, which only `appsettings.Development.json` trusts.
 
 ## Legacy manifests
 

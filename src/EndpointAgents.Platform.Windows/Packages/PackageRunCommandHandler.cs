@@ -5,6 +5,7 @@ using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Packages;
 using EndpointAgents.Shared.Rpc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using System.Runtime.Versioning;
 using System.Text.Json;
 
@@ -19,6 +20,7 @@ namespace EndpointAgents.Platform.Windows.Packages;
 public sealed class PackageRunCommandHandler(
     PackageArtifactClient artifacts,
     PackageRunner runner,
+    IOptions<PackageSigningOptions> signing,
     ILogger<PackageRunCommandHandler> logger) : IEndpointCommandHandler
 {
     public string Method => PackageCommands.Run;
@@ -64,6 +66,9 @@ public sealed class PackageRunCommandHandler(
         if (!PackageDescriptorPolicy.TryValidate(descriptor, out _))
             return RpcResponse.Failure(request.Id, 412,
                 "The control plane returned an invalid package revision.");
+        if (!PackageSignaturePolicy.Verify(descriptor, signing.Value.TrustedPublicKeys))
+            return RpcResponse.Failure(request.Id, 412,
+                "The package is not signed by a trusted administrator key.");
         // The control plane pins the revision it chose; a newer catalog revision
         // must be requested again rather than run in its place.
         var pinned = HasPins(request.Params)

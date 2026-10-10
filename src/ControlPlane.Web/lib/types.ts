@@ -54,7 +54,7 @@ export type Playbook = {
   timeoutSeconds?: number | null; restartExitCodes?: number[] | null;
 };
 export type PackageStatus = "Ready" | "ReadyWithWarnings" | "HashMismatch"
-  | "InvalidPlaybook" | "LintRejected" | "Invalid";
+  | "InvalidPlaybook" | "LintRejected" | "Invalid" | "Unsigned";
 export type BatPackage = {
   id: string; folder: string; status: PackageStatus; reasons: string[]; warnings: string[];
   kind?: "office" | "windows" | "general" | null; displayName?: string | null; description?: string | null;

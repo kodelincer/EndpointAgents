@@ -2,6 +2,7 @@ using EndpointAgents.Platform.Windows.Office;
 using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Packages;
 using EndpointAgents.Shared.Security;
+using Microsoft.Extensions.Options;
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Security.Cryptography;
@@ -16,7 +17,8 @@ namespace EndpointAgents.Platform.Windows.Packages;
 /// arguments and answers.
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class PackageRunner(PackageArtifactClient artifacts)
+public sealed class PackageRunner(PackageArtifactClient artifacts,
+    IOptions<PackageSigningOptions> signing)
 {
     public async Task<PackageRunResult> RunAsync(string path, PackageDescriptor descriptor,
         CancellationToken cancellationToken)
@@ -31,6 +33,8 @@ public sealed class PackageRunner(PackageArtifactClient artifacts)
         }
         if (!PackageDescriptorPolicy.TryValidate(descriptor, out var playbook))
             throw new InvalidDataException("The package or its playbook is not approved.");
+        if (!PackageSignaturePolicy.Verify(descriptor, signing.Value.TrustedPublicKeys))
+            throw new InvalidDataException("The package is not signed by a trusted administrator key.");
         if (!await IsStagedAndApprovedAsync(path, descriptor, cancellationToken)
             || !await BatchSupportFileDownloader.AreApprovedAsync(path,
                 descriptor.SupportFiles, artifacts.RequireProtectedAcl, cancellationToken))

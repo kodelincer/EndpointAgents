@@ -27,4 +27,13 @@ public sealed class FileRepositoryOptions
     public bool RequireProtectedAcl { get; set; } = true;
 
     public long MaxFileSizeBytes { get; set; } = 100 * 1024 * 1024;
+
+    /// <summary>
+    /// Public keys (base64 SubjectPublicKeyInfo) of the administrators who sign packages.
+    /// Create one with scripts/new-package-signing-key.ps1.
+    /// </summary>
+    public List<string> TrustedPackageSigningKeys { get; set; } = [];
+
+    /// <summary>Publish only packages signed by a trusted key.</summary>
+    public bool RequirePackageSignatures { get; set; } = true;
 }

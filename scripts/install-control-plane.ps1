@@ -2,7 +2,9 @@
 param(
     [string]$InstallRoot = "$env:ProgramFiles\EndpointAgents\ControlPlane",
     [ValidateSet("Debug", "Release")]
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    # Public key(s) from new-package-signing-key.ps1 -Show. Omit to keep the installed ones.
+    [string[]]$PackageSigningPublicKey = @()
 )
 
 $ErrorActionPreference = "Stop"
@@ -413,6 +415,13 @@ Assert-Administrator
 $installRootExists = Test-Path -LiteralPath $InstallRoot
 $resolvedInstallRoot = Get-SafeInstallRoot $InstallRoot
 $preservedHermesSettings = Get-ExistingHermesSettings $apiSettingsPath
+$preservedSigningKeys = @()
+if (Test-Path -LiteralPath $apiSettingsPath) {
+    $installed = Get-Content -LiteralPath $apiSettingsPath -Raw | ConvertFrom-Json
+    if ($installed.FileRepository.TrustedPackageSigningKeys) {
+        $preservedSigningKeys = @($installed.FileRepository.TrustedPackageSigningKeys)
+    }
+}
 
 # Remove the retired supervisor during upgrades from the former two-service layout.
 Remove-ServiceIfPresent $legacyWebService
@@ -429,6 +438,18 @@ if ($LASTEXITCODE -ne 0) {
 }
 Set-ExactProtectedTreeAcl $apiOutput
 Restore-HermesSettings $apiSettingsPath $preservedHermesSettings
+# Packages are published only when signed by one of these administrator keys.
+$signingKeys = if ($PackageSigningPublicKey.Count -gt 0) { $PackageSigningPublicKey } else { $preservedSigningKeys }
+if ($signingKeys.Count -gt 0) {
+    $published = Get-Content -LiteralPath $apiSettingsPath -Raw | ConvertFrom-Json
+    $published.FileRepository | Add-Member -Force -MemberType NoteProperty `
+        -Name TrustedPackageSigningKeys -Value @($signingKeys)
+    Write-JsonAtomic $apiSettingsPath $published
+    Set-ExactProtectedTreeAcl $apiOutput
+}
+else {
+    Write-Warning "No package signing key is trusted yet; packages stay unpublished. Re-run with -PackageSigningPublicKey."
+}
 if ($null -ne $preservedHermesSettings) {
     Set-ExactProtectedTreeAcl $apiOutput
 }

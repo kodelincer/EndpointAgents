@@ -14,7 +14,11 @@ namespace ControlPlane.Api.Tests;
 public sealed class RepairPackageLoaderTests : IDisposable
 {
     private const string Bat = "@echo off\r\necho Spooler reset\r\nexit /b 0\r\n";
-    private static readonly string ConsoleExe =
+    // dotnet.exe carries an embedded Authenticode signature; the Windows tools below are
+    // catalog-signed only, so they count as unsigned.
+    private static readonly string ConsoleExe = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet", "dotnet.exe");
+    private static readonly string UnsignedExe =
         Path.Combine(Environment.SystemDirectory, "hostname.exe");
     private static readonly string GuiExe =
         Path.Combine(Environment.SystemDirectory, "mmc.exe");
@@ -63,15 +67,88 @@ public sealed class RepairPackageLoaderTests : IDisposable
     [Fact]
     public async Task ConsoleExeMayAnswerPrompts()
     {
+        var signer = ExecutableInspector.ReadSignerSubject(ConsoleExe);
+        Assert.NotNull(signer);
         await WritePackageAsync("console-tool", exe: ConsoleExe,
-            playbook: Playbook(new BatchPlaybookStep("Continue?", "y", "key", 30)));
+            playbook: Playbook(new BatchPlaybookStep("Continue?", "y", "key", 30)),
+            edit: package => package["file"]!["publisher"] = signer);
 
         var status = await SingleStatusAsync();
+        var package = Assert.Single(await CreateRepository().GetRepairPackagesAsync(
+            TestContext.Current.CancellationToken));
 
         Assert.True(BatPackageStatuses.IsPublished(status.Status),
             string.Join(" ", status.Reasons));
         Assert.Equal(PackageFileTypes.Exe, status.FileType);
         Assert.Equal(ExecutableInspector.Console, status.ExeSubsystem);
+        Assert.Equal(signer, package.Descriptor.Publisher);
+        Assert.True(PackageSignaturePolicy.Verify(package.Descriptor,
+            [TestPackageSigner.PublicKey]));
+    }
+
+    [Fact]
+    public async Task SignedExeNeedsItsPublisherPinned()
+    {
+        await WritePackageAsync("no-pin", exe: ConsoleExe);
+
+        var status = await SingleStatusAsync();
+
+        Assert.Equal(BatPackageStatuses.Invalid, status.Status);
+        Assert.Contains(status.Reasons, reason => reason.Contains("Set file.publisher"));
+    }
+
+    [Fact]
+    public async Task UnsignedExeIsRejected()
+    {
+        await WritePackageAsync("unsigned-exe", exe: UnsignedExe);
+
+        var status = await SingleStatusAsync();
+
+        Assert.Equal(BatPackageStatuses.Invalid, status.Status);
+        Assert.Contains(status.Reasons, reason => reason.Contains("no embedded Authenticode"));
+    }
+
+    [Fact]
+    public async Task UnsignedOrForeignSignedPackagesAreNotPublished()
+    {
+        await WritePackageAsync("unsigned", sign: false);
+        using var otherKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        await WritePackageAsync("foreign", sign: false, edit: package =>
+            TestPackageSigner.Sign(package, Path.Combine(_root, "packages", "foreign"),
+                otherKey, Convert.ToBase64String(otherKey.ExportSubjectPublicKeyInfo())));
+        await WritePackageAsync("signed");
+
+        var repository = CreateRepository();
+        var statuses = await repository.GetPackageStatusesAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(BatPackageStatuses.Unsigned,
+            statuses.Single(item => item.Id == "unsigned").Status);
+        Assert.Equal(BatPackageStatuses.Unsigned,
+            statuses.Single(item => item.Id == "foreign").Status);
+        Assert.Equal(["signed"], (await repository.GetRepairPackagesAsync(
+            TestContext.Current.CancellationToken)).Select(item => item.Descriptor.PackageId));
+    }
+
+    [Fact]
+    public async Task ChangingASignedPackageNeedsANewSignature()
+    {
+        // A different but valid playbook pinned by hash: the signature no longer matches.
+        var changed = Playbook() with { TimeoutSeconds = 60 };
+        await WritePackageAsync("changed", edit: package => { });
+        var path = Path.Combine(_root, "packages", "changed", "package.json");
+        var node = JsonNode.Parse(await File.ReadAllTextAsync(path,
+            TestContext.Current.CancellationToken))!.AsObject();
+        node["playbook"] = JsonSerializer.SerializeToNode(changed,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        node["playbookSha256"] = BatchPlaybookPolicy.ComputeSha256(changed);
+        await File.WriteAllTextAsync(path, node.ToJsonString(),
+            TestContext.Current.CancellationToken);
+
+        var status = await SingleStatusAsync();
+
+        Assert.Equal(BatPackageStatuses.Unsigned, status.Status);
+        Assert.Contains(status.Reasons, reason => reason.Contains("sign it again"));
     }
 
     [Fact]
@@ -84,11 +161,13 @@ public sealed class RepairPackageLoaderTests : IDisposable
         var statuses = await CreateRepository().GetPackageStatusesAsync(
             TestContext.Current.CancellationToken);
 
+        // mmc.exe has no embedded signature, so both stay unpublished; only the one
+        // that tries to answer prompts is also reported as a GUI program.
         var prompts = statuses.Single(item => item.Id == "gui-prompts");
-        Assert.Equal(BatPackageStatuses.InvalidPlaybook, prompts.Status);
+        Assert.Equal(ExecutableInspector.Gui, prompts.ExeSubsystem);
         Assert.Contains(prompts.Reasons, reason => reason.Contains("GUI"));
-        Assert.True(BatPackageStatuses.IsPublished(
-            statuses.Single(item => item.Id == "gui-silent").Status));
+        Assert.DoesNotContain(statuses.Single(item => item.Id == "gui-silent").Reasons,
+            reason => reason.Contains("GUI"));
     }
 
     [Fact]
@@ -217,12 +296,16 @@ public sealed class RepairPackageLoaderTests : IDisposable
             TestContext.Current.CancellationToken));
 
     private FileArtifactRepository CreateRepository() => new(
-        Options.Create(new FileRepositoryOptions { RootPath = _root, RequireProtectedAcl = false }),
+        Options.Create(new FileRepositoryOptions
+        {
+            RootPath = _root, RequireProtectedAcl = false,
+            TrustedPackageSigningKeys = [TestPackageSigner.PublicKey]
+        }),
         new HostingEnvironment { ContentRootPath = _root });
 
     private async Task<string> WritePackageAsync(string id, string? exe = null,
         BatchPlaybook? playbook = null, (string Name, string Content)? supportFile = null,
-        string? fileName = null, Action<JsonObject>? edit = null)
+        string? fileName = null, Action<JsonObject>? edit = null, bool sign = true)
     {
         var folder = Directory.CreateDirectory(Path.Combine(_root, "packages", id)).FullName;
         fileName ??= exe is null ? "Vendor Tool.bat" : "Vendor Tool.exe";
@@ -267,6 +350,7 @@ public sealed class RepairPackageLoaderTests : IDisposable
             ["playbookSha256"] = BatchPlaybookPolicy.ComputeSha256(playbook)
         };
         edit?.Invoke(package);
+        if (sign) TestPackageSigner.Sign(package, folder);
         await File.WriteAllTextAsync(Path.Combine(folder, "package.json"),
             package.ToJsonString(), TestContext.Current.CancellationToken);
         return folder;

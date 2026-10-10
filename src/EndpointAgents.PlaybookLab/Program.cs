@@ -26,8 +26,25 @@ if (options is null)
                       into package.json (only after you reviewed the changes)
           --execute   run the BAT through the endpoint runner (it really runs!)
           --discover  with --execute, show the screen that follows the last step
+          --sign      sign the package with this PC's signing key (after --fix)
+          --key-name  name of the signing key (default EndpointAgents.PackageSigning)
+               PlaybookLab --new-signing-key [--key-name <name>]
+               PlaybookLab --show-signing-key [--key-name <name>]
         """);
     return 2;
+}
+
+if (options.KeyCommand == "new") return PackageSigningKey.Create(options.KeyName);
+if (options.KeyCommand == "show")
+{
+    var publicKey = PackageSigningKey.TryGetPublicKey(options.KeyName);
+    if (publicKey is null)
+    {
+        Console.WriteLine($"No signing key named '{options.KeyName}' on this PC.");
+        return 1;
+    }
+    PackageSigningKey.PrintPublicKey(publicKey);
+    return 0;
 }
 
 // Relaxed escaping keeps Persian symptoms readable when --fix rewrites package.json.
@@ -54,11 +71,18 @@ static async Task<int> RunPackageAsync(string folder, LabOptions options,
     }
 
     if (options.Fix) await FixHashesAsync(folder, manifestPath, json);
+    if (options.Sign && !await PackageSigningKey.SignAsync(folder, manifestPath,
+            options.KeyName, json))
+        return 1;
 
+    // Check the signature against this PC's own signing key, as the control plane will
+    // once that key is trusted there.
+    var localKey = PackageSigningKey.TryGetPublicKey(options.KeyName);
     var repository = new FileArtifactRepository(
         Options.Create(new FileRepositoryOptions
         {
-            RootPath = Path.GetDirectoryName(packagesRoot)!, RequireProtectedAcl = false
+            RootPath = Path.GetDirectoryName(packagesRoot)!, RequireProtectedAcl = false,
+            TrustedPackageSigningKeys = localKey is null ? [] : [localKey]
         }),
         new HostingEnvironment { ContentRootPath = packagesRoot });
     var status = (await repository.GetPackageStatusesAsync(CancellationToken.None))
@@ -191,8 +215,10 @@ static string HashFile(string path) =>
 
 static LabOptions? ParseArguments(string[] args)
 {
-    string? bat = null, playbook = null, package = null, artifactId = null;
-    bool execute = false, discover = false, fix = false;
+    string? bat = null, playbook = null, package = null, artifactId = null,
+        keyCommand = null;
+    var keyName = PackageSigningKey.DefaultName;
+    bool execute = false, discover = false, fix = false, sign = false;
     var environment = new List<(string, string)>();
     for (var index = 0; index < args.Length; index++)
     {
@@ -207,6 +233,10 @@ static LabOptions? ParseArguments(string[] args)
             case "--discover": discover = true; break;
             case "--validate": break;
             case "--fix": fix = true; break;
+            case "--sign": sign = true; break;
+            case "--key-name": keyName = Next() ?? string.Empty; break;
+            case "--new-signing-key": keyCommand = "new"; break;
+            case "--show-signing-key": keyCommand = "show"; break;
             case "--env":
                 var pair = Next()?.Split('=', 2);
                 if (pair is not { Length: 2 }) return null;
@@ -215,13 +245,17 @@ static LabOptions? ParseArguments(string[] args)
             default: return null;
         }
     }
-    var valid = package is not null ? bat is null && playbook is null
-        : bat is not null && playbook is not null && !fix;
+    if (string.IsNullOrWhiteSpace(keyName)) return null;
+    var valid = keyCommand is not null
+        ? bat is null && playbook is null && package is null && !fix && !sign && !execute
+        : package is not null ? bat is null && playbook is null
+        : bat is not null && playbook is not null && !fix && !sign;
     return !valid || discover && !execute ? null
         : new LabOptions(bat, playbook, package, artifactId, execute, discover, fix,
-            environment);
+            environment, sign, keyName, keyCommand);
 }
 
 sealed record LabOptions(string? BatPath, string? PlaybookPath, string? PackageFolder,
     string? ArtifactId, bool Execute, bool Discover, bool Fix,
-    IReadOnlyList<(string Name, string Value)> Environment);
+    IReadOnlyList<(string Name, string Value)> Environment, bool Sign, string KeyName,
+    string? KeyCommand);

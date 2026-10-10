@@ -108,6 +108,10 @@ builder.Services.AddOptions<WindowsRemediationOptions>()
         "Unprotected, non-administrator Windows remediation is allowed only in Development.")
     .ValidateOnStart();
 
+// Administrator keys that sign packages; general packages always need a trusted signature.
+builder.Services.AddOptions<PackageSigningOptions>()
+    .Bind(builder.Configuration.GetSection(PackageSigningOptions.SectionName));
+
 // These shared services are consumed by AgentWorker and the command handlers.
 builder.Services.AddSingleton<CommandDispatcher>();
 builder.Services.AddSingleton<AgentIdentityProvider>();
