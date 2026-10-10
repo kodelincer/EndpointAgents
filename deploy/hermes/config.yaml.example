@@ -55,6 +55,7 @@ mcp_servers:
         - find_repair_packages
         - run_repair_package
         - propose_endpoint_action
+        - mark_problem_resolved
       resources: false
       prompts: false
     sampling:

@@ -1,4 +1,4 @@
-using ControlPlane.Api.System;
+﻿using ControlPlane.Api.System;
 using EndpointAgents.Shared.Rpc;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
@@ -274,6 +274,10 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
 
         Assert.Contains(tools.EnumerateArray(), tool =>
             tool.GetProperty("name").GetString() == "office_runtime_status");
+        var resolveTool = tools.EnumerateArray().Single(tool =>
+            tool.GetProperty("name").GetString() == "mark_problem_resolved");
+        Assert.Equal(new[] { "runCapability" }, resolveTool.GetProperty("inputSchema")
+            .GetProperty("required").EnumerateArray().Select(item => item.GetString()).ToArray());
         var officeRepair = tools.EnumerateArray().Single(tool =>
             tool.GetProperty("name").GetString() == "run_office_activation_repair");
         var repairRequired = officeRepair.GetProperty("inputSchema")

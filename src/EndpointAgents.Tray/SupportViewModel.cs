@@ -1,4 +1,4 @@
-using EndpointAgents.Shared.Chat;
+﻿using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Support;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -26,7 +26,7 @@ public sealed class SupportViewModel : INotifyPropertyChanged
 {
     private const int DefaultConversationLimit = 30;
     private TrayStatus _status = new(TrayHealthState.Checking,
-        EndpointServiceState.Unknown, null, "در حال بررسی عامل",
+        EndpointServiceState.Unknown, null, "در حال بررسی دستیار پشتیبانی",
         "وضعیت فعلی در حال دریافت است.");
     private string _chatState = "در انتظار اتصال";
     private string _submitResult = string.Empty;
@@ -39,6 +39,7 @@ public sealed class SupportViewModel : INotifyPropertyChanged
     private readonly List<ConversationSummaryViewModel> _allConversations = [];
     private ConversationSummaryViewModel? _selectedConversation;
     private ConversationListFilter _conversationFilter;
+    private string _conversationSearch = string.Empty;
     private bool _isDraft = true;
     private bool _conversationListLoading;
     private bool _conversationListLoaded;
@@ -58,10 +59,10 @@ public sealed class SupportViewModel : INotifyPropertyChanged
         ? "در دسترس نیست" : Friendly(_status.Runtime.ConnectionStatus);
     public string FunctionMode => _status.Runtime is null
         ? "ناشناخته" : Friendly(_status.Runtime.FunctionMode);
-    public string LastConnected => FormatTime(_status.Runtime?.LastConnectedAtUtc);
+    public string LastConnected => IsolateIfValue(FormatTime(_status.Runtime?.LastConnectedAtUtc), _status.Runtime?.LastConnectedAtUtc is not null);
     public string LastCommand => _status.Runtime?.LastCommandMethod is null
         ? "عملکردی ثبت نشده است"
-        : $"{_status.Runtime.LastCommandMethod} · {FormatTime(_status.Runtime.LastCommandAtUtc)}";
+        : BidiText.IsolateLeftToRight($"{_status.Runtime.LastCommandMethod} · {FormatTime(_status.Runtime.LastCommandAtUtc)}");
     public string LastProblem => _status.Runtime?.LastProblemMessage ?? "مشکلی گزارش نشده است";
     public bool IsConnected => _status.Runtime?.ConnectionStatus == AgentConnectionStatus.Connected;
     public ConversationSummaryViewModel? SelectedConversation
@@ -70,12 +71,27 @@ public sealed class SupportViewModel : INotifyPropertyChanged
         private set
         {
             if (!Set(ref _selectedConversation, value)) return;
+            foreach (var item in _allConversations) item.IsSelected = ReferenceEquals(item, value);
             OnPropertyChanged(nameof(ConversationHeading));
             OnPropertyChanged(nameof(ConversationSubheading));
             OnPropertyChanged(nameof(IsConversationReadOnly));
+            NotifyConversationDetails();
         }
     }
     public bool IsDraft => _isDraft;
+    public object? AvatarState => _isDraft ? null : SelectedConversation?.State;
+    public string DetailsStatus => _isDraft
+        ? "پیش‌نویس؛ با پیام نخست ساخته می‌شود"
+        : SelectedConversation?.StatusLabel ?? "—";
+    public string DetailsCreated => _isDraft
+        ? "—" : SelectedConversation?.CreatedDisplay ?? "—";
+    public string DetailsUpdated => _isDraft
+        ? "—" : SelectedConversation?.UpdatedDisplay ?? "—";
+    public string EmptyConversationListText =>
+        _conversationFilter == ConversationListFilter.All
+        && string.IsNullOrWhiteSpace(_conversationSearch)
+            ? "هنوز گفتگویی ندارید. برای شروع، دکمه مداد را بزنید."
+            : "گفتگویی با این مشخصات پیدا نشد.";
     public bool IsConversationReadOnly => !_isDraft && SelectedConversation is { IsActive: false };
     public bool IsConversationListLoading => _conversationListLoading;
     public string ConversationListError => _conversationListError;
@@ -180,6 +196,7 @@ public sealed class SupportViewModel : INotifyPropertyChanged
         _allConversations.AddRange(updated);
         RefreshConversationGroups();
         NotifyConversationListState();
+        NotifyConversationDetails();
         var selected = string.IsNullOrWhiteSpace(preferredId)
             ? null
             : _allConversations.FirstOrDefault(item =>
@@ -192,6 +209,15 @@ public sealed class SupportViewModel : INotifyPropertyChanged
     {
         if (_conversationFilter == filter) return;
         _conversationFilter = filter;
+        RefreshConversationGroups();
+        NotifyConversationListState();
+    }
+
+    public void SetConversationSearch(string? text)
+    {
+        text = text?.Trim() ?? string.Empty;
+        if (_conversationSearch == text) return;
+        _conversationSearch = text;
         RefreshConversationGroups();
         NotifyConversationListState();
     }
@@ -296,7 +322,10 @@ public sealed class SupportViewModel : INotifyPropertyChanged
             ConversationListFilter.Resolved => item.State == ChatConversationState.Resolved,
             ConversationListFilter.Closed => item.State == ChatConversationState.Closed,
             _ => true
-        }).GroupBy(item => item.DateGroup).ToList();
+        }).Where(item => _conversationSearch.Length == 0
+            || item.Title.Contains(_conversationSearch, StringComparison.CurrentCultureIgnoreCase)
+            || item.Preview.Contains(_conversationSearch, StringComparison.CurrentCultureIgnoreCase))
+        .GroupBy(item => item.DateGroup).ToList();
 
         for (var groupIndex = 0; groupIndex < visible.Count; groupIndex++)
         {
@@ -336,10 +365,20 @@ public sealed class SupportViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsConversationReadOnly));
         OnPropertyChanged(nameof(ConversationHeading));
         OnPropertyChanged(nameof(ConversationSubheading));
+        NotifyConversationDetails();
+    }
+
+    private void NotifyConversationDetails()
+    {
+        OnPropertyChanged(nameof(AvatarState));
+        OnPropertyChanged(nameof(DetailsStatus));
+        OnPropertyChanged(nameof(DetailsCreated));
+        OnPropertyChanged(nameof(DetailsUpdated));
     }
 
     private void NotifyConversationListState()
     {
+        OnPropertyChanged(nameof(EmptyConversationListText));
         OnPropertyChanged(nameof(IsConversationListLoading));
         OnPropertyChanged(nameof(ConversationListError));
         OnPropertyChanged(nameof(HasConversationListError));
@@ -364,6 +403,9 @@ public sealed class SupportViewModel : INotifyPropertyChanged
 
     private void OnPropertyChanged([CallerMemberName] string? name = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+    private static string IsolateIfValue(string text, bool isValue) =>
+        isValue ? BidiText.IsolateLeftToRight(text) : text;
 
     public static string Friendly(Enum value) => value.ToString() switch
     {
@@ -421,8 +463,16 @@ public sealed class ConversationSummaryViewModel : INotifyPropertyChanged
     {
         Summary = summary;
         var local = summary.UpdatedAtUtc.LocalDateTime;
-        UpdatedTime = local.ToString("HH:mm");
         var days = (DateTime.Today - local.Date).Days;
+        UpdatedTime = days switch
+        {
+            <= 0 => local.ToString("HH:mm"),
+            < 7 => local.ToString("dddd", PersianCulture),
+            _ => local.ToString("yyyy/MM/dd", PersianCulture)
+        };
+        UpdatedDisplay = local.ToString("dddd d MMMM، HH:mm", PersianCulture);
+        CreatedDisplay = summary.CreatedAtUtc.LocalDateTime
+            .ToString("dddd d MMMM، HH:mm", PersianCulture);
         DateGroup = days switch
         {
             <= 0 => "امروز",
@@ -441,6 +491,8 @@ public sealed class ConversationSummaryViewModel : INotifyPropertyChanged
         };
     }
 
+    private static readonly System.Globalization.CultureInfo PersianCulture = new("fa-IR");
+
     public ChatConversationSummary Summary { get; private set; } = null!;
     public string ConversationId => Summary.ConversationId;
     public string Title => Summary.Title;
@@ -451,6 +503,24 @@ public sealed class ConversationSummaryViewModel : INotifyPropertyChanged
     public string DateGroup { get; private set; } = string.Empty;
     public string StatusLabel { get; private set; } = string.Empty;
     public string StatusGlyph { get; private set; } = string.Empty;
+    public string UpdatedDisplay { get; private set; } = string.Empty;
+    public string CreatedDisplay { get; private set; } = string.Empty;
+    public bool NeedsAttention => State is ChatConversationState.AwaitingApproval
+        or ChatConversationState.Working;
+    public double SelectionOpacity => _isSelected ? 1 : 0;
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value) return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectionOpacity)));
+        }
+    }
+    public string AccessibleName => $"{Title}، {StatusLabel}، {UpdatedTime}";
 }
 
 public enum ConversationItemKind
@@ -535,7 +605,7 @@ public sealed class ProgressItemViewModel : ConversationItemViewModel, INotifyPr
         ChatProgressStage.WaitingForModel => "در انتظار پاسخ دستیار",
         ChatProgressStage.EndpointCheckStarted => ActivityLabel(progress.Activity),
         ChatProgressStage.EndpointCheckCompleted => progress.Outcome == ChatProgressOutcome.Failure
-            ? "بررسی عامل ناموفق بود" : "بررسی عامل کامل شد",
+            ? "بررسی رایانه ناموفق بود" : "بررسی رایانه کامل شد",
         ChatProgressStage.Retrying => "ارتباط برقرار نشد؛ تلاش دوباره",
         ChatProgressStage.Completed => "پاسخ آماده شد",
         ChatProgressStage.Failed => "بررسی درخواست کامل نشد",
@@ -573,7 +643,7 @@ public sealed class ProgressItemViewModel : ConversationItemViewModel, INotifyPr
         ChatProgressActivity.WindowsActivationStatus => "در حال بررسی فعال‌سازی ویندوز",
         ChatProgressActivity.WindowsActivationRepair => "در حال تعمیر فعال‌سازی ویندوز",
         ChatProgressActivity.ProposedAction => "در حال آماده‌سازی اقدام پیشنهادی",
-        _ => "در حال بررسی عامل"
+        _ => "در حال بررسی رایانه"
     };
 }
 

@@ -61,7 +61,7 @@ public sealed class SupportForm : Form
     private readonly List<Control> _conversationItems = [];
     private IReadOnlyList<EndpointEventLogEntry> _logs = [];
     private TrayStatus _currentStatus = new(TrayHealthState.Checking,
-        EndpointServiceState.Unknown, null, "در حال بررسی عامل", "وضعیت فعلی در حال دریافت است.");
+        EndpointServiceState.Unknown, null, "در حال بررسی دستیار پشتیبانی", "وضعیت فعلی در حال دریافت است.");
     private bool _allowClose;
     private bool _loadingLogs;
     private bool _submittingSupport;
@@ -77,7 +77,7 @@ public sealed class SupportForm : Form
     public SupportForm(Func<Task> refreshStatus)
     {
         _refreshStatus = refreshStatus;
-        Text = "عامل نقطه پایانی";
+        Text = "دستیار پشتیبانی";
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(880, 720);
         MinimumSize = new Size(760, 640);
@@ -222,7 +222,7 @@ public sealed class SupportForm : Form
         _statusLabel.Size = new Size(678, 24);
         _statusLabel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         _statusLabel.TextAlign = ContentAlignment.MiddleRight;
-        _statusLabel.Text = "در حال بررسی عامل";
+        _statusLabel.Text = "در حال بررسی دستیار پشتیبانی";
         _statusDetail.AutoEllipsis = true;
         _statusDetail.ForeColor = Muted;
         _statusDetail.Location = new Point(120, 40);
@@ -474,7 +474,7 @@ public sealed class SupportForm : Form
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
         root.Controls.Add(new Label
         {
-            Text = "وضعیت عامل و کنترل‌های محلی",
+            Text = "وضعیت دستیار پشتیبانی و کنترل‌های محلی",
             Font = new Font("Segoe UI", 13F, FontStyle.Bold),
             ForeColor = Ink,
             Dock = DockStyle.Fill,
@@ -556,7 +556,7 @@ public sealed class SupportForm : Form
         heading.Controls.Add(new Label
         {
             Dock = DockStyle.Fill,
-            Text = "گزارش فعالیت عامل",
+            Text = "گزارش فعالیت دستیار پشتیبانی",
             Font = new Font("Segoe UI", 13F, FontStyle.Bold),
             ForeColor = Ink,
             TextAlign = ContentAlignment.MiddleRight
@@ -723,7 +723,7 @@ public sealed class SupportForm : Form
     {
         if (action == "stop" && MessageBox.Show(
             "با توقف سرویس، این رایانه تا زمان راه‌اندازی دوباره از پشتیبانی قطع می‌شود. ادامه می‌دهید؟",
-            "توقف سرویس عامل نقطه پایانی", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+            "توقف سرویس دستیار پشتیبانی", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
             MessageBoxDefaultButton.Button2, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign)
             != DialogResult.Yes) return;
         SetActionButtonsEnabled(false);
@@ -741,7 +741,7 @@ public sealed class SupportForm : Form
     {
         if (_loadingLogs || IsDisposed) return;
         _loadingLogs = true;
-        _logState.Text = "در حال خواندن گزارش فعالیت عامل…";
+        _logState.Text = "در حال خواندن گزارش فعالیت دستیار پشتیبانی…";
         try
         {
             _logs = await _logReader.ReadAsync(GetSelectedAge(),
@@ -803,7 +803,7 @@ public sealed class SupportForm : Form
     {
         using var dialog = new SaveFileDialog
         {
-            Title = "خروجی گزارش‌های عامل نقطه پایانی",
+            Title = "خروجی گزارش‌های دستیار پشتیبانی",
             Filter = "فایل متنی (*.txt)|*.txt|فایل JSON (*.json)|*.json",
             FileName = $"EndpointAgent-report-{DateTime.Now:yyyyMMdd-HHmm}.txt"
         };
@@ -1186,8 +1186,8 @@ public sealed class SupportForm : Form
             && !string.IsNullOrWhiteSpace(_message.Text)
             && _message.TextLength <= MessageCharacterLimit;
         if (!connected && string.IsNullOrWhiteSpace(_submitResult.Text))
-            _submitResult.Text = "برای ارسال درخواست، عامل نقطه پایانی باید به سرور متصل باشد.";
-        else if (connected && _submitResult.Text == "برای ارسال درخواست، عامل نقطه پایانی باید به سرور متصل باشد.")
+            _submitResult.Text = "برای ارسال درخواست، دستیار پشتیبانی باید به سرور متصل باشد.";
+        else if (connected && _submitResult.Text == "برای ارسال درخواست، دستیار پشتیبانی باید به سرور متصل باشد.")
             _submitResult.Text = string.Empty;
     }
 

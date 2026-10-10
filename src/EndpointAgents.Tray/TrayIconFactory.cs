@@ -1,19 +1,24 @@
-using System.Drawing.Drawing2D;
-using System.Runtime.InteropServices;
-
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 
 namespace EndpointAgents.Tray;
 
+// One mark everywhere (tray, taskbar, window, exe): a white chat bubble on a disc whose
+// colour is the agent's health. Blue = connected, red = disconnected or failing,
+// amber = paused by the user, grey = still checking.
 public sealed class TrayIconFactory : IDisposable
 {
-    private readonly Dictionary<TrayHealthState, Icon> _icons = new();
+    private static readonly int[] IcoSizes = [16, 20, 24, 32, 40, 48, 64, 256];
+    private readonly Dictionary<(TrayHealthState, int), Icon> _icons = new();
 
-    public Icon Get(TrayHealthState state)
+    public Icon Get(TrayHealthState state, int size = 0)
     {
-        if (_icons.TryGetValue(state, out var icon)) return icon;
-        icon = Create(state);
-        _icons[state] = icon;
+        if (size <= 0) size = System.Windows.Forms.SystemInformation.SmallIconSize.Width;
+        if (_icons.TryGetValue((state, size), out var icon)) return icon;
+        icon = Create(state, size);
+        _icons[(state, size)] = icon;
         return icon;
     }
 
@@ -23,63 +28,84 @@ public sealed class TrayIconFactory : IDisposable
         _icons.Clear();
     }
 
-    private static Icon Create(TrayHealthState state)
+    public static Color StateColor(TrayHealthState state) => state switch
     {
-        using var bitmap = new Bitmap(32, 32, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        TrayHealthState.Ready => Color.FromArgb(0x33, 0x90, 0xEC),
+        TrayHealthState.Paused => Color.FromArgb(0xF0, 0x8C, 0x00),
+        TrayHealthState.Warning or TrayHealthState.Error or TrayHealthState.Stopped
+            => Color.FromArgb(0xE5, 0x39, 0x35),
+        _ => Color.FromArgb(0x8A, 0x96, 0xA3)
+    };
+
+    public static Bitmap Draw(TrayHealthState state, int size)
+    {
+        var bitmap = new Bitmap(size, size, PixelFormat.Format32bppArgb);
         using var graphics = Graphics.FromImage(bitmap);
         graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
         graphics.Clear(Color.Transparent);
+        graphics.ScaleTransform(size / 32f, size / 32f);
 
-        var graphite = Color.FromArgb(62, 68, 78);
-        using var background = new SolidBrush(graphite);
-        graphics.FillEllipse(background, 3, 3, 26, 26);
-        using var white = new SolidBrush(Color.White);
-        using var whitePen = new Pen(Color.White, 2.4f)
-        {
-            StartCap = LineCap.Round,
-            EndCap = LineCap.Round
-        };
+        var color = StateColor(state);
+        static int Lighten(int channel) => channel + (255 - channel) * 3 / 10;
+        var light = Color.FromArgb(Lighten(color.R), Lighten(color.G), Lighten(color.B));
+        using (var disc = new LinearGradientBrush(new PointF(0, 0), new PointF(0, 32), light, color))
+            graphics.FillEllipse(disc, 0.5f, 0.5f, 31, 31);
 
-        switch (state)
+        // Bubble body with a tail at the bottom-left.
+        using var bubble = new GraphicsPath();
+        const float left = 7.5f, top = 8.5f, right = 24.5f, bottom = 20.5f, radius = 4.5f;
+        bubble.AddArc(left, top, radius * 2, radius * 2, 180, 90);
+        bubble.AddArc(right - radius * 2, top, radius * 2, radius * 2, 270, 90);
+        bubble.AddArc(right - radius * 2, bottom - radius * 2, radius * 2, radius * 2, 0, 90);
+        bubble.AddLine(right - radius, bottom, 15f, bottom);
+        bubble.AddLine(15f, bottom, 9.5f, 25f);
+        bubble.AddLine(9.5f, 25f, 10.5f, bottom - 0.5f);
+        bubble.AddArc(left, bottom - radius * 2, radius * 2, radius * 2, 90, 90);
+        bubble.CloseFigure();
+        using (var white = new SolidBrush(Color.White))
+            graphics.FillPath(white, bubble);
+
+        using var dots = new SolidBrush(color);
+        foreach (var x in new[] { 12f, 16f, 20f })
+            graphics.FillEllipse(dots, x - 1.6f, 14.5f - 1.6f, 3.2f, 3.2f);
+        return bitmap;
+    }
+
+    // Writes a multi-size PNG-compressed .ico (the exe icon in Assets/AppIcon.ico).
+    public static void WriteIco(string path, TrayHealthState state)
+    {
+        var images = IcoSizes.Select(size =>
         {
-            case TrayHealthState.Ready:
-            case TrayHealthState.Warning:
-                graphics.FillPolygon(white, [new PointF(12, 9), new PointF(12, 23), new PointF(23, 16)]);
-                break;
-            case TrayHealthState.Paused:
-                graphics.FillRectangle(white, 11, 9, 4, 14);
-                graphics.FillRectangle(white, 18, 9, 4, 14);
-                break;
-            case TrayHealthState.Stopped:
-                graphics.FillRectangle(white, 11, 11, 11, 11);
-                break;
-            case TrayHealthState.Error:
-                graphics.DrawLine(whitePen, 16, 9, 16, 18);
-                graphics.FillEllipse(white, 14.5f, 21, 3, 3);
-                break;
-            default:
-                graphics.DrawEllipse(whitePen, 10, 10, 12, 12);
-                graphics.DrawLine(whitePen, 16, 12, 16, 16);
-                graphics.DrawLine(whitePen, 16, 16, 20, 18);
-                break;
+            using var bitmap = Draw(state, size);
+            using var stream = new MemoryStream();
+            bitmap.Save(stream, ImageFormat.Png);
+            return (size, data: stream.ToArray());
+        }).ToList();
+
+        using var writer = new BinaryWriter(File.Create(path));
+        writer.Write((short)0);
+        writer.Write((short)1);
+        writer.Write((short)images.Count);
+        var offset = 6 + 16 * images.Count;
+        foreach (var (size, data) in images)
+        {
+            writer.Write((byte)(size >= 256 ? 0 : size));
+            writer.Write((byte)(size >= 256 ? 0 : size));
+            writer.Write((byte)0);
+            writer.Write((byte)0);
+            writer.Write((short)1);
+            writer.Write((short)32);
+            writer.Write(data.Length);
+            writer.Write(offset);
+            offset += data.Length;
         }
+        foreach (var (_, data) in images) writer.Write(data);
+    }
 
-        var badge = state switch
-        {
-            TrayHealthState.Ready => Color.FromArgb(38, 153, 96),
-            TrayHealthState.Paused or TrayHealthState.Warning => Color.FromArgb(218, 149, 32),
-            TrayHealthState.Error => Color.FromArgb(205, 62, 62),
-            _ => Color.FromArgb(126, 132, 142)
-        };
-        if (state is TrayHealthState.Ready or TrayHealthState.Paused
-            or TrayHealthState.Warning or TrayHealthState.Error)
-        {
-            using var badgeBrush = new SolidBrush(badge);
-            using var rim = new Pen(Color.White, 1.5f);
-            graphics.FillEllipse(badgeBrush, 22, 22, 8, 8);
-            graphics.DrawEllipse(rim, 22, 22, 8, 8);
-        }
-
+    private static Icon Create(TrayHealthState state, int size)
+    {
+        using var bitmap = Draw(state, size);
         var handle = bitmap.GetHicon();
         try
         {

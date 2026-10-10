@@ -1,4 +1,4 @@
-using ControlPlane.Api.Chat;
+﻿using ControlPlane.Api.Chat;
 using ControlPlane.Api.Commands;
 using ControlPlane.Api.Files;
 using ControlPlane.Api.Tools;
@@ -249,6 +249,40 @@ public sealed class ChatStoreTests : IClassFixture<ControlPlaneApiFactory>
         Assert.Equal(30, delta.VisibleItemLimit);
     }
 
+    [Fact]
+    public async Task ResolveToolMarksOnlyTheRunsConversationAndNeedsAValidCapability()
+    {
+        var agentId = Guid.NewGuid().ToString("D");
+        var identity = new ChatIdentity(
+            "S-1-5-21-410-510-610-1001", "DOMAIN\\operator", 3);
+        var conversation = await _store.OpenConversationAsync(
+            agentId, identity, TestCancellation);
+        await _store.SubmitMessageAsync(agentId, new ChatMessageSubmission(
+            Guid.NewGuid().ToString("N"), conversation.ConversationId,
+            "yes, it is solved", "ltr", identity), TestCancellation);
+
+        ChatRunLease? lease;
+        do
+        {
+            lease = await _store.LeaseNextRunAsync(
+                20, TimeSpan.FromMinutes(5), TestCancellation);
+            Assert.NotNull(lease);
+            if (lease!.AgentId != agentId)
+                await _store.CompleteRunAsync(lease.RunId, "drained", TestCancellation);
+        } while (lease.AgentId != agentId);
+
+        var rejected = await EndpointSupportTools.MarkProblemResolved(
+            _store, "not-a-capability", TestCancellation);
+        Assert.Contains("invalid or expired", rejected, StringComparison.Ordinal);
+        Assert.NotEqual(HelpdeskStatus.Resolved, (await _store.GetHelpdeskConversationAsync(
+            conversation.ConversationId, 0, TestCancellation))!.Conversation.Status);
+
+        var accepted = await EndpointSupportTools.MarkProblemResolved(
+            _store, lease.Capability, TestCancellation);
+        Assert.Contains("\"ok\":true", accepted, StringComparison.Ordinal);
+        Assert.Equal(HelpdeskStatus.Resolved, (await _store.GetHelpdeskConversationAsync(
+            conversation.ConversationId, 0, TestCancellation))!.Conversation.Status);
+    }
     [Fact]
     public async Task RunCapabilitiesExpireAndActionsAreSingleUse()
     {

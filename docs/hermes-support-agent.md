@@ -71,6 +71,24 @@ default) without deleting stored conversation data. `Hermes:MaxHistoryMessages`
 controls the separate model context window (5 messages by default, including
 the current request).
 
+### Development Hermes profile and skill sync
+
+On a development PC, run Hermes as its own profile so personal Hermes use stays untouched:
+
+```powershell
+hermes profile create endpointagents --no-skills --no-alias
+.\scripts\sync-hermes-profile.ps1 -Provision   # first time: config.yaml, .env, skills, SOUL.md
+hermes -p endpointagents gateway run           # serves 127.0.0.1:8642
+```
+
+`-Provision` takes the API-server and MCP keys from `appsettings.Development.json` and
+copies only the LLM provider key from the default profile.
+
+Hermes only sees reviewed assets after they are copied into that profile. After **every**
+change to `deploy/hermes/SOUL.md` or to a promoted skill (`office-support`,
+`windows-support`), run `.\scripts\sync-hermes-profile.ps1` and restart the gateway.
+`.\scripts\sync-hermes-profile.ps1 -Check` reports whether the profile is current and
+exits 1 when it is not.
 ## Production installation
 
 ### 1. Install ControlPlane and configure HTTPS
@@ -249,6 +267,11 @@ Only these tools are visible to Hermes:
 - `find_repair_packages`
 - `run_repair_package`
 - `propose_endpoint_action`
+- `mark_problem_resolved`
+
+`mark_problem_resolved` only sets the run's own conversation to Resolved. The skills ask the user
+whether the problem is solved and call it only after a clear yes; a later user message reopens
+the conversation. It changes nothing on the endpoint.
 
 The dedicated Windows repair tool supplies only the fixed Windows activation artifact.
 The dedicated Office repair tool accepts only a cataloged, version-compatible artifact

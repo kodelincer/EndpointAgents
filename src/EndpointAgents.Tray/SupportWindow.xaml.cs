@@ -1,4 +1,4 @@
-using EndpointAgents.Shared.Chat;
+﻿using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Support;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -21,17 +21,27 @@ namespace EndpointAgents.Tray;
 public sealed partial class SupportWindow : Window
 {
     private const int MessageCharacterLimit = ChatLimits.MessageCharacters;
-    private const int InitialWidthDips = 1040;
-    private const int InitialHeightDips = 680;
+    private const int InitialWidthDips = 1240;
+    private const int InitialHeightDips = 760;
     private const int MinimumWidthDips = 760;
     private const int MinimumHeightDips = 640;
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hwnd);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr LoadKeyboardLayout(string layoutId, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr hwnd, uint message, IntPtr wParam, IntPtr lParam);
+
+    private const uint WmInputLangChangeRequest = 0x0050;
+    private bool _persianKeyboardApplied;
+
     private readonly Func<Task> _refreshStatus;
     private readonly ServiceIpcClient _serviceClient = new();
     private readonly EndpointEventLogReader _logReader = new();
+    private readonly TrayIconFactory _windowIcons = new();
     private readonly CancellationTokenSource _lifetime = new();
     private readonly HashSet<string> _renderedMessageIds = [];
     private readonly HashSet<string> _seenActionIds = [];
@@ -58,6 +68,8 @@ public sealed partial class SupportWindow : Window
     private bool _loadingLogs;
     private bool _scrollToEndAfterSync;
     private bool _helpdeskPaneIsInline = true;
+    private bool _detailsRequested = true;
+    private bool _previewMode;
     private long _conversationVersion;
     private double? _restoreConversationOffset;
 
@@ -76,13 +88,16 @@ public sealed partial class SupportWindow : Window
         };
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(TitleBarDragRegion);
-        Title = "عامل نقطه پایانی";
+        Title = "دستیار پشتیبانی";
 
         var hwnd = WindowNative.GetWindowHandle(this);
         _appWindow = AppWindow.GetFromWindowId(Win32Interop.GetWindowIdFromWindow(hwnd));
+        // Hide the system caption buttons; the XAML ones on the left replace them.
+        if (_appWindow.Presenter is OverlappedPresenter overlapped)
+            overlapped.SetBorderAndTitleBar(hasBorder: true, hasTitleBar: false);
         ResizeWindowInDips(InitialWidthDips, InitialHeightDips);
-        UpdateTitleBarInsets();
         _appWindow.Title = Title;
+        SetWindowIcon(TrayHealthState.Checking);
         _appWindow.Closing += AppWindow_Closing;
         _appWindow.Changed += AppWindow_Changed;
 
@@ -116,18 +131,54 @@ public sealed partial class SupportWindow : Window
             (int)Math.Ceiling(height * scale)));
     }
 
-    private void UpdateTitleBarInsets()
+    private void UpdateMaximizeGlyph()
     {
-        var scale = WindowScale();
-        TitleBarDragRegion.Padding = new Thickness(
-            16 + _appWindow.TitleBar.LeftInset / scale,
-            0,
-            16 + _appWindow.TitleBar.RightInset / scale,
-            0);
+        var maximized = _appWindow.Presenter is OverlappedPresenter
+            { State: OverlappedPresenterState.Maximized };
+        MaximizeGlyph.Glyph = maximized ? "" : "";
+        var label = maximized ? "بازگرداندن اندازه" : "بزرگ کردن";
+        ToolTipService.SetToolTip(MaximizeButton, label);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MaximizeButton, label);
+    }
+
+    // Like macOS, the symbols appear only while the pointer is over the button group.
+    private void CaptionButtons_PointerEntered(object sender, PointerRoutedEventArgs e) =>
+        SetCaptionGlyphOpacity(1);
+
+    private void CaptionButtons_PointerExited(object sender, PointerRoutedEventArgs e) =>
+        SetCaptionGlyphOpacity(0);
+
+    private void SetCaptionGlyphOpacity(double opacity) =>
+        MinimizeGlyph.Opacity = MaximizeGlyph.Opacity = CloseGlyph.Opacity = opacity;
+
+    private void MinimizeButton_Click(object sender, RoutedEventArgs e) =>
+        (_appWindow.Presenter as OverlappedPresenter)?.Minimize();
+
+    private void MaximizeButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_appWindow.Presenter is not OverlappedPresenter presenter) return;
+        if (presenter.State == OverlappedPresenterState.Maximized) presenter.Restore();
+        else presenter.Maximize();
+    }
+
+    private void CloseButton_Click(object sender, RoutedEventArgs e) => HideToTray();
+
+    // Minimize goes to the taskbar; close hides the window and the app keeps running
+    // behind its notification-area icon.
+    private void HideToTray()
+    {
+        if (_previewMode)
+        {
+            Application.Current.Exit();
+            return;
+        }
+        _appWindow.Hide();
+        UpdatePolling();
     }
 
     public void ShowSection(SupportSection section)
     {
+        _persianKeyboardApplied = false;
         foreach (var item in Navigation.MenuItems.OfType<NavigationViewItem>())
         {
             if (string.Equals(item.Tag?.ToString(), section.ToString(),
@@ -145,6 +196,7 @@ public sealed partial class SupportWindow : Window
         Activate();
         if (section == SupportSection.Helpdesk)
         {
+            DispatcherQueue.TryEnqueue(() => MessageInput.Focus(FocusState.Programmatic));
             _scrollToEndAfterSync = true;
             _ = RefreshConversationsAsync();
             _ = SyncChatAsync();
@@ -165,16 +217,26 @@ public sealed partial class SupportWindow : Window
         }
 
         ViewModel.ApplyStatus(status);
-        StatusBar.Severity = status.Health switch
+        SetWindowIcon(status.Health);
+        var dot = new SolidColorBrush(status.Health switch
         {
-            TrayHealthState.Error => InfoBarSeverity.Error,
-            TrayHealthState.Warning or TrayHealthState.Paused => InfoBarSeverity.Warning,
-            TrayHealthState.Ready => InfoBarSeverity.Informational,
-            _ => InfoBarSeverity.Informational
-        };
+            TrayHealthState.Ready => ColorHelper.FromArgb(255, 0x2E, 0xB8, 0x72),
+            TrayHealthState.Error => ColorHelper.FromArgb(255, 0xE5, 0x39, 0x35),
+            TrayHealthState.Warning or TrayHealthState.Paused or TrayHealthState.Stopped
+                => ColorHelper.FromArgb(255, 0xF2, 0xA1, 0x00),
+            _ => ColorHelper.FromArgb(255, 0x8A, 0x96, 0xA3)
+        });
+        TitleStatusDot.Fill = dot;
+        DetailsStatusDot.Fill = dot;
+        StatusPageDot.Fill = dot;
         UpdateChatState();
         UpdateSubmitState();
     }
+
+    // Taskbar and title-bar icon follow the same health colour as the tray icon.
+    private void SetWindowIcon(TrayHealthState health) =>
+        _appWindow.SetIcon(Win32Interop.GetIconIdFromIcon(
+            _windowIcons.Get(health, 32).Handle));
 
     public void ClosePermanently()
     {
@@ -188,11 +250,12 @@ public sealed partial class SupportWindow : Window
         ViewModel.Conversation.CollectionChanged -= Conversation_CollectionChanged;
         Close();
         _lifetime.Dispose();
+        _windowIcons.Dispose();
     }
 
     private async void WindowRoot_Loaded(object sender, RoutedEventArgs e)
     {
-        UpdateTitleBarInsets();
+        UpdateMaximizeGlyph();
         await _refreshStatus();
         await RefreshConversationsAsync();
         UpdatePolling();
@@ -202,8 +265,7 @@ public sealed partial class SupportWindow : Window
     {
         if (_allowClose) return;
         args.Cancel = true;
-        _appWindow.Hide();
-        UpdatePolling();
+        HideToTray();
     }
 
     private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
@@ -218,14 +280,7 @@ public sealed partial class SupportWindow : Window
                 _appWindow.Resize(new SizeInt32(Math.Max(minimumWidth, size.Width),
                     Math.Max(minimumHeight, size.Height)));
         }
-        if (args.DidPositionChange || args.DidSizeChange) UpdateTitleBarInsets();
-        if (args.DidPresenterChange
-            && _appWindow.Presenter is OverlappedPresenter
-            { State: OverlappedPresenterState.Minimized })
-        {
-            _appWindow.Hide();
-            UpdatePolling();
-        }
+        if (args.DidPresenterChange || args.DidSizeChange) UpdateMaximizeGlyph();
     }
 
     private void Navigation_SelectionChanged(NavigationView sender,
@@ -256,7 +311,8 @@ public sealed partial class SupportWindow : Window
 
     private void HelpdeskPage_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        var inline = e.NewSize.Width >= 1008;
+        UpdateDetailsPane(e.NewSize.Width);
+        var inline = e.NewSize.Width >= 720;
         if (inline != _helpdeskPaneIsInline)
         {
             _helpdeskPaneIsInline = inline;
@@ -271,6 +327,10 @@ public sealed partial class SupportWindow : Window
             : Visibility.Visible;
     }
 
+    // Keep the status page a centred column that never exceeds the window, at any size.
+    private void StatusPage_SizeChanged(object sender, SizeChangedEventArgs e) =>
+        StatusContent.Width = Math.Max(320, Math.Min(880, e.NewSize.Width - 56));
+
     private void ConversationPaneButton_Click(object sender, RoutedEventArgs e)
     {
         ConversationSplitView.IsPaneOpen = !ConversationSplitView.IsPaneOpen;
@@ -280,17 +340,32 @@ public sealed partial class SupportWindow : Window
             ConversationPaneButton.Focus(FocusState.Keyboard);
     }
 
-    private void ConversationFilter_Changed(object sender, SelectionChangedEventArgs e)
+    private void ConversationFilter_Changed(SelectorBar sender,
+        SelectorBarSelectionChangedEventArgs args)
     {
-        if (ConversationFilter.SelectedItem is not ComboBoxItem { Tag: string tag }
+        if (sender.SelectedItem is not { Tag: string tag }
             || !Enum.TryParse<ConversationListFilter>(tag, out var filter)) return;
         ViewModel.SetConversationFilter(filter);
     }
 
-    private void ConversationFilterButton_Click(object sender, RoutedEventArgs e)
+    private void ConversationSearch_TextChanged(AutoSuggestBox sender,
+        AutoSuggestBoxTextChangedEventArgs args) =>
+        ViewModel.SetConversationSearch(sender.Text);
+
+    private void DetailsButton_Click(object sender, RoutedEventArgs e)
     {
-        ConversationFilter.IsDropDownOpen = true;
-        ConversationFilter.Focus(FocusState.Programmatic);
+        _detailsRequested = !_detailsRequested;
+        UpdateDetailsPane(HelpdeskPage.ActualWidth);
+    }
+
+    private void UpdateDetailsPane(double pageWidth)
+    {
+        // Details only fit beside the list and a readable chat on wide windows.
+        var fits = pageWidth >= 1040;
+        var show = _detailsRequested && fits;
+        DetailsPane.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        DetailsColumn.Width = show ? new GridLength(300) : new GridLength(0);
+        DetailsButton.Visibility = fits ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private async void RefreshConversations_Click(object sender, RoutedEventArgs e) =>
@@ -347,7 +422,7 @@ public sealed partial class SupportWindow : Window
     private async Task RefreshConversationsAsync(string? selectConversationId = null,
         bool showLoading = false)
     {
-        if (_refreshingConversations || !ViewModel.IsConnected
+        if (_previewMode || _refreshingConversations || !ViewModel.IsConnected
             || HelpdeskPage.Visibility != Visibility.Visible) return;
         _refreshingConversations = true;
         if (showLoading || !_conversationListInitialized)
@@ -386,7 +461,7 @@ public sealed partial class SupportWindow : Window
                 _conversationListInitialized = true;
             }
             ViewModel.CompleteConversationListRefresh(
-                "ارتباط محلی با سرویس کامل نشد. سرویس عامل را به‌روزرسانی یا دوباره راه‌اندازی کنید.");
+                "ارتباط محلی با سرویس کامل نشد. سرویس دستیار پشتیبانی را به‌روزرسانی یا دوباره راه‌اندازی کنید.");
         }
         finally
         {
@@ -468,6 +543,24 @@ public sealed partial class SupportWindow : Window
         _activeProgressLabel = null;
         _lastChatSequence = 0;
         ViewModel.SubmitResult = string.Empty;
+    }
+
+    // Persian is the default typing language: switch the keyboard layout once each time the window is shown,
+    // so a user who deliberately switches to English is not overridden while typing.
+    private void MessageInput_GotFocus(object sender, RoutedEventArgs e)
+    {
+        if (_persianKeyboardApplied) return;
+        _persianKeyboardApplied = true;
+        try
+        {
+            var layout = LoadKeyboardLayout("00000429", 0);
+            if (layout != IntPtr.Zero)
+                PostMessage(WindowNative.GetWindowHandle(this), WmInputLangChangeRequest, IntPtr.Zero, layout);
+        }
+        catch (Exception ex)
+        {
+            TrayEventLogger.Warning("تغییر زبان صفحه‌کلید به فارسی انجام نشد: " + ex.Message);
+        }
     }
 
     private void MessageInput_TextChanged(object sender, TextChangedEventArgs e)
@@ -584,7 +677,7 @@ public sealed partial class SupportWindow : Window
             var dialog = new ContentDialog
             {
                 XamlRoot = WindowRoot.XamlRoot,
-                Title = "توقف سرویس عامل نقطه پایانی",
+                Title = "توقف سرویس دستیار پشتیبانی",
                 Content = "با توقف سرویس، این رایانه تا راه‌اندازی دوباره از پشتیبانی قطع می‌شود.",
                 PrimaryButtonText = "توقف سرویس",
                 CloseButtonText = "انصراف",
@@ -628,7 +721,7 @@ public sealed partial class SupportWindow : Window
         if (_loadingLogs || !_appWindow.IsVisible
             || LogsPage.Visibility != Visibility.Visible) return;
         _loadingLogs = true;
-        ViewModel.LogState = "در حال خواندن گزارش فعالیت عامل…";
+        ViewModel.LogState = "در حال خواندن گزارش فعالیت دستیار پشتیبانی…";
         try
         {
             _logs = await _logReader.ReadAsync(GetSelectedAge(), GetSelectedLogLevel(),
@@ -681,7 +774,7 @@ public sealed partial class SupportWindow : Window
 
     private async Task SyncChatAsync(bool waitForGate = false)
     {
-        if (!_appWindow.IsVisible || HelpdeskPage.Visibility != Visibility.Visible
+        if (_previewMode || !_appWindow.IsVisible || HelpdeskPage.Visibility != Visibility.Visible
             || !ViewModel.IsConnected || string.IsNullOrWhiteSpace(_conversationId)) return;
         try
         {
@@ -855,6 +948,7 @@ public sealed partial class SupportWindow : Window
     {
         var readOnly = ViewModel.IsConversationReadOnly;
         MessageInput.IsReadOnly = ViewModel.IsSubmitting || readOnly;
+        MessageInput.Visibility = readOnly ? Visibility.Collapsed : Visibility.Visible;
         SubmitButton.Visibility = readOnly ? Visibility.Collapsed : Visibility.Visible;
         ClosedConversationButton.Visibility = readOnly
             ? Visibility.Visible
@@ -864,18 +958,22 @@ public sealed partial class SupportWindow : Window
             && !readOnly
             && !string.IsNullOrWhiteSpace(MessageInput.Text)
             && MessageInput.Text.Length <= MessageCharacterLimit;
-        SubmitButtonText.Text = ViewModel.IsSubmitting ? "ارسال…" : "ارسال";
+        SendIcon.Visibility = ViewModel.IsSubmitting ? Visibility.Collapsed : Visibility.Visible;
+        SendingRing.IsActive = ViewModel.IsSubmitting;
         NewConversationButton.IsEnabled = ViewModel.IsConnected && !_startingConversation;
         ClosedConversationButton.IsEnabled = ViewModel.IsConnected && !_startingConversation;
         MessageInput.PlaceholderText = readOnly
             ? "این گفتگو بسته شده و فقط برای مشاهده است."
-            : "پیام خود را بنویسید…";
+            : "مشکل خود را بنویسید…";
         if (readOnly && string.IsNullOrWhiteSpace(ViewModel.SubmitResult))
             ViewModel.SubmitResult =
                 "این گفتگو بسته شده است؛ برای درخواست تازه، گفتگوی جدید بسازید.";
+        const string disconnected =
+            "برای ارسال درخواست، دستیار پشتیبانی باید به سرور متصل باشد.";
         if (!ViewModel.IsConnected && string.IsNullOrWhiteSpace(ViewModel.SubmitResult))
-            ViewModel.SubmitResult =
-                "برای ارسال درخواست، عامل نقطه پایانی باید به سرور متصل باشد.";
+            ViewModel.SubmitResult = disconnected;
+        else if (ViewModel.IsConnected && ViewModel.SubmitResult == disconnected)
+            ViewModel.SubmitResult = string.Empty;
     }
 
     private void UpdateChatState()
@@ -946,6 +1044,32 @@ public sealed class ConversationTemplateSelector : DataTemplateSelector
                 _ => AssistantTemplate
             }
             : base.SelectTemplateCore(item);
+}
+
+public sealed class ConversationStateBrushConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter,
+        string language) => new SolidColorBrush(value switch
+        {
+            ChatConversationState.Working => ColorHelper.FromArgb(255, 0x8E, 0x6C, 0xEF),
+            ChatConversationState.AwaitingApproval => ColorHelper.FromArgb(255, 0xF0, 0x8C, 0x00),
+            ChatConversationState.Answered => ColorHelper.FromArgb(255, 0x1F, 0xA8, 0x9F),
+            ChatConversationState.Resolved => ColorHelper.FromArgb(255, 0x4C, 0xAF, 0x50),
+            ChatConversationState.Closed => ColorHelper.FromArgb(255, 0x8A, 0x96, 0xA3),
+            _ => ColorHelper.FromArgb(255, 0x33, 0x90, 0xEC)
+        });
+
+    public object ConvertBack(object value, Type targetType, object parameter,
+        string language) => throw new NotSupportedException();
+}
+
+public sealed class BoolVisibilityConverter : IValueConverter
+{
+    public object Convert(object value, Type targetType, object parameter,
+        string language) => value is true ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object value, Type targetType, object parameter,
+        string language) => throw new NotSupportedException();
 }
 
 public sealed class BidiFlowDirectionConverter : IValueConverter

@@ -64,7 +64,7 @@ public sealed class WindowsServiceManager
         using var service = new ServiceController(EndpointAgentProduct.ServiceName, ".");
         service.Refresh();
         if (service.Status == ServiceControllerStatus.Stopped) return;
-        if (!service.CanStop) throw new InvalidOperationException("امکان توقف سرویس عامل نقطه پایانی وجود ندارد.");
+        if (!service.CanStop) throw new InvalidOperationException("امکان توقف سرویس دستیار پشتیبانی وجود ندارد.");
         service.Stop();
         await WaitForAsync(service, ServiceControllerStatus.Stopped, cancellationToken);
     }
