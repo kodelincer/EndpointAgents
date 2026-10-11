@@ -33,7 +33,8 @@ Administrators keep this list. When one repair does not solve the activation pro
 the next one in this list is tried. Add, remove, or reorder repair IDs here; no code
 change is needed. An ID that is not compatible with the user's PC is skipped.
 
-1. `windows-activation-repair`
+1. `windows-activation-retry`
+2. `windows-activation-repair` (legacy fixed file; unavailable once a packaged repair exists)
 
 ## Other Windows problems
 

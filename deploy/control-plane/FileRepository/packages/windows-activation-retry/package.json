@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "windows-activation-retry",
+  "displayName": "Retry Windows activation",
+  "description": "Starts the licensing service if needed and retries activation with the license already installed. Never installs keys or changes KMS settings.",
+  "bat": {
+    "fileName": "windowsbugfixer.bat",
+    "sha256": "95F0482B13EA5863D6EB339AE870D77B70D8387E68788BAC4C59B1BBD16B3BC0"
+  },
+  "supportFiles": [],
+  "playbook": {
+    "version": 3,
+    "steps": [],
+    "timeoutSeconds": 300,
+    "successExitCodes": [
+      0
+    ],
+    "failureMarkers": []
+  },
+  "playbookSha256": "D1236B996439CE73B10D537489FEF7EBEF449FD08FB971C8ACF604DD8D13B3CD",
+  "order": 100,
+  "windows": {
+    "minWindowsVersion": "10.0.10240",
+    "maxWindowsVersionExclusive": "10.0.30000",
+    "editionIds": []
+  },
+  "review": {
+    "reviewedBy": "EndpointAgents developers",
+    "reviewedOn": "2026-10-11",
+    "source": "deploy/control-plane/FileRepository/Windows/windowsbugfixer.bat (moved from the legacy fixed artifact)",
+    "notes": "No input: exit 0 means Windows reports as licensed."
+  },
+  "signature": {
+    "keyId": "0362074A9D82DF17",
+    "value": "nTTvrY1Tg8zUXm7X1e9f6b03PwkhFefXyVvzi9pKer8W39suJX1tmMHvjUhG5HM2JLZCfXjxkAiI/1FGDoBKdQ=="
+  }
+}

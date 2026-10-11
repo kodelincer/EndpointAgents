@@ -195,7 +195,8 @@ public sealed class BatPackageLoaderTests : IDisposable
         var statuses = await repository.GetPackageStatusesAsync(
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(["no-input-repair-sample", "office-activation-repair"],
+        Assert.Equal(["no-input-repair-sample", "office-activation-repair",
+                "windows-activation-retry"],
             statuses.Select(status => status.Id).Order(StringComparer.Ordinal));
         foreach (var status in statuses)
             Assert.True(status.Status == BatPackageStatuses.Ready,
