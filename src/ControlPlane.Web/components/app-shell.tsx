@@ -1,6 +1,6 @@
 "use client";
 
-import { CircleAlert, LayoutDashboard, LifeBuoy, Package, RefreshCw, Server, Waypoints } from "lucide-react";
+import { CircleAlert, LayoutDashboard, LifeBuoy, Lightbulb, Package, RefreshCw, Server, Waypoints } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useControlPlane } from "@/lib/control-plane-context";
@@ -26,6 +26,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Link className={path.startsWith("/agents") ? "active" : ""} href="/agents/"><Waypoints size={15} />Agents</Link>
         <Link className={path.startsWith("/files") ? "active" : ""} href="/files/"><Package size={15} />Packages</Link>
         <Link className={path.startsWith("/support") ? "active" : ""} href="/support/"><LifeBuoy size={15} />Helpdesk{supportRequests.length > 0 && <span className="nav-count">{supportRequests.length}</span>}</Link>
+        <Link className={path.startsWith("/feature-requests") ? "active" : ""} href="/feature-requests/"><Lightbulb size={15} />Feature requests</Link>
       </nav>
       <div className="topbar-status">
         <span className={`connection-state ${connection}`}><span className="state-dot" />{statusLabel(connection)}</span>

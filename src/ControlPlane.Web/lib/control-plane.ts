@@ -1,6 +1,6 @@
 import type { Activity, Agent, ApiSystemStatus, CommandDefinition, FileInventory,
   MaintenanceModeResult, PackageInventory, RpcRequest, RpcResponse, SupportRequest } from "./types";
-import type { HelpdeskConversationDetail, HelpdeskConversationSummary } from "./types";
+import type { FeatureRequest, HelpdeskConversationDetail, HelpdeskConversationSummary } from "./types";
 
 export const CONTROL_PLANE_URL = process.env.NEXT_PUBLIC_CONTROL_PLANE_URL ?? "http://localhost:5052";
 
@@ -62,6 +62,15 @@ async function write<T>(path: string, method: "POST" | "PATCH", body: unknown): 
     throw new Error(error.message ?? `Control plane returned ${response.status}.`);
   }
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
+}
+
+/** Requests for abilities the support agent does not have yet, newest first. */
+export function getFeatureRequests(): Promise<FeatureRequest[]> {
+  return read<FeatureRequest[]>("/api/feature-requests?limit=500");
+}
+
+export function setFeatureRequestStatus(requestId: string, status: FeatureRequest["status"]): Promise<void> {
+  return write(`/api/feature-requests/${encodeURIComponent(requestId)}`, "PATCH", { status });
 }
 
 export function getHelpdeskConversations(): Promise<HelpdeskConversationSummary[]> {

@@ -411,3 +411,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visibl
 .package-howto { margin-top: 18px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); font-size: 12px; line-height: 1.6; }
 .package-howto h2 { margin: 0 0 6px; font-size: 13px; }.package-howto ol { margin: 0; padding-left: 20px; }.package-howto code { font: 10.5px var(--font-mono); overflow-wrap: anywhere; }.package-howto p { margin: 8px 0 0; color: var(--muted); }
 @media (max-width: 640px) { .package-hashes div { grid-template-columns: 1fr; gap: 0; } }
+
+/* Feature requests */
+.feature-filter { margin-bottom: 14px; }
+.feature-filter button span { margin-left: 6px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.feature-row { align-items: flex-start; gap: 14px; }
+.feature-status select { height: 32px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 0 8px; font-size: 12px; }
+.ticket-status.planned { color: var(--action); background: color-mix(in oklch, var(--action) 10%, white); }
+.ticket-status.done { color: var(--success); background: color-mix(in oklch, var(--success) 10%, white); }
+.ticket-status.declined { color: var(--muted); background: var(--surface-2); }

@@ -274,6 +274,7 @@ Only these tools are visible to Hermes:
 - `propose_endpoint_action`
 - `mark_problem_resolved`
 - `escalate_to_helpdesk`
+- `record_feature_request`
 
 `mark_problem_resolved` only sets the run's own conversation to Resolved. The skills ask the user
 whether the problem is solved and call it only after a clear yes; a later user message reopens

@@ -141,3 +141,9 @@ export type HelpdeskConversationDetail = {
   conversation: HelpdeskConversationSummary; messages: ChatMessage[];
   actions: unknown[]; progressEvents: unknown[]; trace: HelpdeskTraceEvent[];
 };
+
+export type FeatureRequest = {
+  requestId: string; conversationId: string; agentId: string; userName: string;
+  machineName: string; summary: string; userWords: string;
+  status: "New" | "Planned" | "Done" | "Declined"; createdAtUtc: string; updatedAtUtc: string;
+};

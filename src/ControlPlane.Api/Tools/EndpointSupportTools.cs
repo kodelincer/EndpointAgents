@@ -217,6 +217,33 @@ public sealed class EndpointSupportTools
         });
     }
 
+    [McpServerTool(Name = "record_feature_request"), Description(
+        "Save a request for something the support agent cannot do yet, for the development team to review. Call it only after the user agreed to save it. It changes nothing on the endpoint.")]
+    public static async Task<string> RecordFeatureRequest(
+        ChatStore store,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        [Description("One short English line naming the ability the user wants, e.g. 'Install a printer driver'.")]
+        string summary,
+        [Description("The user's request in their own words, without passwords or personal details.")]
+        string userRequest,
+        CancellationToken cancellationToken)
+    {
+        var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+        if (scope is null)
+            return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+        if (string.IsNullOrWhiteSpace(summary))
+            return """{"ok":false,"error":"A summary is required."}""";
+        var saved = await store.RecordFeatureRequestAsync(scope,
+            PromptRedactor.RedactSecrets(summary),
+            PromptRedactor.RedactSecrets(userRequest ?? ""), cancellationToken);
+        await store.WriteToolAuditAsync(scope, "record_feature_request",
+            saved is null ? "error" : "recorded", null, cancellationToken);
+        return saved is null
+            ? """{"ok":false,"error":"The conversation is not available."}"""
+            : """{"ok":true,"state":"Recorded"}""";
+    }
+
     [McpServerTool(Name = "escalate_to_helpdesk"), Description(
         "Hand this conversation to the human helpdesk team when no approved repair fits, every matching repair was tried and the user says the problem remains, or the user asks for a person. It changes nothing on the endpoint.")]
     public static async Task<string> EscalateToHelpdesk(

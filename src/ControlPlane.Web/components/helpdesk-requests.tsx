@@ -44,7 +44,10 @@ export function HelpdeskRequests() {
   const { supportRequests, loading, loadError, helpdeskVersion, connection } = useControlPlane();
   const [conversations, setConversations] = useState<HelpdeskConversationSummary[]>([]);
   const [detail, setDetail] = useState<HelpdeskConversationDetail>();
-  const [selectedId, setSelectedId] = useState<string>();
+  // ?conversation=<id> (linked from the Feature requests page) opens that conversation.
+  const [selectedId, setSelectedId] = useState<string | undefined>(() =>
+    typeof window === "undefined" ? undefined
+      : new URLSearchParams(window.location.search).get("conversation") ?? undefined);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<(typeof statusOptions)[number]>("All");
   const [localVersion, setLocalVersion] = useState(0);

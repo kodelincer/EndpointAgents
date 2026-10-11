@@ -90,4 +90,9 @@ trusted; see `docs\bat-packages.md`.
   started without enrolling; use step 4 above.
 - **Hermes does not answer:** check port 8642, run `sync-hermes-profile.ps1 -Check`, and
   restart the gateway after any skill change.
+- **The agent says a tool failed right after you restarted the control plane:** Hermes
+  loses its connection to the control plane's tools and waits up to 5 minutes before
+  retrying. Restart Hermes properly: `hermes -p endpointagents gateway stop`, then
+  `hermes -p endpointagents gateway run`. Closing the window alone can leave the old
+  gateway running, and a second `gateway run` is then refused.
 - **`npm run dev` does nothing in Windows PowerShell:** use `npm.cmd run dev`.

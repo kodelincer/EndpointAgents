@@ -909,6 +909,38 @@ public sealed class ChatStoreTests : IClassFixture<ControlPlaneApiFactory>
             TestCancellation));
     }
 
+    [Fact]
+    public async Task FeatureRequestsAreSavedAndCanBeTriaged()
+    {
+        var agentId = Guid.NewGuid().ToString("D");
+        var identity = new ChatIdentity("S-1-5-21-111-222-333-9201", "user", 4);
+        var conversation = await _store.OpenConversationAsync(agentId, identity,
+            TestCancellation);
+        await _store.SubmitMessageAsync(agentId, new ChatMessageSubmission(
+            Guid.NewGuid().ToString("N"), conversation.ConversationId,
+            "Please install a scanner driver", "ltr", identity), TestCancellation);
+        var lease = await LeaseRunForAgentAsync(agentId);
+        var scope = (await _store.ResolveCapabilityAsync(lease.Capability,
+            TestCancellation))!;
+
+        var saved = await _store.RecordFeatureRequestAsync(scope,
+            "Install a scanner driver", "Please install a scanner driver", TestCancellation);
+
+        Assert.NotNull(saved);
+        Assert.Equal(FeatureRequestStatus.New, saved!.Status);
+        Assert.Equal(conversation.ConversationId, saved.ConversationId);
+        Assert.Contains(await _store.GetFeatureRequestsAsync(50, TestCancellation),
+            item => item.RequestId == saved.RequestId);
+        Assert.True(await _store.SetFeatureRequestStatusAsync(saved.RequestId,
+            FeatureRequestStatus.Planned, TestCancellation));
+        Assert.False(await _store.SetFeatureRequestStatusAsync(saved.RequestId, "Bogus",
+            TestCancellation));
+        Assert.Equal(FeatureRequestStatus.Planned, (await _store.GetFeatureRequestsAsync(50,
+            TestCancellation)).Single(item => item.RequestId == saved.RequestId).Status);
+        Assert.Null(await _store.RecordFeatureRequestAsync(scope, " ", "x",
+            TestCancellation));
+    }
+
     private async Task<ChatRunLease> LeaseRunForAgentAsync(
         string agentId, int historyLimit = 20)
     {

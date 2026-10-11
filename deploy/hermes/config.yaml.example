@@ -60,6 +60,7 @@ mcp_servers:
         - propose_endpoint_action
         - mark_problem_resolved
         - escalate_to_helpdesk
+        - record_feature_request
       resources: false
       prompts: false
     sampling:

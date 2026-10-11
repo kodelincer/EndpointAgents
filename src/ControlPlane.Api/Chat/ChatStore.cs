@@ -153,6 +153,22 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
                 CREATE INDEX IF NOT EXISTS ix_helpdesk_trace_conversation
                     ON helpdesk_trace_events(conversation_id, created_at_utc);
 
+                -- Requests for things the support agent cannot do yet; kept for the
+                -- development team and never removed by chat retention.
+                CREATE TABLE IF NOT EXISTS feature_requests (
+                    request_id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    user_name TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    user_words TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'New',
+                    created_at_utc TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_feature_requests_created
+                    ON feature_requests(created_at_utc);
+
                 UPDATE agent_runs
                 SET state = 'Queued', capability_hash = NULL,
                     capability_expires_at_utc = NULL, framework_run_id = NULL,

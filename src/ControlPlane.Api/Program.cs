@@ -460,6 +460,15 @@ app.MapGet("/api/files/office/{artifactId}", async (string artifactId, HttpConte
 }).RequireAuthorization();
 app.MapGet("/api/activity", (int? limit, string? agentId, ActivityStore store) =>
     Results.Ok(store.Get(limit ?? 100, agentId)));
+// Requests for abilities the support agent does not have yet (loopback operator view).
+app.MapGet("/api/feature-requests", async (int? limit, ChatStore store,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await store.GetFeatureRequestsAsync(limit ?? 200, cancellationToken)));
+app.MapMethods("/api/feature-requests/{requestId}", ["PATCH"], async (string requestId,
+    FeatureRequestPatch patch, ChatStore store, CancellationToken cancellationToken) =>
+    await store.SetFeatureRequestStatusAsync(requestId, patch.Status, cancellationToken)
+        ? Results.NoContent()
+        : Results.BadRequest(new { message = "Unknown request or status." }));
 app.MapGet("/api/support-requests", (int? limit, string? agentId,
     SupportRequestStore store) => Results.Ok(store.Get(limit ?? 100, agentId)));
 app.MapGet("/api/helpdesk/conversations", async (int? limit, string? status, string? query,
