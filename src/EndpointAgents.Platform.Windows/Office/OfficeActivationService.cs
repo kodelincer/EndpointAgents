@@ -28,7 +28,10 @@ public sealed class OfficeActivationService(
         }
 
         var products = probes.SelectMany(probe => probe.Products).ToArray();
-        var overallState = GetOverallState(products, probes, inventory.Installed);
+        // Editions without an installed key are listed but do not decide the state.
+        var overallState = GetOverallState(
+            OfficeActivationRecommendation.WithInstalledKey(products).ToArray(), probes,
+            inventory.Installed);
         var recommendation = OfficeActivationRecommendation.Evaluate(volumeResult);
         var kmsHealthy = volumeResult is not null
             && OfficeActivationRecommendation.IsHealthyKms(volumeResult);
@@ -43,8 +46,8 @@ public sealed class OfficeActivationService(
                 compatibleBugfixIds = bugfixes.Where(item =>
                         OfficeBugfixCommandHandler.IsCompatible(item, inventory,
                             Environment.OSVersion.Version))
+                    // Catalog order is the administrator's try order.
                     .Select(item => item.ArtifactId)
-                    .OrderBy(id => id, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
             }
             catch (OperationCanceledException)

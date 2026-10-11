@@ -13,9 +13,12 @@ activation warning:
 2. If Office is not installed or its version cannot be read, explain that and stop.
 3. Call `mcp_controlplane_office_activation_status` once with exactly
    `{ "runCapability": "<the supplied run capability>" }` and briefly summarize its
-   sanitized state. KMS is healthy only when the OSPP probe succeeded, returned at
-   least one product, and every product has license type `Volume|KMS`, state `Licensed`,
-   and no error code. If KMS is healthy, say so and stop. A licensed MAK or Retail
+   sanitized state. Ignore products whose error code is `0XC004F014`: that only means no
+   key is installed for that edition, which is normal for the extra editions a volume
+   install lists. KMS is healthy only when the OSPP probe succeeded and, among the
+   remaining products, there is at least one and every one has license type `Volume|KMS`,
+   state `Licensed`, and no error code. The result's `overallState` already follows this
+   rule. If KMS is healthy, say so and stop. A licensed MAK or Retail
    product is not healthy for this environment. The user's explicit activation report
    remains valid evidence when the probe is unavailable.
 4. For an unhealthy result, or an explicit activation problem when the probe is

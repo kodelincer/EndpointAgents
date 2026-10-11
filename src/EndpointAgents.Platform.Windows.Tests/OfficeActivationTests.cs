@@ -78,6 +78,26 @@ public sealed class OfficeActivationTests
     }
 
     [Fact]
+    public void EditionsWithoutAnInstalledKeyDoNotMakeKmsUnhealthy()
+    {
+        // A volume install lists several editions; only the KMS one has a key.
+        var noKey = OfficeActivationRecommendation.ProductKeyNotInstalled;
+        var activated = Probe(
+            Product(OfficeLicenseTypes.VolumeMak, OfficeActivationStates.Unlicensed, noKey),
+            Product(OfficeLicenseTypes.VolumeKms, OfficeActivationStates.Unlicensed, noKey),
+            Product(OfficeLicenseTypes.VolumeKms, OfficeActivationStates.Licensed));
+        var keyRemoved = Probe(
+            Product(OfficeLicenseTypes.VolumeMak, OfficeActivationStates.Unlicensed, noKey),
+            Product(OfficeLicenseTypes.VolumeKms, OfficeActivationStates.Unlicensed, noKey));
+
+        Assert.True(OfficeActivationRecommendation.IsHealthyKms(activated));
+        Assert.False(OfficeActivationRecommendation.IsHealthyKms(keyRemoved));
+        Assert.Equal(OfficeActivationStates.Licensed, OfficeActivationService.GetOverallState(
+            OfficeActivationRecommendation.WithInstalledKey(activated.Products).ToArray(),
+            [activated], officeInstalled: true));
+    }
+
+    [Fact]
     public void RecommendationUsesOnlyKmsHealth()
     {
         var healthy = OfficeActivationRecommendation.Evaluate(Probe(
