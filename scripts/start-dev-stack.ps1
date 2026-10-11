@@ -39,6 +39,9 @@ if (Get-Process -Name "EndpointAgents.Service", "EndpointAgents.Tray" -ErrorActi
 Start-Part "ControlPlane API" "dotnet run --project .\src\ControlPlane.Api\ControlPlane.Api.csproj --launch-profile http"
 Wait-Port 5052 "Control plane API"
 
+# A gateway left over from an earlier run blocks a new one and may hold a stale
+# connection to the control plane, so stop it first.
+& hermes -p endpointagents gateway stop 2>&1 | Out-Null
 Start-Part "Hermes gateway" "hermes -p endpointagents gateway run"
 Start-Part "Dashboard" "Set-Location .\src\ControlPlane.Web; npm.cmd run dev"
 
