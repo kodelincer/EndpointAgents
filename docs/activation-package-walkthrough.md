@@ -9,14 +9,15 @@ Run every command from `D:\EndpointAgents-runner` in PowerShell. The general ref
 
 - The stack must be running (`docs\run-dev-stack.md`): control plane, Hermes, dashboard,
   and the endpoint service + Tray.
-- **Use a test PC or VM.** `-Execute` and the real test really run the BAT and change
-  activation on that PC.
+- `-Execute` and the end-to-end test really run the BAT on this PC.
 - **Run the endpoint as administrator for real activation.** The development endpoint
   runs as you, not as LocalSystem. Activation commands (`slmgr`, `ospp.vbs`) need admin
   rights, so start the "Endpoint service + Tray" window from an elevated PowerShell.
 - The repairs only run when they are needed. The Office repair refuses to run when Office
   already has healthy KMS activation, and the Windows repair refuses when Windows already
-  reports Licensed. So test on a PC whose Office or Windows is really not activated.
+  reports Licensed. If this PC is already activated, the run stops with "already
+  activated" or "already has healthy KMS"; use `-Execute` in the playbook lab to watch the
+  BAT itself run.
 
 ## 1. Save the BAT
 
