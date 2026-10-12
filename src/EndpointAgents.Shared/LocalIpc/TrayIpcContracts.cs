@@ -6,7 +6,6 @@ namespace EndpointAgents.Shared.LocalIpc;
 
 public static class TrayIpcProtocol
 {
-    public const string DefaultPipePrefix = "EndpointAgents.Tray";
     public const string LaunchIbsngMethod = "ibsng.launch";
     public const string ConfirmIbsngInstallMethod = "ibsng.confirm_install";
     public const string ReconcileIbsngMethod = "ibsng.reconcile";
@@ -17,9 +16,6 @@ public static class TrayIpcProtocol
     public const string WindowsBugfixConsentMethod = "windows.bugfix_consent";
     public const string WindowsHelloLaunchMethod = "windows.hello_sample_launch";
     public const int MaxMessageCharacters = 16 * 1024;
-
-    public static string GetPipeName(string prefix, int sessionId) =>
-        $"{prefix}.{sessionId}.v1";
 }
 
 public sealed record TrayIpcRequest(

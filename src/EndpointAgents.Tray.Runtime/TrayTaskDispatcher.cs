@@ -1,123 +1,70 @@
 using EndpointAgents.Shared.LocalIpc;
-using System.Diagnostics;
-using System.IO.Pipes;
-using System.Security.AccessControl;
-using System.Security.Principal;
-using System.Text;
-using System.Text.Json;
 
 namespace EndpointAgents.Tray;
 
-public sealed class TrayIpcServer
+/// <summary>
+/// Runs one catalogued user-session task the service sent. Only the methods listed in
+/// <see cref="TrayIpcProtocol"/> are recognised; anything else is refused without side effects.
+/// </summary>
+public sealed class TrayTaskDispatcher
 {
-    private readonly string _pipeName;
-    private readonly IbsngDialerLauncher _launcher = new();
-    private readonly OfficeRemediationLauncher _officeRemediation = new();
-    private readonly WindowsRemediationConsent _windowsRemediation = new();
-    private readonly WindowsHelloLauncher _windowsHello = new();
+    private readonly IbsngDialerLauncher _launcher;
+    private readonly OfficeRemediationLauncher _officeRemediation;
+    private readonly WindowsRemediationConsent _windowsRemediation;
+    private readonly WindowsHelloLauncher _windowsHello;
 
-    public TrayIpcServer(int sessionId, string pipePrefix = TrayIpcProtocol.DefaultPipePrefix)
+    public TrayTaskDispatcher(IUserConsentPrompt? consent = null)
     {
-        _pipeName = TrayIpcProtocol.GetPipeName(pipePrefix, sessionId);
+        consent ??= new MessageBoxConsentPrompt();
+        _launcher = new IbsngDialerLauncher(consent: consent);
+        _officeRemediation = new OfficeRemediationLauncher(consent);
+        _windowsRemediation = new WindowsRemediationConsent(consent);
+        _windowsHello = new WindowsHelloLauncher(consent);
     }
 
-    public async Task RunAsync(CancellationToken cancellationToken)
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            try
-            {
-                await using var pipe = CreatePipe();
-                await pipe.WaitForConnectionAsync(cancellationToken);
-                await HandleConnectionAsync(pipe, cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch
-            {
-                await Task.Delay(500, cancellationToken);
-            }
-        }
-    }
-
-    private NamedPipeServerStream CreatePipe()
-    {
-        using var identity = WindowsIdentity.GetCurrent();
-        var userSid = identity.User
-            ?? throw new InvalidOperationException("The Tray process has no Windows user SID.");
-        var systemSid = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
-        var security = new PipeSecurity();
-        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        security.SetOwner(userSid);
-        security.AddAccessRule(new PipeAccessRule(userSid, PipeAccessRights.FullControl,
-            AccessControlType.Allow));
-        security.AddAccessRule(new PipeAccessRule(systemSid, PipeAccessRights.FullControl,
-            AccessControlType.Allow));
-
-        return NamedPipeServerStreamAcl.Create(_pipeName, PipeDirection.InOut, 1,
-            PipeTransmissionMode.Byte, PipeOptions.Asynchronous, 4096, 4096, security);
-    }
-
-    private async Task HandleConnectionAsync(NamedPipeServerStream pipe,
+    public async Task<TrayIpcResponse> DispatchAsync(TrayIpcRequest request,
         CancellationToken cancellationToken)
     {
-        using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
-        using var writer = new StreamWriter(pipe, Encoding.UTF8, leaveOpen: true) { AutoFlush = true };
+        TrayEventLogger.Information(
+            $"درخواست محلی '{request.Method}' با شناسه {request.Id} دریافت شد.");
         TrayIpcResponse response;
-        TrayIpcRequest? request = null;
         try
         {
-            var line = await ReadBoundedLineAsync(reader, cancellationToken);
-            request = JsonSerializer.Deserialize<TrayIpcRequest>(line)
-                ?? throw new InvalidDataException("The Tray IPC request was empty.");
-            TrayEventLogger.Information(
-                $"درخواست محلی '{request.Method}' با شناسه {request.Id} دریافت شد.");
             response = request.Method switch
             {
+                TrayIpcProtocol.LaunchIbsngMethod
+                    or TrayIpcProtocol.ConfirmIbsngInstallMethod
+                    or TrayIpcProtocol.ReconcileIbsngMethod
+                    or TrayIpcProtocol.InspectIbsngMethod
+                    or TrayIpcProtocol.ReadIbsngUiMethod =>
+                    await _launcher.LaunchAsync(request, cancellationToken),
                 TrayIpcProtocol.OfficeRemediationLaunchMethod =>
                     await _officeRemediation.LaunchAsync(request, cancellationToken),
                 TrayIpcProtocol.OfficeBugfixConsentMethod =>
-                    _officeRemediation.ConfirmBugfix(request),
+                    await _officeRemediation.ConfirmBugfixAsync(request, cancellationToken),
                 TrayIpcProtocol.WindowsBugfixConsentMethod =>
-                    _windowsRemediation.Confirm(request),
+                    await _windowsRemediation.ConfirmAsync(request, cancellationToken),
                 TrayIpcProtocol.WindowsHelloLaunchMethod =>
                     await _windowsHello.LaunchAsync(request, cancellationToken),
-                _ => await _launcher.LaunchAsync(request, cancellationToken)
+                _ => new TrayIpcResponse(request.Id, false, "UnknownMethod")
             };
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
+        {
+            response = new TrayIpcResponse(request.Id, false, "Cancelled");
+        }
+        catch (Exception ex)
         {
             TrayEventLogger.Error("اجرای درخواست محلی برنامه ناحیه اعلان ناموفق بود: " +
                 $"{ex.GetType().Name}: {ex.Message}");
-            response = new TrayIpcResponse(string.Empty, false, "InvalidRequest",
+            response = new TrayIpcResponse(request.Id, false, "TaskFailed",
                 Message: ex.GetType().Name);
         }
 
-        if (request is not null)
-        {
-            var message = $"درخواست محلی '{request.Method}' با شناسه {request.Id} " +
-                $"با وضعیت {response.State} پایان یافت.";
-            if (response.Success) TrayEventLogger.Information(message);
-            else TrayEventLogger.Warning(message);
-        }
-
-        await writer.WriteLineAsync(JsonSerializer.Serialize(response).AsMemory(), cancellationToken);
-    }
-
-    private static async Task<string> ReadBoundedLineAsync(StreamReader reader,
-        CancellationToken cancellationToken)
-    {
-        var buffer = new char[1];
-        var value = new StringBuilder();
-        while (value.Length <= TrayIpcProtocol.MaxMessageCharacters)
-        {
-            var read = await reader.ReadAsync(buffer, cancellationToken);
-            if (read == 0 || buffer[0] == '\n')
-                return value.ToString().TrimEnd('\r');
-            value.Append(buffer[0]);
-        }
-        throw new InvalidDataException("The Tray request exceeded the allowed size.");
+        var message = $"درخواست محلی '{request.Method}' با شناسه {request.Id} " +
+            $"با وضعیت {response.State} پایان یافت.";
+        if (response.Success) TrayEventLogger.Information(message);
+        else TrayEventLogger.Warning(message);
+        return response with { Id = request.Id };
     }
 }

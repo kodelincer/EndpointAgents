@@ -17,6 +17,14 @@ public static class ServiceIpcProtocol
     public const string RespondToChatActionMethod = "chat.action.respond";
     public const string DiagnoseIbsngMethod = "ibsng.diagnose";
     public const string OpenIbsngMethod = "ibsng.open";
+
+    /// <summary>
+    /// Opens the long-lived user-session channel. After the "Attached" reply the service writes
+    /// <see cref="TrayIpcRequest"/> lines and the Tray answers each with a <see cref="TrayIpcResponse"/>
+    /// line carrying the same id. The service binds the channel to the caller's Windows session and
+    /// user as reported by Windows, never to anything the Tray claims.
+    /// </summary>
+    public const string AttachTrayMethod = "tray.attach";
     public const int MaxMessageCharacters = 64 * 1024;
 }
 

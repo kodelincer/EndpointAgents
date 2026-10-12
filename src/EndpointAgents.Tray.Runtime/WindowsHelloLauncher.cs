@@ -3,12 +3,12 @@ using EndpointAgents.Shared.Windows;
 using System.Diagnostics;
 using System.Security.Cryptography;
 
-using System.Windows.Forms;
-
 namespace EndpointAgents.Tray;
 
-public sealed class WindowsHelloLauncher
+public sealed class WindowsHelloLauncher(IUserConsentPrompt? consent = null)
 {
+    private readonly IUserConsentPrompt _consent = consent ?? new MessageBoxConsentPrompt();
+
     public async Task<TrayIpcResponse> LaunchAsync(TrayIpcRequest request,
         CancellationToken cancellationToken)
     {
@@ -29,11 +29,8 @@ public sealed class WindowsHelloLauncher
             || !await MatchesHashAsync(path, hello.ExpectedSha256, cancellationToken))
             return new TrayIpcResponse(request.Id, false, "WindowsHelloVerificationFailed");
 
-        if (!hello.ChatApproved && MessageBox.Show(
-                "Run the harmless Windows Hello terminal demo from your desktop?",
-                "EndpointAgents Windows demo", MessageBoxButtons.YesNo,
-                MessageBoxIcon.Information, MessageBoxDefaultButton.Button2)
-            != DialogResult.Yes)
+        if (!hello.ChatApproved
+            && !await _consent.ConfirmAsync(UserConsentPrompts.WindowsHello(), cancellationToken))
             return new TrayIpcResponse(request.Id, false, "UserDeclined");
 
         var process = Process.Start(CreateStartInfo(path));

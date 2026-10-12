@@ -20,8 +20,13 @@ public sealed class ServiceIpcServer(
     CommandDispatcher dispatcher,
     IbsngDiagnosticService ibsngDiagnostics,
     IOptions<IbsngOptions> ibsngOptions,
+    TrayChannelRegistry trays,
     ILogger<ServiceIpcServer> logger) : BackgroundService
 {
+    // Each signed-in user keeps one Tray connection open, so leave room for several sessions
+    // plus the short request/response calls.
+    private const int MaxConnections = 32;
+
     private readonly object _submissionGate = new();
     private DateTimeOffset _lastSubmissionUtc = DateTimeOffset.MinValue;
 
@@ -34,7 +39,7 @@ public sealed class ServiceIpcServer(
             try
             {
                 clients.RemoveWhere(task => task.IsCompleted);
-                if (clients.Count >= 4)
+                if (clients.Count >= MaxConnections)
                 {
                     var completed = await Task.WhenAny(clients);
                     clients.Remove(completed);
@@ -95,7 +100,7 @@ public sealed class ServiceIpcServer(
             PipeAccessRights.FullControl, AccessControlType.Allow));
 
         return NamedPipeServerStreamAcl.Create(ServiceIpcProtocol.PipeName,
-            PipeDirection.InOut, 4, PipeTransmissionMode.Byte, PipeOptions.Asynchronous,
+            PipeDirection.InOut, MaxConnections, PipeTransmissionMode.Byte, PipeOptions.Asynchronous,
             16 * 1024, 16 * 1024, security);
     }
 
@@ -111,6 +116,11 @@ public sealed class ServiceIpcServer(
             var line = await ReadBoundedLineAsync(reader, cancellationToken);
             request = JsonSerializer.Deserialize<ServiceIpcRequest>(line)
                 ?? throw new InvalidDataException("The local IPC request was empty.");
+            if (request.Method == ServiceIpcProtocol.AttachTrayMethod)
+            {
+                await AttachTrayAsync(pipe, request, writer, cancellationToken);
+                return;
+            }
             if (ShouldReport(request.Method))
                 logger.LogInformation(
                     "Received local Tray operation {Method} with request id {RequestId}.",
@@ -137,6 +147,55 @@ public sealed class ServiceIpcServer(
         }
 
         await writer.WriteLineAsync(JsonSerializer.Serialize(response).AsMemory(), cancellationToken);
+    }
+
+    /// <summary>
+    /// Keeps this connection as the Tray channel of the caller's session until it disconnects.
+    /// </summary>
+    private async Task AttachTrayAsync(NamedPipeServerStream pipe, ServiceIpcRequest request,
+        StreamWriter writer, CancellationToken cancellationToken)
+    {
+        TrayAttachPolicy.Caller caller;
+        string? refusal;
+        try
+        {
+            caller = TrayAttachPolicy.Identify(pipe);
+            refusal = TrayAttachPolicy.Check(caller);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(ex, "Could not identify a Tray that tried to attach.");
+            caller = new TrayAttachPolicy.Caller(-1, string.Empty, string.Empty);
+            refusal = "The Tray could not be identified.";
+        }
+
+        if (refusal is not null)
+        {
+            logger.LogWarning("Refused a Tray attach from session {SessionId} ({UserName}): {Reason}",
+                caller.SessionId, caller.UserName, refusal);
+            await writer.WriteLineAsync(JsonSerializer.Serialize(new ServiceIpcResponse(
+                request.Id, false, "TrayRefused", Message: refusal)).AsMemory(), cancellationToken);
+            return;
+        }
+
+        await writer.WriteLineAsync(JsonSerializer.Serialize(new ServiceIpcResponse(
+            request.Id, true, "Attached")).AsMemory(), cancellationToken);
+        // Nothing else is in flight until the service sends a task, so a fresh reader on the same
+        // stream cannot miss buffered input.
+        await using var channel = new TrayChannel(pipe, caller.SessionId, caller.UserSid,
+            caller.UserName);
+        trays.Register(channel);
+        logger.LogInformation("Tray attached for session {SessionId} ({UserName}).",
+            caller.SessionId, caller.UserName);
+        try
+        {
+            await channel.RunAsync(cancellationToken);
+        }
+        finally
+        {
+            trays.Unregister(channel);
+            logger.LogInformation("Tray detached from session {SessionId}.", caller.SessionId);
+        }
     }
 
     private async Task<ServiceIpcResponse> DispatchAsync(NamedPipeServerStream pipe,

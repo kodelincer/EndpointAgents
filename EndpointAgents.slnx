@@ -10,6 +10,7 @@
     <Project Path="src/EndpointAgents.Platform.Windows.Tests/EndpointAgents.Platform.Windows.Tests.csproj" />
     <Project Path="src/EndpointAgents.Service/EndpointAgents.Service.csproj" />
     <Project Path="src/EndpointAgents.Shared/EndpointAgents.Shared.csproj" />
+    <Project Path="src/EndpointAgents.Tray.Runtime/EndpointAgents.Tray.Runtime.csproj" />
     <Project Path="src/EndpointAgents.Tray/EndpointAgents.Tray.csproj" />
   </Folder>
 </Solution>

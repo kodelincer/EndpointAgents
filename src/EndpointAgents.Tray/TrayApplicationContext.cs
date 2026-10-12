@@ -13,7 +13,7 @@ public sealed class TrayApplicationController : IDisposable
     private readonly Forms.Timer _statusTimer = new() { Interval = 2_000 };
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Action _exitApplication;
-    private readonly Task _ipcServerTask;
+    private readonly Task _serviceChannelTask;
     private readonly EventWaitHandle _showRequested = new(false, EventResetMode.AutoReset,
         ShowEventName(System.Diagnostics.Process.GetCurrentProcess().SessionId));
     private readonly RegisteredWaitHandle _showRequests;
@@ -58,9 +58,9 @@ public sealed class TrayApplicationController : IDisposable
                 if (!_disposed) OpenWindow(SupportSection.Helpdesk);
             }), null, Timeout.Infinite, executeOnlyOnce: false);
 
-        var server = new TrayIpcServer(System.Diagnostics.Process.GetCurrentProcess().SessionId);
-        _ipcServerTask = server.RunAsync(_shutdown.Token);
-        _ = _ipcServerTask.ContinueWith(task =>
+        var channel = new TrayServiceChannel(new TrayTaskDispatcher());
+        _serviceChannelTask = channel.RunAsync(_shutdown.Token);
+        _ = _serviceChannelTask.ContinueWith(task =>
             TrayEventLogger.Error("کانال فرمان نشست کاربر متوقف شد: " +
                 task.Exception?.GetBaseException().Message),
             TaskContinuationOptions.OnlyOnFaulted);

@@ -4,17 +4,18 @@ using System.IO.Enumeration;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 
-using System.Windows.Forms;
-
 namespace EndpointAgents.Tray;
 
 public sealed class IbsngDialerLauncher
 {
     private readonly IbsngDialerUiInspector _uiInspector;
+    private readonly IUserConsentPrompt _consent;
 
-    public IbsngDialerLauncher(IbsngDialerUiInspector? uiInspector = null)
+    public IbsngDialerLauncher(IbsngDialerUiInspector? uiInspector = null,
+        IUserConsentPrompt? consent = null)
     {
         _uiInspector = uiInspector ?? new IbsngDialerUiInspector();
+        _consent = consent ?? new MessageBoxConsentPrompt();
     }
 
     /// <summary>Executes an approved dialer operation in the interactive user session.</summary>
@@ -22,7 +23,7 @@ public sealed class IbsngDialerLauncher
         CancellationToken cancellationToken)
     {
         if (request.Method == TrayIpcProtocol.ConfirmIbsngInstallMethod)
-            return ConfirmInstall(request);
+            return await ConfirmInstallAsync(request, cancellationToken);
         if (request.Method == TrayIpcProtocol.ReconcileIbsngMethod)
             return await ReconcileResponseAsync(request, cancellationToken);
         if (request.Method == TrayIpcProtocol.InspectIbsngMethod)
@@ -71,17 +72,12 @@ public sealed class IbsngDialerLauncher
                 reconciliation.StoppedProcessIds);
     }
 
-    private static TrayIpcResponse ConfirmInstall(TrayIpcRequest request)
+    private async Task<TrayIpcResponse> ConfirmInstallAsync(TrayIpcRequest request,
+        CancellationToken cancellationToken)
     {
-        var consent = MessageBox.Show(
-            $"دستیار پشتیبانی نیاز دارد نسخه تأییدشده IBSng را نصب یا تعمیر کند.\r\n\r\n" +
-            $"مسیر مقصد:\r\n{request.DialerPath}\r\n\r\nآیا ادامه می‌دهید؟",
-            "تأیید نصب یا تعمیر IBSng",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Information,
-            MessageBoxDefaultButton.Button2,
-            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
-        return consent == DialogResult.Yes
+        var approved = await _consent.ConfirmAsync(
+            UserConsentPrompts.IbsngInstall(request.DialerPath), cancellationToken);
+        return approved
             ? new TrayIpcResponse(request.Id, true, "UserApproved")
             : new TrayIpcResponse(request.Id, false, "UserDeclined",
                 Message: "The endpoint user declined IBSng installation or repair.");

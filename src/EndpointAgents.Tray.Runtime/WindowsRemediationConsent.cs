@@ -1,13 +1,14 @@
 using EndpointAgents.Shared.LocalIpc;
 using EndpointAgents.Shared.Windows;
 
-using System.Windows.Forms;
-
 namespace EndpointAgents.Tray;
 
-public sealed class WindowsRemediationConsent
+public sealed class WindowsRemediationConsent(IUserConsentPrompt? consent = null)
 {
-    public TrayIpcResponse Confirm(TrayIpcRequest request)
+    private readonly IUserConsentPrompt _consent = consent ?? new MessageBoxConsentPrompt();
+
+    public async Task<TrayIpcResponse> ConfirmAsync(TrayIpcRequest request,
+        CancellationToken cancellationToken)
     {
         var bugfix = request.WindowsBugfixConsent;
         if (request.Method != TrayIpcProtocol.WindowsBugfixConsentMethod
@@ -16,15 +17,10 @@ public sealed class WindowsRemediationConsent
             return new TrayIpcResponse(request.Id, false,
                 "InvalidWindowsBugfixRequest");
 
-        var consent = MessageBox.Show(
-            $"The helpdesk recommends this Windows activation repair:\n\n" +
-            $"{bugfix.DisplayName}\n\n{bugfix.Description}\n\n" +
-            "It will run silently with local SYSTEM privileges and no arguments. Run it now?",
-            "EndpointAgents Windows repair",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button2);
-        return consent == DialogResult.Yes
+        var approved = await _consent.ConfirmAsync(
+            UserConsentPrompts.WindowsBugfix(bugfix.DisplayName, bugfix.Description),
+            cancellationToken);
+        return approved
             ? new TrayIpcResponse(request.Id, true, "UserApproved")
             : new TrayIpcResponse(request.Id, false, "UserDeclined");
     }

@@ -78,9 +78,6 @@ builder.Services.AddOptions<IbsngOptions>()
         "Diagnostics:Ibsng:MaxProbeTargets must be between 1 and 32.")
     .Validate(options => Path.IsPathFullyQualified(options.QuarantineRoot),
         "Diagnostics:Ibsng:QuarantineRoot must be an absolute path.")
-    .Validate(options => !string.IsNullOrWhiteSpace(options.TrayPipePrefix)
-        && options.TrayPipePrefix.IndexOfAny(Path.GetInvalidFileNameChars()) < 0,
-        "Diagnostics:Ibsng:TrayPipePrefix must be a valid pipe-name prefix.")
     .Validate(options => options.TrayConnectTimeoutSeconds is >= 1 and <= 30,
         "Diagnostics:Ibsng:TrayConnectTimeoutSeconds must be between 1 and 30.")
     .Validate(options => options.TrayResponseTimeoutSeconds is >= 1 and <= 120,
@@ -144,6 +141,7 @@ builder.Services.AddSingleton<WindowsArtifactClient>();
 builder.Services.AddSingleton<WindowsBugfixRunner>();
 builder.Services.AddSingleton<PackageArtifactClient>();
 builder.Services.AddSingleton<PackageRunner>();
+builder.Services.AddSingleton<TrayChannelRegistry>();
 builder.Services.AddSingleton<ITrayCommandClient, TrayCommandClient>();
 builder.Services.AddSingleton(provider => new Uri(
     provider.GetRequiredService<IOptions<ControlPlaneOptions>>().Value.HubUrl));

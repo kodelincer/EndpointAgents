@@ -30,8 +30,7 @@ public sealed class IbsngOptions
 
     public int MaxProbeTargets { get; set; } = 10;
 
-    public string TrayPipePrefix { get; set; } = "EndpointAgents.Tray";
-
+    /// <summary>How long to wait for the user's Tray to attach before a task fails.</summary>
     public int TrayConnectTimeoutSeconds { get; set; } = 5;
 
     public int TrayResponseTimeoutSeconds { get; set; } = 30;

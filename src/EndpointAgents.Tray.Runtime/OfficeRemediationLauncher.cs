@@ -5,17 +5,18 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
-using System.Windows.Forms;
-
 namespace EndpointAgents.Tray;
 
 /// <summary>
 /// Performs the final user-session trust check, obtains local consent, and launches
 /// an approved Office executable without caller-controlled arguments.
 /// </summary>
-public sealed class OfficeRemediationLauncher
+public sealed class OfficeRemediationLauncher(IUserConsentPrompt? consent = null)
 {
-    public TrayIpcResponse ConfirmBugfix(TrayIpcRequest request)
+    private readonly IUserConsentPrompt _consent = consent ?? new MessageBoxConsentPrompt();
+
+    public async Task<TrayIpcResponse> ConfirmBugfixAsync(TrayIpcRequest request,
+        CancellationToken cancellationToken)
     {
         var bugfix = request.OfficeBugfixConsent;
         if (request.Method != TrayIpcProtocol.OfficeBugfixConsentMethod
@@ -23,16 +24,10 @@ public sealed class OfficeRemediationLauncher
             return new TrayIpcResponse(request.Id, false,
                 "InvalidOfficeBugfixRequest");
 
-        var consent = MessageBox.Show(
-            $"The helpdesk recommends this approved Office repair:\n\n" +
-            $"{bugfix.DisplayName}\n\n{bugfix.Description}\n\n" +
-            "The EndpointAgents service will run the verified repair with system privileges. " +
-            "No username or password will be requested or passed. Run it now?",
-            "EndpointAgents Office repair",
-            MessageBoxButtons.YesNo,
-            MessageBoxIcon.Warning,
-            MessageBoxDefaultButton.Button2);
-        return consent == DialogResult.Yes
+        var approved = await _consent.ConfirmAsync(
+            UserConsentPrompts.OfficeBugfix(bugfix.DisplayName, bugfix.Description),
+            cancellationToken);
+        return approved
             ? new TrayIpcResponse(request.Id, true, "UserApproved",
                 OfficeRemediationArtifactId: bugfix.ArtifactId)
             : new TrayIpcResponse(request.Id, false, "UserDeclined",
@@ -83,15 +78,10 @@ public sealed class OfficeRemediationLauncher
 
         if (!remediation.ChatApproved)
         {
-            var consent = MessageBox.Show(
-                $"The helpdesk recommends this Office tool:\n\n" +
-                $"{remediation.DisplayName}\n\n{remediation.Description}\n\n" +
-                $"{trustMessage}\n\nRun it now? No command-line arguments or credentials will be passed.",
-                "EndpointAgents Office tool",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Information,
-                MessageBoxDefaultButton.Button2);
-            if (consent != DialogResult.Yes)
+            var approved = await _consent.ConfirmAsync(
+                UserConsentPrompts.OfficeTool(remediation.DisplayName, remediation.Description,
+                    trustMessage), cancellationToken);
+            if (!approved)
                 return new TrayIpcResponse(request.Id, false, "UserDeclined",
                     OfficeRemediationArtifactId: remediation.ArtifactId,
                     SignerSubject: signer);
@@ -120,12 +110,12 @@ public sealed class OfficeRemediationLauncher
         if (trustPolicy == OfficeArtifactTrustPolicies.MicrosoftSigned)
         {
             requireMicrosoftSignature = true;
-            message = "This executable must have a trusted Microsoft signature.";
+            message = "امضای معتبر مایکروسافت این ابزار بررسی شده است.";
             return true;
         }
         if (trustPolicy == OfficeArtifactTrustPolicies.AdministratorApprovedSha256)
         {
-            message = "This retailer executable is approved by its exact administrator-managed SHA-256 hash; its publisher signature is not verified.";
+            message = "این ابزار با نسخه دقیق تأییدشده مدیر سیستم یکسان است؛ امضای ناشر آن بررسی نمی‌شود.";
             return true;
         }
         return false;
