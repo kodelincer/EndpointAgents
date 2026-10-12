@@ -32,7 +32,7 @@ function Wait-Port([int]$Port, [string]$Name) {
     throw "$Name did not start on port $Port within $StartupTimeoutSeconds seconds; check its window."
 }
 
-if (Get-Process -Name "EndpointAgents.Service", "EndpointAgents.Tray" -ErrorAction SilentlyContinue) {
+if (Get-Process -Name "EndpointAgents.Service", "EndpointAgents.Tray", "EndpointAgents.TrayWeb" -ErrorAction SilentlyContinue) {
     throw "An EndpointAgents service or Tray is already running. Close it first."
 }
 

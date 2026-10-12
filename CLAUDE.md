@@ -11,15 +11,17 @@ within strict allow-lists, repair the user's PC through the endpoint service.
 | `src/EndpointAgents.Shared` | Contracts used by both endpoint and server (RpcRequest/Response/Error, AgentRegistration, command names, DTOs). |
 | `src/EndpointAgents.Core` | Endpoint engine: `IEndpointCommandHandler`, `CommandDispatcher`, execution context, result pattern, validation. |
 | `src/EndpointAgents.Platform.Windows` | Real Windows features (endpoint info, internet, IBSng, printers, services, registry, software, VPN, Office/Windows activation and repairs). Most feature work goes here. |
-| `src/EndpointAgents.Service` | Windows service (LocalSystem): owns the control-plane connection (SignalR + device token), reconnect, RPC -> `CommandDispatcher`, named-pipe server for the Tray. |
-| `src/EndpointAgents.Tray` | WinUI 3 (unpackaged) app in the interactive user session: helpdesk chat, Status & Control, Reports (Event Log). Runs only narrow user-session actions requested by the Service. |
+| `src/EndpointAgents.Service` | Windows service (LocalSystem): owns the control-plane connection (SignalR + device token), reconnect, RPC -> `CommandDispatcher`, the only named pipe (Tray calls plus the attached Tray channel it pushes user-session tasks down). |
+| `src/EndpointAgents.TrayWeb` | The Tray (default): WPF host + WebView2 + React UI in `ui/` for the interactive user session: helpdesk chat, Status & Control, Reports, in-app consent. Page reaches the PC only through the allow-listed `TrayBridge`. |
+| `src/EndpointAgents.Tray.Runtime` | Shared Tray pieces: service channel (`tray.attach`), catalogued user-session task handlers, consent prompt, status, logging, tray icon. |
+| `src/EndpointAgents.Tray` | Previous WinUI 3 Tray, kept until the WebView2 Tray is accepted (`-LegacyTray`). |
 | `src/ControlPlane.Api` | ASP.NET Core Windows service on 5052: `AgentHub` (remote, authenticated) and `dashboard-hub` (loopback), REST, SQLite (WAL) chat/runs/audit, Hermes orchestration (`Hermes/`), loopback MCP at `/internal/mcp` (`Tools/`), hash-verified file repository (`Files/`). |
 | `src/ControlPlane.Web` | Next.js operator dashboard on 127.0.0.1:3000; loopback-only, never served by the API. |
 | `deploy/hermes/` | `SOUL.md` (agent identity/rules) and reviewed skills (`office-support`, `windows-support`, `ibsng-support`), promoted manually into the Hermes profile. |
 | `deploy/control-plane/FileRepository` | Development copy of repair artifacts and their manifests. |
 
 Flows:
-- Chat: Tray -> named pipe -> Service -> `AgentHub` -> ControlPlane.Api (SQLite) -> Hermes `/v1/runs` (127.0.0.1:8642) -> MCP tools -> allow-listed RPC -> Service -> handler.
+- Chat: Tray -> service pipe -> Service -> `AgentHub` -> ControlPlane.Api (SQLite) -> Hermes `/v1/runs` (127.0.0.1:8642) -> MCP tools -> allow-listed RPC -> Service -> handler.
 - Operator dispatch: dashboard -> API -> `IHubContext<AgentHub>` -> Service (Tray consent gate).
 
 Authority boundary: ControlPlane.Api, not Hermes, owns device/user identity, consent, command allow-listing
@@ -51,10 +53,12 @@ Stop any installed `EndpointAgents.Service` and running Tray before the dev scri
   tool permission; the ControlPlane and Hermes MCP allow-lists must agree.
 - User-facing agent replies: simple Persian, at most three short sentences, no tool names, IDs, paths or JSON (see `deploy/hermes/SOUL.md`).
 - Development keys in `appsettings.Development.json` are localhost-only test values; never commit real or production secrets, and never log run capabilities, device tokens or LLM keys.
-- UI: follow `DESIGN.md` (dashboard: dense, light-first, OKLCH tokens; Tray: native Fluent/WinUI, Persian RTL, no visible WinForms) and `PRODUCT.md`.
+- UI: follow `DESIGN.md` (dashboard: dense, light-first, OKLCH tokens; Tray: Persian RTL messenger in WebView2, metro-line motif, follows Windows light/dark) and `PRODUCT.md`.
+- The Tray and its web page run only catalogued operations; never add a bridge or channel method that runs arbitrary commands or files.
 
 ## Docs
 
 - `docs/control-plane-operations.md` - ports, routes, dev and production install, troubleshooting
+- `docs/tray.md` - Tray architecture, one-pipe service channel, WebView2 bridge, preview and WebView2 install
 - `docs/hermes-support-agent.md` - enrollment, Hermes install, MCP tools, consent lifecycle, verification checklist
 - `docs/windows-activation.md`, `docs/office-activation.md`, `docs/office-bugfix.md`, `docs/office-inventory.md`, `docs/ibsng-support.md` - feature specifics

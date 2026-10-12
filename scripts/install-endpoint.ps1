@@ -10,7 +10,12 @@ param(
     # Without one, the endpoint refuses every repair package.
     [string[]]$PackageSigningPublicKey = @(),
     # Also require signatures on Office and Windows activation repairs.
-    [switch]$RequireSignedActivationRepairs
+    [switch]$RequireSignedActivationRepairs,
+    # Install the previous WinUI Tray instead of the WebView2 Tray.
+    [switch]$LegacyTray,
+    # Microsoft Edge WebView2 Runtime "Evergreen Standalone Installer" (x64), used only when the
+    # runtime is missing. Defaults to deploy\endpoint\MicrosoftEdgeWebView2RuntimeInstallerX64.exe.
+    [string]$WebView2InstallerPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -26,6 +31,42 @@ $windowsRemediationRoot = Join-Path $env:ProgramData "EndpointAgents\WindowsReme
 $systemSid = "S-1-5-18"
 $administratorsSid = "S-1-5-32-544"
 $usersSid = "S-1-5-32-545"
+
+function Test-WebView2Runtime {
+    $clientKey = "Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+    foreach ($path in "HKLM:\SOFTWARE\WOW6432Node\$clientKey", "HKLM:\SOFTWARE\$clientKey") {
+        $version = (Get-ItemProperty -Path $path -Name pv -ErrorAction SilentlyContinue).pv
+        if ($version -and $version -ne "0.0.0.0") { return $true }
+    }
+    return $false
+}
+
+# The WebView2 Tray needs the Edge WebView2 Runtime. Windows 11 ships it; some Windows 10 PCs do
+# not. Install it from Microsoft's offline installer, only after checking that Microsoft signed it.
+function Ensure-WebView2Runtime([string]$InstallerPath) {
+    if (Test-WebView2Runtime) {
+        Write-Host "Microsoft Edge WebView2 Runtime is installed."
+        return
+    }
+    if (-not $InstallerPath) {
+        $InstallerPath = Join-Path $repoRoot "deploy\endpoint\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+    }
+    if (-not (Test-Path -LiteralPath $InstallerPath)) {
+        throw ("Microsoft Edge WebView2 Runtime is not installed and no offline installer was found at " +
+            "$InstallerPath. Download the x64 Evergreen Standalone Installer from " +
+            "https://developer.microsoft.com/microsoft-edge/webview2/ and pass -WebView2InstallerPath, " +
+            "or install with -LegacyTray.")
+    }
+    $signature = Get-AuthenticodeSignature -LiteralPath $InstallerPath
+    if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "O=Microsoft Corporation") {
+        throw "The WebView2 installer at $InstallerPath is not validly signed by Microsoft; refusing to run it."
+    }
+    Write-Host "Installing Microsoft Edge WebView2 Runtime from $InstallerPath..."
+    $process = Start-Process -FilePath $InstallerPath -ArgumentList "/silent", "/install" -Wait -PassThru
+    if ($process.ExitCode -ne 0 -or -not (Test-WebView2Runtime)) {
+        throw "Microsoft Edge WebView2 Runtime installation failed with exit code $($process.ExitCode)."
+    }
+}
 
 function Assert-Administrator {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -289,8 +330,18 @@ dotnet publish (Join-Path $repoRoot "src\EndpointAgents.Service\EndpointAgents.S
 if ($LASTEXITCODE -ne 0) {
     throw "Endpoint service publish failed with exit code $LASTEXITCODE."
 }
-dotnet publish (Join-Path $repoRoot "src\EndpointAgents.Tray\EndpointAgents.Tray.csproj") `
-    -c $Configuration -r win-x64 --self-contained false -o $trayOutput
+if ($LegacyTray) {
+    dotnet publish (Join-Path $repoRoot "src\EndpointAgents.Tray\EndpointAgents.Tray.csproj") `
+        -c $Configuration -r win-x64 --self-contained false -o $trayOutput
+}
+else {
+    Ensure-WebView2Runtime $WebView2InstallerPath
+    # A prebuilt UI (ui\dist) means Node.js is not needed on this PC.
+    $prebuiltUi = Test-Path -LiteralPath (Join-Path $repoRoot "src\EndpointAgents.TrayWeb\ui\dist\index.html")
+    $uiArguments = if ($prebuiltUi) { @("-p:SkipTrayUi=true") } else { @() }
+    dotnet publish (Join-Path $repoRoot "src\EndpointAgents.TrayWeb\EndpointAgents.TrayWeb.csproj") `
+        -c $Configuration -r win-x64 --self-contained false -o $trayOutput @uiArguments
+}
 if ($LASTEXITCODE -ne 0) {
     throw "Endpoint Tray publish failed with exit code $LASTEXITCODE."
 }
@@ -314,7 +365,7 @@ Remove-Item -LiteralPath $serviceSettingsPath -Force
 Set-ExactProtectedTreeAcl $serviceOutput
 
 $serviceExe = Join-Path $serviceOutput "EndpointAgents.Service.exe"
-$trayExe = Join-Path $trayOutput "EndpointAgents.Tray.exe"
+$trayExe = Join-Path $trayOutput $(if ($LegacyTray) { "EndpointAgents.Tray.exe" } else { "EndpointAgents.TrayWeb.exe" })
 
 Invoke-NativeChecked "sc.exe" "Creating service $serviceName" @(
     "create", $serviceName,

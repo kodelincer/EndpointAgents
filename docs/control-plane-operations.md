@@ -74,7 +74,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 ```
 
 The command builds and starts both `EndpointAgents.Service` and
-`EndpointAgents.Tray`; press Ctrl+C to stop both. Stop an installed endpoint
+the WebView2 Tray (`EndpointAgents.TrayWeb`; add `-LegacyTray` for the WinUI one); press Ctrl+C to stop both. Stop an installed endpoint
 service and exit any existing Tray instance before using the development host.
 
 In Visual Studio, select the shared `Endpoint Agent - Service + Tray` launch
@@ -143,7 +143,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass `
 ```
 
 This is one installation action: the background service starts immediately and
-the Tray starts for each user at their next interactive logon. Remove both
+the Tray starts for each user at their next interactive logon. The WebView2 Tray needs the
+Microsoft Edge WebView2 Runtime; the script installs it from Microsoft's signed offline installer
+when missing (see `docs/tray.md`). Remove both
 registrations with:
 
 ```powershell

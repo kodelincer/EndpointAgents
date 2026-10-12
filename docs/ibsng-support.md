@@ -73,9 +73,9 @@ while the system has no authentication or authorization.
 ## Launch and credential boundary
 
 A Windows Service runs in Session 0 and cannot safely interact with the logged-in
-user's dialer window. The service verifies the executable and sends a secured
-named-pipe request to `EndpointAgents.Tray`, which launches it unelevated in the
-interactive user session. The user enters username and password directly in the
+user's dialer window. The service verifies the executable and sends the launch
+task down the Tray channel attached for that user's session (see `docs/tray.md`), and the
+Tray launches it unelevated in the interactive user session. The user enters username and password directly in the
 dialer; credentials never enter Control Plane requests or activity history.
 
 The supplied IBSng executable is unsigned and uses an old skinnable interface.

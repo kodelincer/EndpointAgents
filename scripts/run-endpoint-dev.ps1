@@ -1,17 +1,20 @@
 [CmdletBinding()]
 param(
     [ValidateSet("Debug", "Release")]
-    [string]$Configuration = "Debug"
+    [string]$Configuration = "Debug",
+    # Run the previous WinUI Tray instead of the WebView2 Tray.
+    [switch]$LegacyTray
 )
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $serviceProject = Join-Path $repoRoot "src\EndpointAgents.Service\EndpointAgents.Service.csproj"
-$trayProject = Join-Path $repoRoot "src\EndpointAgents.Tray\EndpointAgents.Tray.csproj"
+$trayName = if ($LegacyTray) { "EndpointAgents.Tray" } else { "EndpointAgents.TrayWeb" }
+$trayProject = Join-Path $repoRoot "src\$trayName\$trayName.csproj"
 $serviceExe = Join-Path $repoRoot `
     "src\EndpointAgents.Service\bin\$Configuration\net10.0\EndpointAgents.Service.exe"
 $trayExe = Join-Path $repoRoot `
-    "src\EndpointAgents.Tray\bin\$Configuration\net10.0-windows10.0.17763.0\win-x64\EndpointAgents.Tray.exe"
+    "src\$trayName\bin\$Configuration\net10.0-windows10.0.17763.0\win-x64\$trayName.exe"
 $serviceProcess = $null
 $trayProcess = $null
 
@@ -27,10 +30,10 @@ function Assert-NoEndpointProcesses {
     }
 
     $currentSessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
-    $existingTray = Get-Process -Name "EndpointAgents.Tray" -ErrorAction SilentlyContinue |
+    $existingTray = Get-Process -Name "EndpointAgents.Tray", "EndpointAgents.TrayWeb" -ErrorAction SilentlyContinue |
         Where-Object SessionId -eq $currentSessionId
     if ($null -ne $existingTray) {
-        throw "EndpointAgents.Tray is already running in this Windows session. Exit it before starting the development host."
+        throw "An EndpointAgents Tray is already running in this Windows session. Exit it before starting the development host."
     }
 }
 
@@ -91,10 +94,10 @@ try {
         Write-Host "EndpointAgents.Service exited with code $($serviceProcess.ExitCode)."
     }
     if ($trayProcess.HasExited) {
-        Write-Host "EndpointAgents.Tray exited with code $($trayProcess.ExitCode)."
+        Write-Host "$trayName exited with code $($trayProcess.ExitCode)."
     }
 }
 finally {
-    Stop-StartedProcess $trayProcess "EndpointAgents.Tray"
+    Stop-StartedProcess $trayProcess $trayName
     Stop-StartedProcess $serviceProcess "EndpointAgents.Service"
 }
