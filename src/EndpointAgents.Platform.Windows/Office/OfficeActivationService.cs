@@ -28,10 +28,12 @@ public sealed class OfficeActivationService(
         }
 
         var products = probes.SelectMany(probe => probe.Products).ToArray();
-        // Editions without an installed key are listed but do not decide the state.
-        var overallState = GetOverallState(
-            OfficeActivationRecommendation.WithInstalledKey(products).ToArray(), probes,
-            inventory.Installed);
+        // Editions without an installed key are listed but do not decide the state;
+        // when no edition has a key at all, Office is simply not activated.
+        var keyed = OfficeActivationRecommendation.WithInstalledKey(products).ToArray();
+        var overallState = keyed.Length == 0 && products.Length > 0
+            ? OfficeActivationStates.Unlicensed
+            : GetOverallState(keyed, probes, inventory.Installed);
         var recommendation = OfficeActivationRecommendation.Evaluate(volumeResult);
         var kmsHealthy = volumeResult is not null
             && OfficeActivationRecommendation.IsHealthyKms(volumeResult);
