@@ -359,7 +359,7 @@ public sealed class EndpointInfoCommandHandler : IEndpointCommandHandler
         return bytes.Length == 0 ? null : string.Join("-", bytes.Select(x => x.ToString("X2")));
     }
 
-    private static bool IsLikelyVirtual(NetworkInterface adapter)
+    internal static bool IsLikelyVirtual(NetworkInterface adapter)
     {
         var text = $"{adapter.Name} {adapter.Description}".ToLowerInvariant();
         return text.Contains("virtual", StringComparison.Ordinal)
@@ -369,7 +369,7 @@ public sealed class EndpointInfoCommandHandler : IEndpointCommandHandler
             || text.Contains("loopback", StringComparison.Ordinal);
     }
 
-    private static bool IsLikelyVpn(NetworkInterface adapter)
+    internal static bool IsLikelyVpn(NetworkInterface adapter)
     {
         var text = $"{adapter.Name} {adapter.Description}".ToLowerInvariant();
         return adapter.NetworkInterfaceType == NetworkInterfaceType.Ppp
