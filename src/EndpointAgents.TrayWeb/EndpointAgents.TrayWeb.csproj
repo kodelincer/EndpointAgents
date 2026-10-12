@@ -1,0 +1,61 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Tray: a thin .NET host (window, notification icon, service channel) around a local
+       web UI rendered by the WebView2 runtime that ships with Windows. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <PlatformTarget>x64</PlatformTarget>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>EndpointAgents.TrayWeb</RootNamespace>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WPF reads DPI awareness from the manifest; the WinForms analyzer assumes WinForms owns it. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+    <TrayUiDir>$(MSBuildProjectDirectory)\ui\</TrayUiDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WPF and WinForms both define these; the Tray uses WPF for windows and WinForms only for NotifyIcon. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+    <ProjectReference Include="..\EndpointAgents.Shared\EndpointAgents.Shared.csproj" />
+    <ProjectReference Include="..\EndpointAgents.Tray.Runtime\EndpointAgents.Tray.Runtime.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="ui\**" />
+    <Compile Remove="ui\**" />
+  </ItemGroup>
+
+  <!-- Builds the web UI with Vite (Node is a build-time dependency only) and ships ui\dist as wwwroot. -->
+  <Target Name="BuildTrayUi" BeforeTargets="AssignTargetPaths" Condition="'$(SkipTrayUi)' != 'true'"
+          Inputs="@(TrayUiSource)" Outputs="$(TrayUiDir)dist\index.html">
+    <Exec Command="npm ci --no-audit --no-fund" WorkingDirectory="$(TrayUiDir)"
+          Condition="!Exists('$(TrayUiDir)node_modules')" />
+    <Exec Command="npm run build" WorkingDirectory="$(TrayUiDir)" />
+  </Target>
+
+  <ItemGroup>
+    <TrayUiSource Include="ui\src\**\*;ui\index.html;ui\package.json;ui\vite.config.ts;ui\public\**\*" />
+  </ItemGroup>
+
+  <Target Name="IncludeTrayUi" AfterTargets="BuildTrayUi" BeforeTargets="AssignTargetPaths">
+    <ItemGroup>
+      <TrayUiFile Include="$(TrayUiDir)dist\**\*" />
+      <Content Include="@(TrayUiFile)"
+               Link="wwwroot\%(TrayUiFile.RecursiveDir)%(TrayUiFile.Filename)%(TrayUiFile.Extension)"
+               CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+
+</Project>

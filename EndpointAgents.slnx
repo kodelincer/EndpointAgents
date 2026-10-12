@@ -12,5 +12,6 @@
     <Project Path="src/EndpointAgents.Shared/EndpointAgents.Shared.csproj" />
     <Project Path="src/EndpointAgents.Tray.Runtime/EndpointAgents.Tray.Runtime.csproj" />
     <Project Path="src/EndpointAgents.Tray/EndpointAgents.Tray.csproj" />
+    <Project Path="src/EndpointAgents.TrayWeb/EndpointAgents.TrayWeb.csproj" />
   </Folder>
 </Solution>
