@@ -77,5 +77,5 @@ troubleshooting, and `docs/tray.md` for the Tray architecture.
   `no-input-repair-sample.bat` no longer matches the SHA-256 pinned in its `package.json`.
   It predates the Tray work; re-pin the package with `.\scripts\test-bat-playbook.ps1 -Fix -Sign`
   after reviewing the file.
-- **Not yet done:** a live run of the WebView2 Tray against the real service on a user PC and the
-  Hermes skill sync check after the latest `deploy\hermes` changes.
+- **Live check (2026-10-13):** the full stack ran from this branch on a dev PC. The service accepted the WebView2 Tray's attach (it needs `TokenImpersonationLevel.Impersonation`; `Identification` makes the caller's token unreadable on the service side). The Hermes profile was synced and in sync.
+- **Still to do:** run a real repair end to end through the new Tray's approval sheet, and delete the WinUI Tray once the new one is accepted.

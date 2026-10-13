@@ -59,7 +59,7 @@ public sealed class TrayServiceChannel(TrayTaskDispatcher dispatcher,
     private async Task RunOnceAsync(CancellationToken cancellationToken)
     {
         await using var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut,
-            PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
+            PipeOptions.Asynchronous, TokenImpersonationLevel.Impersonation);
         using (var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
         {
             connectTimeout.CancelAfter(TimeSpan.FromSeconds(3));

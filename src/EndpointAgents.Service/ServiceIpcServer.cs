@@ -164,7 +164,7 @@ public sealed class ServiceIpcServer(
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            logger.LogWarning(ex, "Could not identify a Tray that tried to attach.");
+            logger.LogWarning(ex, "Could not identify a Tray that tried to attach: {Detail}", ex.ToString());
             caller = new TrayAttachPolicy.Caller(-1, string.Empty, string.Empty);
             refusal = "The Tray could not be identified.";
         }
