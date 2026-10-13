@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Data.Sqlite;
+using ControlPlane.Api.Security;
 using System.Net;
+using System.Net.Http.Json;
 
 namespace ControlPlane.Api.Tests;
 
@@ -41,6 +43,20 @@ public sealed class ControlPlaneApiFactory : WebApplicationFactory<Program>
             SqliteConnection.ClearAllPools();
             Directory.Delete(FileRepositoryRoot, recursive: true);
         }
+    }
+
+    /// <summary>A loopback client signed in as a fresh operator with the given role.</summary>
+    public async Task<HttpClient> CreateOperatorClientAsync(string role = OperatorRoles.Admin,
+        CancellationToken cancellationToken = default)
+    {
+        const string password = "test-operator-password";
+        var userName = $"{role}-{Guid.NewGuid():N}"[..32];
+        await Services.GetRequiredService<OperatorUserStore>().CreateAsync(userName,
+            $"Test {role}", role, password, mustChangePassword: false, cancellationToken);
+        var client = CreateClient();
+        (await client.PostAsJsonAsync("/api/auth/sign-in",
+            new { userName, password }, cancellationToken)).EnsureSuccessStatusCode();
+        return client;
     }
 
     public HttpClient CreateRemoteClient()

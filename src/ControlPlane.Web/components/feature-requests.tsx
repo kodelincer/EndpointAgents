@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/components/auth-gate";
 import { CircleAlert, Lightbulb, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -34,6 +35,8 @@ export function FeatureRequests() {
 
   const counts = useMemo(() => featureRequestCounts(items), [items]);
   const visible = items.filter(item => filter === "All" || item.status === filter);
+
+  const canTriage = useAuth().can("feature-requests.triage");
 
   const changeStatus = async (item: FeatureRequest, status: FeatureRequest["status"]) => {
     setBusy(item.requestId);
@@ -81,7 +84,8 @@ export function FeatureRequests() {
               <Link href={`/support/?conversation=${encodeURIComponent(item.conversationId)}`}>Conversation</Link></p>
           </div>
           <label className="feature-status"><span className="sr-only">Status</span>
-            <select value={item.status} disabled={busy === item.requestId}
+            <select value={item.status} disabled={busy === item.requestId || !canTriage}
+              title={canTriage ? undefined : "Reviewers and admins change the status."}
               onChange={event => void changeStatus(item, event.target.value as FeatureRequest["status"])}>
               {featureStatuses.map(status => <option key={status}>{status}</option>)}
             </select></label>

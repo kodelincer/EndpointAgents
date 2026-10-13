@@ -33,6 +33,30 @@ isolation, Hermes, MCP, and rollout operations.
 
 Port 5052 never serves dashboard HTML. Unknown frontend routes on the API return HTTP 404, while non-loopback requests to operator routes return HTTP 403.
 
+## Dashboard sign-in and roles
+
+Every operator route and the `dashboard-hub` need a signed-in operator (an HttpOnly, SameSite=Strict
+cookie from `POST /api/auth/sign-in`); anonymous calls get 401. Endpoint agents (device token), Hermes MCP
+(its own key), health checks and the remote artifact routes are unchanged. The dashboard calls the API on
+port 5052 of the same host name it was opened on, which keeps the cookie same-site.
+
+| Role | Can |
+| --- | --- |
+| Member | View everything, answer helpdesk conversations, take over, run read-only diagnostics |
+| Reviewer | Member, plus change feature-request status (and publish skills once the skill editor exists) |
+| Admin | Everything, plus endpoint commands, maintenance mode, device revoke, enrollment codes and the Operators page |
+
+First start: when the database has no operators, the API creates `admin` with a one-time password and
+writes it to `initial-admin-password.txt` next to the database (`.local\` in development,
+`C:\ProgramData\EndpointAgents\ControlPlane\` in production). The password is never logged. Signing in with
+it forces a new password; delete the file afterwards. Admins add operators on the Operators page, which shows
+each one-time password once.
+
+Safety: PBKDF2-SHA256 (600k iterations) hashes; five wrong passwords for one name from one address lock it for
+15 minutes; disabling an account, changing its role or resetting its password ends its sessions at once.
+`POST /api/agent-enrollments` still works without sign-in for local scripts (loopback, no browser `Origin`),
+so `scripts\start-dev-stack.ps1` keeps enrolling; from a browser it needs an admin.
+
 ## Local development
 
 Run the API from the repository root:

@@ -2,11 +2,29 @@ import type { Activity, Agent, ApiSystemStatus, CommandDefinition, FileInventory
   MaintenanceModeResult, PackageInventory, RpcRequest, RpcResponse, SupportRequest } from "./types";
 import type { FeatureRequest, HelpdeskConversationDetail, HelpdeskConversationSummary } from "./types";
 
-export const CONTROL_PLANE_URL = process.env.NEXT_PUBLIC_CONTROL_PLANE_URL ?? "http://localhost:5052";
+/** The API runs on port 5052 of whatever host served the dashboard. Keeping the host name
+ * identical makes the dashboard and API the same site, so the HttpOnly sign-in cookie
+ * (SameSite=Strict) travels with every call. */
+export const CONTROL_PLANE_URL = process.env.NEXT_PUBLIC_CONTROL_PLANE_URL
+  ?? (typeof window === "undefined" ? "http://localhost:5052"
+    : `${window.location.protocol}//${window.location.hostname}:5052`);
+
+/** Raised when the API says the operator is no longer signed in. */
+export const SIGNED_OUT_EVENT = "operator-signed-out";
+
+/** Every API call sends the sign-in cookie and reports an expired session once. */
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const response = await fetch(`${CONTROL_PLANE_URL}${path}`,
+    { cache: "no-store", ...init, credentials: "include" });
+  if (response.status === 401 && typeof window !== "undefined" && !path.startsWith("/api/auth/"))
+    window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+  return response;
+}
 
 async function read<T>(path: string): Promise<T> {
-  const response = await fetch(`${CONTROL_PLANE_URL}${path}`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Control plane returned ${response.status}.`);
+  const response = await apiFetch(path);
+  if (!response.ok) throw new Error(response.status === 403
+    ? "Your role does not allow this." : `Control plane returned ${response.status}.`);
   return response.json() as Promise<T>;
 }
 
@@ -21,9 +39,11 @@ export async function getSnapshot() {
 
 /** Sends one reviewed JSON-RPC command to an online endpoint agent. */
 export async function runCommand(agentId: string, request: RpcRequest): Promise<RpcResponse> {
-  const response = await fetch(`${CONTROL_PLANE_URL}/api/agents/${encodeURIComponent(agentId)}/commands`, {
+  const response = await apiFetch(`/api/agents/${encodeURIComponent(agentId)}/commands`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request)
   });
+  if (response.status === 401 || response.status === 403)
+    throw new Error(response.status === 403 ? "Only admins can run endpoint commands." : "Sign in again.");
   const body = await response.json() as RpcResponse;
   if (!response.ok && !body.error) throw new Error(`Command failed with status ${response.status}.`);
   return body;
@@ -46,20 +66,22 @@ export function getSystemStatus(): Promise<ApiSystemStatus> {
 
 /** Pauses or resumes new endpoint commands without stopping the API service. */
 export async function setMaintenanceMode(enabled: boolean): Promise<MaintenanceModeResult> {
-  const response = await fetch(`${CONTROL_PLANE_URL}/api/system/maintenance`, {
+  const response = await apiFetch(`/api/system/maintenance`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ enabled })
   });
-  if (!response.ok) throw new Error(`Maintenance update failed with status ${response.status}.`);
+  if (!response.ok) throw new Error(response.status === 403
+    ? "Only admins can pause or resume commands." : `Maintenance update failed with status ${response.status}.`);
   return response.json() as Promise<MaintenanceModeResult>;
 }
 
 async function write<T>(path: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
-  const response = await fetch(`${CONTROL_PLANE_URL}${path}`, {
+  const response = await apiFetch(path, {
     method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({})) as { message?: string };
-    throw new Error(error.message ?? `Control plane returned ${response.status}.`);
+    throw new Error(error.message ?? (response.status === 403
+      ? "Your role does not allow this." : `Control plane returned ${response.status}.`));
   }
   return response.status === 204 ? undefined as T : response.json() as Promise<T>;
 }
