@@ -1,5 +1,6 @@
 using EndpointAgents.Tray;
 using System.Diagnostics;
+using System.IO;
 
 namespace EndpointAgents.TrayWeb;
 
@@ -12,6 +13,28 @@ internal static class Program
         if (actionIndex >= 0 && actionIndex + 1 < args.Length)
             return ElevatedServiceActionRunner.RunAsync(args[actionIndex + 1])
                 .GetAwaiter().GetResult();
+
+        // Regenerates the exe icon: EndpointAgents.TrayWeb.exe --export-icon <path.ico>
+        var exportIndex = Array.IndexOf(args, "--export-icon");
+        if (exportIndex >= 0 && exportIndex + 1 < args.Length)
+        {
+            TrayIconFactory.WriteIco(args[exportIndex + 1], TrayFace.Happy);
+            return 0;
+        }
+
+        // Review aid: EndpointAgents.TrayWeb.exe --export-faces <folder> writes one PNG per face and size.
+        var facesIndex = Array.IndexOf(args, "--export-faces");
+        if (facesIndex >= 0 && facesIndex + 1 < args.Length)
+        {
+            Directory.CreateDirectory(args[facesIndex + 1]);
+            foreach (var face in Enum.GetValues<TrayFace>())
+                foreach (var size in new[] { 16, 32, 128 })
+                {
+                    using var bitmap = TrayIconFactory.Draw(face, size);
+                    bitmap.Save(Path.Combine(args[facesIndex + 1], $"{face}-{size}.png"));
+                }
+            return 0;
+        }
 
         var options = TrayOptions.Parse(args);
         var sessionId = Process.GetCurrentProcess().SessionId;

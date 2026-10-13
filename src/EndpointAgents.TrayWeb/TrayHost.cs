@@ -157,7 +157,7 @@ public sealed class TrayHost : IDisposable
 
     private void ApplyStatus(TrayStatus status)
     {
-        _notifyIcon.Icon = _icons.Get(status.Health);
+        _notifyIcon.Icon = _icons.Get(status);
         _notifyIcon.Text = LimitTooltip("دستیار پشتیبانی - " + status.Label);
         _statusMenuItem.Text = status.Label;
         _window.UpdateStatus(status);

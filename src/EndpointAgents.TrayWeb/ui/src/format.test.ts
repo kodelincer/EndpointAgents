@@ -48,3 +48,30 @@ describe("progress", () => {
     expect(isTerminalStage(event("ActionRejected"))).toBe(true);
   });
 });
+
+import { faceFor } from "./RobotFace";
+import type { TrayStatus } from "./types";
+
+const status = (health: TrayStatus["health"], service: TrayStatus["service"], runtime = true): TrayStatus => ({
+  health, service, label: "", detail: "",
+  runtime: runtime ? ({ connectionStatus: "Connected" } as TrayStatus["runtime"]) : undefined,
+});
+
+describe("faceFor", () => {
+  it("is happy only when ready", () => {
+    expect(faceFor(status("Ready", "Running"))).toBe("happy");
+  });
+  it("is sad when the service is up but the server is not", () => {
+    expect(faceFor(status("Warning", "Running"))).toBe("sad");
+    expect(faceFor(status("Error", "Running"))).toBe("sad");
+  });
+  it("is angry when the background service is unavailable", () => {
+    expect(faceFor(status("Stopped", "Stopped", false))).toBe("angry");
+    expect(faceFor(status("Error", "NotInstalled", false))).toBe("angry");
+    expect(faceFor(status("Error", "Running", false))).toBe("angry");
+  });
+  it("sleeps when paused and waits while checking", () => {
+    expect(faceFor(status("Paused", "Running"))).toBe("sleepy");
+    expect(faceFor(status("Checking", "StartPending", false))).toBe("neutral");
+  });
+});

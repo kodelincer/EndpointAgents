@@ -30,7 +30,7 @@ public sealed class MainWindow : Window
     private readonly TrayIconFactory _windowIcons = new();
     private readonly TaskCompletionSource _pageReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Task? _initialization;
-    private TrayHealthState? _iconState;
+    private TrayFace? _iconFace;
     private bool _allowClose;
     private bool _webUnavailable;
 
@@ -65,7 +65,7 @@ public sealed class MainWindow : Window
         Background = new SolidColorBrush(ground);
         _web.DefaultBackgroundColor = System.Drawing.Color.FromArgb(ground.R, ground.G, ground.B);
         Content = _web;
-        SetWindowIcon(TrayHealthState.Checking);
+        SetWindowIcon(TrayFace.Neutral);
 
         SourceInitialized += (_, _) => ApplyRoundedCorners();
         StateChanged += (_, _) =>
@@ -106,7 +106,7 @@ public sealed class MainWindow : Window
     public void UpdateStatus(TrayStatus status)
     {
         LastStatus = status;
-        SetWindowIcon(status.Health);
+        SetWindowIcon(TrayIconFactory.FaceFor(status));
         _bridge.PostEvent("status", TrayBridge.StatusDto(status));
     }
 
@@ -238,11 +238,11 @@ public sealed class MainWindow : Window
         _initialization = null;
     }
 
-    private void SetWindowIcon(TrayHealthState health)
+    private void SetWindowIcon(TrayFace face)
     {
-        if (_iconState == health) return;
-        _iconState = health;
-        var icon = _windowIcons.Get(health, 32);
+        if (_iconFace == face) return;
+        _iconFace = face;
+        var icon = _windowIcons.Get(face, 32);
         Icon = Imaging.CreateBitmapSourceFromHIcon(icon.Handle, Int32Rect.Empty,
             BitmapSizeOptions.FromEmptyOptions());
     }

@@ -2,6 +2,7 @@ import { Copy, Minus, Square, X } from "lucide-react";
 import { host } from "./bridge";
 import { healthTone } from "./format";
 import type { TrayStatus } from "./types";
+import { RobotFace, faceFor } from "./RobotFace";
 
 /** The window's own title bar: drag area, live connection state, and Windows caption buttons. */
 export function TitleBar({ status, maximized }: { status: TrayStatus | null; maximized: boolean }) {
@@ -16,11 +17,7 @@ export function TitleBar({ status, maximized }: { status: TrayStatus | null; max
   return (
     <header className="titlebar" onPointerDown={onPointerDown}>
       <div className="brand">
-        <svg className="brand-mark" viewBox="0 0 20 20" aria-hidden>
-          <path d="M3 15 L8 10 L12 12 L17 5" />
-          <circle cx="3" cy="15" r="2" /><circle cx="8" cy="10" r="2" />
-          <circle cx="12" cy="12" r="2" /><circle cx="17" cy="5" r="2.4" />
-        </svg>
+        <RobotFace face={faceFor(status)} size={26} />
         <span className="brand-name">دستیار پشتیبانی</span>
       </div>
       <div className="title-status" role="status" aria-live="polite" data-tone={tone}>
