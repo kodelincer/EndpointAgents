@@ -368,6 +368,59 @@ public sealed class RepairPackageLoaderTests : IDisposable
         Assert.True(BatPackageStatuses.IsPublished((await SingleStatusAsync()).Status));
     }
 
+    [Fact]
+    public async Task CheckedInChromePackageIsReadyWithItsInstaller()
+    {
+        var source = Path.Combine(RepositoryRoot(), "deploy", "control-plane",
+            "FileRepository", "packages", "chrome-install");
+        var folder = Directory.CreateDirectory(Path.Combine(_root, "packages",
+            "chrome-install")).FullName;
+        File.Copy(Path.Combine(source, "chrome-install.bat"),
+            Path.Combine(folder, "chrome-install.bat"));
+        // Stand-in for Google's MSI, which is not in git.
+        var msi = Encoding.ASCII.GetBytes("stand-in for the Chrome MSI");
+        Directory.CreateDirectory(Path.Combine(folder, "files"));
+        await File.WriteAllBytesAsync(Path.Combine(folder, "files",
+            "GoogleChromeStandaloneEnterprise64.msi"), msi,
+            TestContext.Current.CancellationToken);
+        var package = JsonNode.Parse(await File.ReadAllTextAsync(
+            Path.Combine(source, "package.json"),
+            TestContext.Current.CancellationToken))!.AsObject();
+        package["supportFiles"]![0]!["sha256"] = Convert.ToHexString(SHA256.HashData(msi));
+        package.Remove("signature");
+        TestPackageSigner.Sign(package, folder);
+        await File.WriteAllTextAsync(Path.Combine(folder, "package.json"),
+            package.ToJsonString(), TestContext.Current.CancellationToken);
+
+        var repository = CreateRepository();
+        var status = await SingleStatusAsync();
+        var descriptor = Assert.Single(await repository.GetRepairPackagesAsync(
+            TestContext.Current.CancellationToken)).Descriptor;
+
+        // Ready, not "Ready with lint warnings": the BAT has nothing the lint flags.
+        Assert.True(status.Status == BatPackageStatuses.Ready,
+            string.Join(" ", status.Reasons));
+        Assert.Empty(BatScriptLint.Inspect(await File.ReadAllTextAsync(
+            Path.Combine(folder, "chrome-install.bat"),
+            TestContext.Current.CancellationToken)).Warnings);
+        Assert.Equal("10.0.10240", descriptor.MinWindowsVersion);
+        Assert.Equal("GoogleChromeStandaloneEnterprise64.msi",
+            Assert.Single(descriptor.SupportFiles!).FileName);
+        // 0 installed now, 10 already installed, 3010 installed and needs a restart.
+        Assert.Equal([0, 10], descriptor.Playbook.SuccessExitCodes);
+        Assert.Equal([3010], descriptor.Playbook.RestartExitCodes);
+        Assert.Empty(descriptor.Playbook.Steps);
+        Assert.Empty(descriptor.Playbook.Arguments ?? []);
+    }
+
+    private static string RepositoryRoot()
+    {
+        var root = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(root, "EndpointAgents.slnx")))
+            root = Path.GetDirectoryName(root)!;
+        return root;
+    }
+
     private static BatchPlaybook Playbook(params BatchPlaybookStep[] steps) =>
         new(3, steps, Arguments: steps.Length == 0 ? ["/quiet"] : [],
             TimeoutSeconds: 120, RestartExitCodes: [3010]);

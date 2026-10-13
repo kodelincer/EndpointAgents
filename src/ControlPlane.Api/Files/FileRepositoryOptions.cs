@@ -26,7 +26,7 @@ public sealed class FileRepositoryOptions
 
     public bool RequireProtectedAcl { get; set; } = true;
 
-    public long MaxFileSizeBytes { get; set; } = 100 * 1024 * 1024;
+    public long MaxFileSizeBytes { get; set; } = 500 * 1024 * 1024;
 
     /// <summary>
     /// Public keys (base64 SubjectPublicKeyInfo) of the administrators who sign packages.

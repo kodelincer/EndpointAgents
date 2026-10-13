@@ -70,4 +70,4 @@ Stop any installed `EndpointAgents.Service` and running Tray before the dev scri
 - `docs/control-plane-operations.md` - ports, routes, dev and production install, troubleshooting
 - `docs/tray.md` - Tray architecture, one-pipe service channel, WebView2 bridge, preview and WebView2 install
 - `docs/hermes-support-agent.md` - enrollment, Hermes install, MCP tools, consent lifecycle, verification checklist
-- `docs/windows-activation.md`, `docs/office-activation.md`, `docs/office-bugfix.md`, `docs/office-inventory.md`, `docs/ibsng-support.md` - feature specifics
+- `docs/windows-activation.md`, `docs/office-activation.md`, `docs/office-bugfix.md`, `docs/office-inventory.md`, `docs/ibsng-support.md`, `docs/chrome-install.md` - feature specifics

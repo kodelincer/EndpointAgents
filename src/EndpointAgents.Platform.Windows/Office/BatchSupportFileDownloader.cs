@@ -8,7 +8,8 @@ namespace EndpointAgents.Platform.Windows.Office;
 [SupportedOSPlatform("windows")]
 public static class BatchSupportFileDownloader
 {
-    private const long MaxFileBytes = 100 * 1024 * 1024;
+    // Large enough for a vendor MSI such as Chrome Enterprise (about 170 MB).
+    private const long MaxFileBytes = 500 * 1024 * 1024;
 
     public static async Task EnsureAsync(string batchPath,
         IReadOnlyList<BatchSupportFile>? files,
@@ -24,6 +25,7 @@ public static class BatchSupportFileDownloader
             throw new InvalidDataException("The batch support directory is redirected.");
 
         using var client = transport.CreateClient();
+        client.Timeout = TimeSpan.FromMinutes(10);
         foreach (var file in files)
         {
             if (!BatchSupportFilePolicy.IsValidName(file.FileName)
