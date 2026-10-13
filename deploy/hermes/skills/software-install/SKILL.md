@@ -22,19 +22,26 @@ fixed by the administrator.
 | Foxit PDF Reader, or just "a PDF reader" | `install-foxit-reader` | `foxit-reader-install` |
 | Foxit PDF Editor, or editing PDF files | `install-foxit-editor` | `foxit-editor-install` |
 
-Administrators keep this table. A new application needs a package whose `problem` starts
-with `install-`, plus a row here; no code change is needed.
+Administrators keep this table; a row fixes the try order for an application. An
+application without a row can still be installed: administrators publish more install
+packages (any package whose `problem` starts with `install-`), and the catalog that
+`find_repair_packages` returns is the full list.
 
 ## Workflow
 
-1. Work out which application from the table the user means. If it is unclear, ask one
-   short question. If the application is not in the table, it is not supported yet:
-   follow the feature-requests skill.
+1. Work out which application the user means. If it is unclear, ask one short question.
 2. Call `mcp_controlplane_find_repair_packages` once with
    `{ "runCapability": "<the supplied run capability>" }`.
-3. Take the first package in the row's try order that the result contains with
-   `alreadyTried` false. If the row's packages are missing from the result, the installer
-   is not ready yet: go to step 6. If all of them were already tried, go to step 6.
+3. Choose the packages for that application:
+   - If the table has a row for it, use the row's packages, in its order, that the result
+     contains. If none of them is in the result, the installer is not ready yet: go to
+     step 6.
+   - Otherwise use the result's packages whose `problem` starts with `install-` and whose
+     `displayName` or `symptoms` clearly name the same application, lowest `order` first.
+     Never pick a package for a different application. If there is none, the application
+     is not supported yet: follow the feature-requests skill.
+   Take the first chosen package whose `alreadyTried` is false. If all of them were already
+   tried, go to step 6.
 4. Tell the user in one short sentence that you are installing the application, then call
    `mcp_controlplane_run_repair_package` once with exactly
    `{ "runCapability": "<the supplied run capability>", "packageId": "<chosen packageId>" }`.

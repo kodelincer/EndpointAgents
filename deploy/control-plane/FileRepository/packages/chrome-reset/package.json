@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 2,
+  "id": "chrome-reset",
+  "displayName": "Reset Google Chrome settings",
+  "description": "Restores the user's Chrome settings to their defaults, like Chrome's Reset settings: startup pages, search engine, new tab page, theme, site settings and extensions. Bookmarks, history, passwords and cookies stay. The user may have to sign in to Chrome again. Exit code 20 means Chrome is not installed, 21 that Chrome has no settings for this user yet.",
+  "problem": "chrome-reset-settings",
+  "order": 100,
+  "symptoms": [
+    "Reset Chrome settings to default",
+    "Chrome homepage or search engine changed by itself",
+    "Chrome shows unwanted pop-ups, ads or toolbars",
+    "Chrome behaves strangely after an extension or setting change",
+    "تنظیمات گوگل کروم را به حالت اولیه برگردان",
+    "صفحه اصلی یا موتور جستجوی کروم خودبه‌خود عوض شده است",
+    "کروم تبلیغ و پنجره‌های ناخواسته باز می‌کند"
+  ],
+  "file": {
+    "type": "bat",
+    "fileName": "chrome-reset.bat",
+    "sha256": "230FE427B8E7BC9806687912786F5869897BAE9FD569E466B1156C5955C10760",
+    "publisher": null
+  },
+  "compatibility": {
+    "minWindowsVersion": "10.0.10240",
+    "maxWindowsVersionExclusive": null
+  },
+  "supportFiles": [],
+  "playbook": {
+    "version": 3,
+    "arguments": [],
+    "steps": [],
+    "timeoutSeconds": 120,
+    "successExitCodes": [
+      0,
+      20,
+      21
+    ],
+    "restartExitCodes": [],
+    "successMarker": "Chrome reset completed.",
+    "failureMarkers": [
+      "ERROR:"
+    ]
+  },
+  "playbookSha256": "6006E6201A6D4A70291FACC0F5CA368FE7F58C518512AE5C27392792723CD1E7",
+  "review": {
+    "reviewedBy": "EndpointAgents developers",
+    "reviewedOn": "2026-10-13",
+    "source": "Written for this repository.",
+    "notes": "Sets each Chrome profile's Preferences and Secure Preferences aside as *.before-reset so Chrome recreates defaults; restore by renaming them back while Chrome is closed. Needs the user context the endpoint passes (ENDPOINTAGENTS_USER_*)."
+  }
+}

@@ -191,8 +191,10 @@ static async Task<bool> ExecuteAsync(string path, string fileType, BatchPlaybook
         }, out var discover, out _);
         playbook = discover!;
     }
+    // Like an endpoint running it for a chat user: here, the person at this PC.
     var startInfo = PackageRunner.CreateStartInfo(Path.GetFullPath(path), fileType,
-        playbook.Arguments ?? []);
+        playbook.Arguments ?? [], PackageUserContext.Resolve(
+            System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value));
     foreach (var (name, value) in options.Environment)
         startInfo.Environment[name] = value;
     var result = await OfficeBugfixRunner.RunProcessAsync(startInfo, playbook,

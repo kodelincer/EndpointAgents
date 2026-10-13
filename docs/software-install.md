@@ -72,21 +72,68 @@ Where to get each installer:
   `set-package-files.ps1 -Id persian-fonts-install -File <fonts> -Sign`, and only fonts
   whose license allows redistribution.
 
-## Adding another application
+## Adding any other application (admins and helpdesk)
 
-1. Copy one of the MSI packages (for example `foxit-reader-install`) to a new folder named
-   `<app>-install`, rename its BAT to match, and change the header lines: `APP`, `MSI`,
-   `DETECT`/`DETECT_ALT` (a `findstr` pattern for the `DisplayName` in the Uninstall registry
-   keys), `MSIPROPS`, and the log name. Update `package.json` (`id`, `problem: install-<app>`,
-   names, symptoms, success marker, supporting file name).
-2. Add a row to the catalog table in `deploy/hermes/skills/software-install/SKILL.md` and
-   the id to `InstallPackages` in `RepairPackageLoaderTests`, then run
-   `scripts\sync-hermes-profile.ps1`.
-3. Place the installer and sign with `set-package-files.ps1`.
+One command turns a vendor installer into a package. On the admin PC:
 
-An installer that has no silent mode and needs someone to click through a wizard cannot run
-unattended (the run stops as "GUI dialog blocked"). Ask the vendor for an MSI or silent
-switches first; such applications stay with the helpdesk until then.
+```powershell
+.scripts
+ew-install-package.ps1 -Installer C:Vendor
+pp.8.7.Installer.x64.exe -Id notepadpp-install `
+    -App "Notepad++" -PersianSymptom "نوت‌پد پلاس پلاس روی سیستم نصب نیست"
+# fill in the TODO lines in package.json (source, reviewer), then:
+.scripts	est-bat-playbook.ps1 -Package <folder> -Execute     # try it on a test PC, really installs
+.scripts	est-bat-playbook.ps1 -Package <folder> -Fix -Sign
+```
+
+The script refuses an installer without a valid vendor signature, copies it into the
+package, and writes the BAT from `deploypackage-templatesinstall-app.bat`, so every
+install package behaves the same (check, install, check again, exit 0/10/3010/1). It reads
+what it needs from the installer itself:
+
+| Installer | Recognised by | Silent install the BAT runs |
+| --- | --- | --- |
+| MSI | extension | `msiexec /i <file> /qn /norestart` (+ `-MsiProperties`) |
+| Inno Setup EXE | version comment, setup data | `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-` |
+| NSIS EXE | Nullsoft header | `/S` |
+| WiX Burn bundle EXE | `.wixburn` section | `/quiet /norestart` |
+| InstallShield EXE | InstallShield strings | `/s /v"/qn REBOOT=ReallySuppress"` |
+| Squirrel EXE | Squirrel strings | `--silent` |
+| Anything else | | `-SilentArguments` from the vendor's documentation |
+
+Detection uses the installed program's name in Apps & features (the MSI's ProductName or
+the EXE's product name, without version numbers), matched as a whole word at the start, so
+"Git" does not count "GitHub Desktop". Override with `-Detect "<name>"` (and
+`-DetectAlt` for an older name), or `-DetectPattern` for a raw `findstr` pattern.
+
+New packages need no skill change: the agent finds any package whose `problem` starts with
+`install-` by its name and symptoms. Add a row to the table in
+`deploy/hermes/skills/software-install/SKILL.md` only to fix a try order (for example a
+second, fallback installer for the same application), then run
+`scriptssync-hermes-profile.ps1`. To prepare a package before the installer arrives, use
+`-InstallerName <name>.msi` instead of `-Installer`, and place it later with
+`set-package-files.ps1`.
+
+### Installers with a wizard
+
+Endpoints install in a hidden session where nobody can click, so every wizard step has to
+be answered in advance. In order of preference:
+
+1. **Silent switches with options.** Most wizards only choose a folder, shortcuts or
+   components, and their silent mode takes those as arguments (for example Inno's
+   `/DIR=` and `/COMPONENTS=`, or MSI properties). Pass them with `-SilentArguments` or
+   `-MsiProperties`.
+2. **Record the answers once.** For InstallShield and Inno Setup installers,
+   `-RecordAnswers` runs the wizard on the admin PC, you click through it the way endpoints
+   should be set up (this installs the application there), and the answers are saved into
+   the package (`setup.iss` or `setup.inf`) and replayed silently on every endpoint.
+3. **An MSI from the vendor.** Many vendors offer an enterprise MSI or an "admin install"
+   (`setup.exe /a`) that extracts one.
+4. **Repackage** it with a packaging tool (for example the MSIX Packaging Tool, or an MSI
+   repackager) on a clean PC, then package the result.
+
+A wizard with none of these cannot run unattended: the run stops as "GUI dialog blocked"
+and the agent hands the user to the helpdesk.
 
 ## Known limits (first version)
 

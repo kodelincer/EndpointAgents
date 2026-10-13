@@ -55,6 +55,16 @@ package's own `problem` and `order` decide.
 
 - `printing-stuck` (printing is stuck, jobs stay in the queue):
   1. `no-input-repair-sample` (simulation for testing; replace with real packages)
+- `chrome-reset-settings` (the user asks to reset Chrome, or Chrome's homepage or search
+  engine changed by itself, or it shows unwanted pop-ups, ads or toolbars):
+  1. `chrome-reset` (restores Chrome's settings to defaults for this user)
+  Before step 5, tell the user in one or two short sentences that Chrome will close, its
+  settings and extensions go back to their defaults, bookmarks, history and saved
+  passwords stay, and they may need to sign in to Chrome again; then ask them to confirm.
+  Run it only after a clear yes in their next message. When its result has `exitCode` 20,
+  Chrome is not installed: offer to install it (software-install skill). When it has
+  `exitCode` 21, Chrome has no settings to reset for this user: escalate as in step 7 if the
+  problem remains.
 
 Use only the ControlPlane tools above. Never use terminal, filesystem, browser, web,
 code execution, memory, cron, delegation, learning, or skill-management tools. Never
