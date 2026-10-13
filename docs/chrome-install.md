@@ -1,7 +1,8 @@
 # Installing Google Chrome
 
 When a user asks for Chrome ("کروم روی سیستم نصب نیست"), the support agent runs the
-`chrome-install` repair package. It is an ordinary catalogued package (see
+`chrome-install` package through the `software-install` skill. It is an ordinary catalogued
+package (see
 [bat-packages.md](bat-packages.md)): a reviewed BAT plus Google's enterprise MSI, both
 hash-pinned and signed, run by the endpoint service with no Tray approval prompt.
 
@@ -17,7 +18,7 @@ What the BAT does, on Windows 10 and 11 (64-bit):
 
 After the run the agent asks whether the problem is solved. On "no", or a failed run, it
 escalates the conversation to the helpdesk, which lists it as unsolved. The rule lives in
-the `chrome-missing` entry of `deploy/hermes/skills/repair-packages/SKILL.md`.
+the `software-install` skill (see [software-install.md](software-install.md)).
 
 ## Putting the MSI in place
 

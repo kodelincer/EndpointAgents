@@ -195,12 +195,15 @@ public sealed class BatPackageLoaderTests : IDisposable
         var statuses = await repository.GetPackageStatusesAsync(
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(["chrome-install", "no-input-repair-sample", "office-activation-repair",
+        Assert.Equal(["adobe-connect-install", "chrome-install", "foxit-editor-install",
+                "foxit-reader-install", "no-input-repair-sample", "office-activation-repair",
+                "persian-fonts-install", "photos-install",
                 "windows-activation-retry"],
             statuses.Select(status => status.Id).Order(StringComparer.Ordinal));
-        // chrome-install needs Google's MSI, which is not in git, and an administrator's
-        // signature (scripts/update-chrome-package.ps1); RepairPackageLoaderTests covers it.
-        foreach (var status in statuses.Where(status => status.Id != "chrome-install"))
+        // Install packages need vendor installers that are not in git and an administrator's
+        // signature (docs/software-install.md); RepairPackageLoaderTests covers them.
+        foreach (var status in statuses.Where(status =>
+                     !status.Id.EndsWith("-install", StringComparison.Ordinal)))
             Assert.True(status.Status == BatPackageStatuses.Ready,
                 $"{status.Id}: {string.Join(" ", status.Reasons)}");
         Assert.Contains("no-input-repair-sample", (await repository.GetRepairPackagesAsync(

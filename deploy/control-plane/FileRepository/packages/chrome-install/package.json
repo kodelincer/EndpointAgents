@@ -3,7 +3,7 @@
   "id": "chrome-install",
   "displayName": "Install Google Chrome",
   "description": "Checks whether Google Chrome is installed for all users and, if not, installs it silently from Google's enterprise MSI. Exit code 10 means Chrome was already installed and nothing changed.",
-  "problem": "chrome-missing",
+  "problem": "install-chrome",
   "order": 100,
   "symptoms": [
     "Google Chrome is not installed",

@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 2,
+  "id": "foxit-reader-install",
+  "displayName": "Install Foxit PDF Reader",
+  "description": "Checks whether Foxit PDF Reader is installed and, if not, installs it silently for all users from Foxit's MSI. Exit code 10 means it was already installed.",
+  "problem": "install-foxit-reader",
+  "order": 100,
+  "symptoms": [
+    "Foxit Reader is not installed",
+    "I need a PDF reader",
+    "I cannot open PDF files",
+    "فاکسیت ریدر روی سیستم نصب نیست",
+    "برنامه‌ای برای باز کردن فایل PDF ندارم"
+  ],
+  "file": {
+    "type": "bat",
+    "fileName": "foxit-reader-install.bat",
+    "sha256": "382C9E48FA94BD96EE9D312F5AD88A179202D398F51E7063CE71883423855F44",
+    "publisher": null
+  },
+  "compatibility": {
+    "minWindowsVersion": "10.0.10240",
+    "maxWindowsVersionExclusive": null
+  },
+  "supportFiles": [
+    {
+      "fileName": "FoxitPDFReader.msi",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "playbook": {
+    "version": 3,
+    "arguments": [],
+    "steps": [],
+    "timeoutSeconds": 480,
+    "successExitCodes": [
+      0,
+      10
+    ],
+    "restartExitCodes": [
+      3010
+    ],
+    "successMarker": "Foxit PDF Reader install completed.",
+    "failureMarkers": [
+      "ERROR:"
+    ]
+  },
+  "playbookSha256": "ACCF46FDAFCC1D7D063EDC7E577597DEEC1EBCC721E58A3D506D4B815D289FA3",
+  "review": {
+    "reviewedBy": "EndpointAgents developers",
+    "reviewedOn": "2026-10-13",
+    "source": "Foxit PDF Reader MSI from Foxit's enterprise downloads (package_type=msi).",
+    "notes": "Installer not committed. Place it with scripts/set-package-files.ps1 -Id foxit-reader-install -File <path to the MSI> -Sign; it is stored as FoxitPDFReader.msi."
+  }
+}

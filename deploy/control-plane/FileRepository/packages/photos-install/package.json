@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 2,
+  "id": "photos-install",
+  "displayName": "Install the Microsoft Photos app",
+  "description": "Provisions the Microsoft Photos app for all users from its Store bundle and dependencies. Windows adds it to the user at their next sign-in. Exit code 10 means Photos is already provisioned on the PC.",
+  "problem": "install-photos",
+  "order": 100,
+  "symptoms": [
+    "The Photos app is missing",
+    "I cannot open pictures, there is no Photos app",
+    "برنامه Photos ویندوز روی سیستم نیست",
+    "عکس‌ها باز نمی‌شوند چون برنامه Photos ندارم"
+  ],
+  "file": {
+    "type": "bat",
+    "fileName": "photos-install.bat",
+    "sha256": "95A871B2F20C0E46A7C38D71721E5A4497B05D46C5D4346AEAEF6C86BF5377D8",
+    "publisher": null
+  },
+  "compatibility": {
+    "minWindowsVersion": "10.0.17763",
+    "maxWindowsVersionExclusive": null
+  },
+  "supportFiles": [
+    {
+      "fileName": "Microsoft.Windows.Photos.msixbundle",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "playbook": {
+    "version": 3,
+    "arguments": [],
+    "steps": [],
+    "timeoutSeconds": 600,
+    "successExitCodes": [
+      10
+    ],
+    "restartExitCodes": [
+      3010
+    ],
+    "successMarker": "Photos install completed.",
+    "failureMarkers": [
+      "ERROR:"
+    ]
+  },
+  "playbookSha256": "31BC923B15CA24B702FA3BC876E9119F9C3F80C58162694AAB22C33018AF4C5A",
+  "review": {
+    "reviewedBy": "EndpointAgents developers",
+    "reviewedOn": "2026-10-13",
+    "source": "Microsoft.Windows.Photos msixbundle and its dependency packages from the Microsoft Store for Business / winget download (msstore id 9WZDNCRFJBH4).",
+    "notes": "Bundle not committed. Place it with scripts/set-package-files.ps1 -Id photos-install -File <bundle and dependency .appx/.msix files> -Sign; the bundle is stored as Microsoft.Windows.Photos.msixbundle, an optional license as Microsoft.Windows.Photos-license.xml."
+  }
+}

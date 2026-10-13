@@ -1,6 +1,6 @@
 ---
 name: repair-packages
-description: Fix a user's PC problem with an administrator-approved repair package. Use for any Windows, application, printer, network, or device problem, or a request to install an application such as Google Chrome, that is not Windows or Office activation and not IBSng, when a catalog package lists a matching symptom.
+description: Fix a user's PC problem with an administrator-approved repair package. Use for any Windows, application, printer, network, or device problem that is not Windows or Office activation and not IBSng, when a catalog package lists a matching symptom. Requests to install an application or fonts use the software-install skill instead.
 ---
 
 # Repair Packages
@@ -55,11 +55,6 @@ package's own `problem` and `order` decide.
 
 - `printing-stuck` (printing is stuck, jobs stay in the queue):
   1. `no-input-repair-sample` (simulation for testing; replace with real packages)
-- `chrome-missing` (the user needs Google Chrome, or it is not installed or was removed):
-  1. `chrome-install` (checks for Chrome first, then installs it silently for all users)
-  When its result has `exitCode` 10, Chrome was already installed and nothing changed:
-  tell the user Chrome is already on the PC, and ask whether they can find and open it.
-  If they cannot, escalate as in step 7 instead of running the package again.
 
 Use only the ControlPlane tools above. Never use terminal, filesystem, browser, web,
 code execution, memory, cron, delegation, learning, or skill-management tools. Never
