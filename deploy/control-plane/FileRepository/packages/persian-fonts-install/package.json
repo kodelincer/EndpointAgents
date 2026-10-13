@@ -1,0 +1,127 @@
+{
+  "schemaVersion": 2,
+  "id": "persian-fonts-install",
+  "displayName": "Install the Persian font pack",
+  "description": "Installs the Persian fonts in the package (Vazirmatn, with Latin and Persian digits) for all users, skipping fonts already installed. Fonts appear after the user signs out and back in. Exit code 10 means every font was already installed.",
+  "problem": "install-persian-fonts",
+  "order": 100,
+  "symptoms": [
+    "Persian fonts are missing",
+    "Persian text looks wrong or shows boxes",
+    "I need Farsi fonts installed",
+    "فونت فارسی روی سیستم نصب نیست",
+    "فونت‌های فارسی را می‌خواهم",
+    "متن فارسی درست نمایش داده نمی‌شود"
+  ],
+  "file": {
+    "type": "bat",
+    "fileName": "persian-fonts-install.bat",
+    "sha256": "E762DCD4B1BBFFBFC0F78CCA69D7587B037E06AA3DC9247B13A557B62EC25F09",
+    "publisher": null
+  },
+  "compatibility": {
+    "minWindowsVersion": "10.0.10240",
+    "maxWindowsVersionExclusive": null
+  },
+  "supportFiles": [
+    {
+      "fileName": "Vazirmatn-Black.ttf",
+      "sha256": "DF4E257BE9DE1574D11BA2970C69228A7DB24174913FF7F776BBF00A9AA5DC1B"
+    },
+    {
+      "fileName": "Vazirmatn-Bold.ttf",
+      "sha256": "F635FDBEA28F265DE395BA83B4B1570DCF2F58D13C65469E61903B1C2D2AE723"
+    },
+    {
+      "fileName": "Vazirmatn-ExtraBold.ttf",
+      "sha256": "5181C2E436CF1D5CF1C5631821B43D81881DCA040A12C9A442EF5DC0007001CF"
+    },
+    {
+      "fileName": "Vazirmatn-ExtraLight.ttf",
+      "sha256": "2B04D18FF3960A3FFD04EF0E5AB8AD8D1EFB935280DE9277B008D0D66462489F"
+    },
+    {
+      "fileName": "Vazirmatn-FD-Black.ttf",
+      "sha256": "1E3173C6C9B77991E218D60AD4438EA6AE517D4B617E2FEED60AD7D6D13F229B"
+    },
+    {
+      "fileName": "Vazirmatn-FD-Bold.ttf",
+      "sha256": "61415AC866095AF0A87CBA5FF59917222BD5013736AA5714CE4E0CED2FA77CF0"
+    },
+    {
+      "fileName": "Vazirmatn-FD-ExtraBold.ttf",
+      "sha256": "72ECD2A831AAF9EC03F6BFE63CD8492CE2374C2B09C3858DDFB7553A9D7C866D"
+    },
+    {
+      "fileName": "Vazirmatn-FD-ExtraLight.ttf",
+      "sha256": "CAC94970E96884A92B0B85BD3BCA0E218C013FD3D56911206A43AD1291808106"
+    },
+    {
+      "fileName": "Vazirmatn-FD-Light.ttf",
+      "sha256": "758D75DE59CBF780D1FD82F04E75E6361CAFADBCAD0DB4B98A1D334E08D3BE71"
+    },
+    {
+      "fileName": "Vazirmatn-FD-Medium.ttf",
+      "sha256": "0547CD719A05F8A9C52B07D8F2449154257F6D35038107F86F8884AF9CBFC015"
+    },
+    {
+      "fileName": "Vazirmatn-FD-Regular.ttf",
+      "sha256": "F9387E593AEA13AE5E4A9BFD30EF29020DCC64ED6536D824E49ACD8ED8D76AEA"
+    },
+    {
+      "fileName": "Vazirmatn-FD-SemiBold.ttf",
+      "sha256": "EDDF87887DC60FFA97B3691E73DD9EA8B7956BEB9F2F661A1EC013C8D33B434B"
+    },
+    {
+      "fileName": "Vazirmatn-FD-Thin.ttf",
+      "sha256": "671F7442476D87F8136C4A1BE5C485D7E0B56B4C49F0FB3868BB5DDBFBE17DBB"
+    },
+    {
+      "fileName": "Vazirmatn-Light.ttf",
+      "sha256": "9AB4F094B861B7D4E318F01953B9771DDEB189D7C79BBB3989D5A95A4B07FF60"
+    },
+    {
+      "fileName": "Vazirmatn-Medium.ttf",
+      "sha256": "B986623E4DDEF10755E04BE39F8EA7BCB1DC08BFE8DD0AA6AF395736F256AD4A"
+    },
+    {
+      "fileName": "Vazirmatn-OFL.txt",
+      "sha256": "17E355067C8284F47743A1EE3B1EF7FF684FF0601EDA357F9353B10B3016AB31"
+    },
+    {
+      "fileName": "Vazirmatn-Regular.ttf",
+      "sha256": "B69FD4C680B8F3F225FEABCC655A2C585D97627B8F5F5C0F9985E894069F3A56"
+    },
+    {
+      "fileName": "Vazirmatn-SemiBold.ttf",
+      "sha256": "3F239D8364C14EE32C46B6839FA197C28958358B82A9673D2C6ACC8506D78BC5"
+    },
+    {
+      "fileName": "Vazirmatn-Thin.ttf",
+      "sha256": "8BAB0E05692E16BF6AEF1A2FED32A45695F4A4F44BEBCFED873B6AB1C9D32D2C"
+    }
+  ],
+  "playbook": {
+    "version": 3,
+    "arguments": [],
+    "steps": [],
+    "timeoutSeconds": 300,
+    "successExitCodes": [
+      10
+    ],
+    "restartExitCodes": [
+      3010
+    ],
+    "successMarker": "Persian fonts install completed.",
+    "failureMarkers": [
+      "ERROR:"
+    ]
+  },
+  "playbookSha256": "4A8ED33EC4293A7CA1057666ABF385643211EA3AA4B3D174C60CDF2F6AC2936B",
+  "review": {
+    "reviewedBy": "EndpointAgents developers",
+    "reviewedOn": "2026-10-13",
+    "source": "Vazirmatn v33.003 by Saber Rastikerdar (https://github.com/rastikerdar/vazirmatn), SIL Open Font License 1.1 (Vazirmatn-OFL.txt).",
+    "notes": "Add or replace fonts with scripts/set-package-files.ps1 -Id persian-fonts-install -File <font files> -Sign. Every .ttf and .otf in files\\ is installed; keep the license files of fonts you add."
+  }
+}

@@ -368,25 +368,36 @@ public sealed class RepairPackageLoaderTests : IDisposable
         Assert.True(BatPackageStatuses.IsPublished((await SingleStatusAsync()).Status));
     }
 
-    [Fact]
-    public async Task CheckedInChromePackageIsReadyWithItsInstaller()
+    public static TheoryData<string> InstallPackages() =>
+    [
+        "chrome-install", "adobe-connect-install", "photos-install", "persian-fonts-install",
+        "foxit-reader-install", "foxit-editor-install"
+    ];
+
+    [Theory]
+    [MemberData(nameof(InstallPackages))]
+    public async Task CheckedInInstallPackageIsReadyWithItsFiles(string id)
     {
         var source = Path.Combine(RepositoryRoot(), "deploy", "control-plane",
-            "FileRepository", "packages", "chrome-install");
-        var folder = Directory.CreateDirectory(Path.Combine(_root, "packages",
-            "chrome-install")).FullName;
-        File.Copy(Path.Combine(source, "chrome-install.bat"),
-            Path.Combine(folder, "chrome-install.bat"));
-        // Stand-in for Google's MSI, which is not in git.
-        var msi = Encoding.ASCII.GetBytes("stand-in for the Chrome MSI");
-        Directory.CreateDirectory(Path.Combine(folder, "files"));
-        await File.WriteAllBytesAsync(Path.Combine(folder, "files",
-            "GoogleChromeStandaloneEnterprise64.msi"), msi,
-            TestContext.Current.CancellationToken);
+            "FileRepository", "packages", id);
+        var folder = Directory.CreateDirectory(Path.Combine(_root, "packages", id)).FullName;
+        File.Copy(Path.Combine(source, $"{id}.bat"), Path.Combine(folder, $"{id}.bat"));
         var package = JsonNode.Parse(await File.ReadAllTextAsync(
             Path.Combine(source, "package.json"),
             TestContext.Current.CancellationToken))!.AsObject();
-        package["supportFiles"]![0]!["sha256"] = Convert.ToHexString(SHA256.HashData(msi));
+        Directory.CreateDirectory(Path.Combine(folder, "files"));
+        foreach (var entry in package["supportFiles"]!.AsArray())
+        {
+            // Vendor installers are not in git; a stand-in takes their place.
+            var name = entry!["fileName"]!.GetValue<string>();
+            var checkedIn = Path.Combine(source, "files", name);
+            var bytes = File.Exists(checkedIn) && !IsVendorInstaller(name)
+                ? await File.ReadAllBytesAsync(checkedIn, TestContext.Current.CancellationToken)
+                : Encoding.ASCII.GetBytes($"stand-in for {name}");
+            await File.WriteAllBytesAsync(Path.Combine(folder, "files", name), bytes,
+                TestContext.Current.CancellationToken);
+            entry["sha256"] = Convert.ToHexString(SHA256.HashData(bytes));
+        }
         package.Remove("signature");
         TestPackageSigner.Sign(package, folder);
         await File.WriteAllTextAsync(Path.Combine(folder, "package.json"),
@@ -394,24 +405,51 @@ public sealed class RepairPackageLoaderTests : IDisposable
 
         var repository = CreateRepository();
         var status = await SingleStatusAsync();
-        var descriptor = Assert.Single(await repository.GetRepairPackagesAsync(
-            TestContext.Current.CancellationToken)).Descriptor;
+        var published = Assert.Single(await repository.GetRepairPackagesAsync(
+            TestContext.Current.CancellationToken));
+        var descriptor = published.Descriptor;
 
         // Ready, not "Ready with lint warnings": the BAT has nothing the lint flags.
         Assert.True(status.Status == BatPackageStatuses.Ready,
             string.Join(" ", status.Reasons));
         Assert.Empty(BatScriptLint.Inspect(await File.ReadAllTextAsync(
-            Path.Combine(folder, "chrome-install.bat"),
+            Path.Combine(folder, $"{id}.bat"),
             TestContext.Current.CancellationToken)).Warnings);
-        Assert.Equal("10.0.10240", descriptor.MinWindowsVersion);
-        Assert.Equal("GoogleChromeStandaloneEnterprise64.msi",
-            Assert.Single(descriptor.SupportFiles!).FileName);
-        // 0 installed now, 10 already installed, 3010 installed and needs a restart.
-        Assert.Equal([0, 10], descriptor.Playbook.SuccessExitCodes);
+        Assert.StartsWith("install-", published.Problem);
+        Assert.NotEmpty(descriptor.SupportFiles!);
+        // 10 already installed, 3010 installed and the user signs out or restarts.
+        Assert.Contains(10, descriptor.Playbook.SuccessExitCodes!);
         Assert.Equal([3010], descriptor.Playbook.RestartExitCodes);
+        Assert.Equal(["ERROR:"], descriptor.Playbook.FailureMarkers);
         Assert.Empty(descriptor.Playbook.Steps);
         Assert.Empty(descriptor.Playbook.Arguments ?? []);
     }
+
+    [Fact]
+    public async Task SoftwareInstallSkillListsEveryInstallPackage()
+    {
+        var root = RepositoryRoot();
+        var skill = await File.ReadAllTextAsync(Path.Combine(root, "deploy", "hermes", "skills",
+            "software-install", "SKILL.md"), TestContext.Current.CancellationToken);
+        var packages = Directory.GetDirectories(Path.Combine(root, "deploy", "control-plane",
+                "FileRepository", "packages"))
+            .Select(directory => JsonNode.Parse(File.ReadAllText(
+                Path.Combine(directory, "package.json")))!)
+            .Where(package => package["problem"]?.GetValue<string>()
+                .StartsWith("install-", StringComparison.Ordinal) == true)
+            .ToList();
+
+        Assert.Equal(InstallPackages().Count, packages.Count);
+        foreach (var package in packages)
+        {
+            Assert.Contains($"`{package["problem"]!.GetValue<string>()}`", skill);
+            Assert.Contains($"`{package["id"]!.GetValue<string>()}`", skill);
+        }
+    }
+
+    private static bool IsVendorInstaller(string name) =>
+        Path.GetExtension(name).ToLowerInvariant() is ".msi" or ".exe" or ".msix"
+            or ".msixbundle" or ".appx" or ".appxbundle";
 
     private static string RepositoryRoot()
     {

@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 2,
+  "id": "adobe-connect-install",
+  "displayName": "Install Adobe Connect",
+  "description": "Checks whether the Adobe Connect desktop application is installed and, if not, installs it silently for all users from Adobe's MSI. Exit code 10 means it was already installed.",
+  "problem": "install-adobe-connect",
+  "order": 100,
+  "symptoms": [
+    "Adobe Connect is not installed",
+    "I need Adobe Connect to join an online class or meeting",
+    "ادوبی کانکت روی سیستم نصب نیست",
+    "برای کلاس آنلاین به Adobe Connect نیاز دارم"
+  ],
+  "file": {
+    "type": "bat",
+    "fileName": "adobe-connect-install.bat",
+    "sha256": "194CF04C54FE9A2203F9F8F75EC8DBABF3D37274DFC76CFCB08FA1A69B60507E",
+    "publisher": null
+  },
+  "compatibility": {
+    "minWindowsVersion": "10.0.10240",
+    "maxWindowsVersionExclusive": null
+  },
+  "supportFiles": [
+    {
+      "fileName": "AdobeConnect.msi",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "playbook": {
+    "version": 3,
+    "arguments": [],
+    "steps": [],
+    "timeoutSeconds": 480,
+    "successExitCodes": [
+      0,
+      10
+    ],
+    "restartExitCodes": [
+      3010
+    ],
+    "successMarker": "Adobe Connect install completed.",
+    "failureMarkers": [
+      "ERROR:"
+    ]
+  },
+  "playbookSha256": "6139471F9508229405226FF51524E0D78E8D338D5F8FF241C214852EA4501B5C",
+  "review": {
+    "reviewedBy": "EndpointAgents developers",
+    "reviewedOn": "2026-10-13",
+    "source": "Adobe Connect application MSI for enterprise deployment from Adobe's Connect downloads page.",
+    "notes": "Installer not committed. Place it with scripts/set-package-files.ps1 -Id adobe-connect-install -File <path to the MSI> -Sign; it is stored as AdobeConnect.msi."
+  }
+}

@@ -204,8 +204,14 @@ PublishScripts/
 !deploy/control-plane/FileRepository/packages/*
 # and source folders named Packages (NuGet restore never writes under src).
 !src/**/[Pp]ackages/*
-# Vendor installers are too large for git; scripts/update-chrome-package.ps1 fetches Chrome's.
+# Vendor installers stay out of git; scripts/update-chrome-package.ps1 and
+# scripts/set-package-files.ps1 put them in place (see docs/software-install.md).
 deploy/control-plane/FileRepository/packages/*/files/*.msi
+deploy/control-plane/FileRepository/packages/*/files/*.exe
+deploy/control-plane/FileRepository/packages/*/files/*.msix
+deploy/control-plane/FileRepository/packages/*/files/*.msixbundle
+deploy/control-plane/FileRepository/packages/*/files/*.appx
+deploy/control-plane/FileRepository/packages/*/files/*.appxbundle
 # Uncomment if necessary however generally it will be regenerated when needed
 #!**/[Pp]ackages/repositories.config
 # NuGet v3's project.json files produces more ignorable files
