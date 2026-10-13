@@ -31,6 +31,10 @@ isolation, Hermes, MCP, and rollout operations.
 | `https://<server>/api/files/office/catalog` | Remote | Hash-verified Office remediation catalog |
 | `https://<server>/api/files/office/{artifactId}` | Remote | One catalog-approved Office artifact |
 
+Operator routes for general actions (loopback dashboard only): `/api/capabilities`,
+`/api/actions/*` (settings, runs, undo, missing-action requests), `/api/environment/*`,
+`/api/incidents` and `/api/skills/*`. See `docs/endpoint-actions.md`.
+
 Port 5052 never serves dashboard HTML. Unknown frontend routes on the API return HTTP 404, while non-loopback requests to operator routes return HTTP 403.
 
 ## Dashboard sign-in and roles
