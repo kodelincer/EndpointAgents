@@ -472,7 +472,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
             <div className="composer" data-disabled={!connected || undefined}>
               <textarea ref={composer} rows={1} dir="auto" maxLength={messageLimit}
                 placeholder={pendingAction ? "بله یا نه بنویسید، یا از دکمه‌های بالا استفاده کنید" : "مشکل خود را بنویسید…"}
-                aria-label="متن پیام" value={text} disabled={!connected || submitting}
+                aria-label="متن پیام" value={text} disabled={!connected} readOnly={submitting}
                 onFocus={() => host.call("keyboard.persian")}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => {
