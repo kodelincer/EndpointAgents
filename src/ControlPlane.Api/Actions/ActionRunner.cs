@@ -1,0 +1,279 @@
+using ControlPlane.Api.Agents;
+using ControlPlane.Api.Tools;
+using EndpointAgents.Shared.Actions;
+using EndpointAgents.Shared.Rpc;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+
+namespace ControlPlane.Api.Actions;
+
+/// <summary>Who asked for an action and for which PC and user.</summary>
+public sealed record ActionRunContext(string AgentId, string? UserSid, string? ConversationId,
+    string Source, string? RequestedBy = null);
+
+public sealed record ActionRunOutcome(
+    bool Accepted,
+    string? Error,
+    string? RunId,
+    string ActionId,
+    ActionStatus? Status,
+    string? Summary,
+    JsonNode? Data,
+    JsonNode? Verification,
+    bool UndoAvailable)
+{
+    public static ActionRunOutcome Rejected(string actionId, string error) =>
+        new(false, error, null, actionId, null, null, null, null, false);
+}
+
+/// <summary>
+/// The one place general actions are checked and sent: catalogue membership, the kill switch,
+/// the hourly limit, the user's go-ahead for disruptive actions, argument and target
+/// validation, the before/after verification, the run log and undo data. The agent's tools
+/// and the dashboard both go through here.
+/// </summary>
+public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
+    ILogger<ActionRunner> logger)
+{
+    public static readonly TimeSpan LimitWindow = TimeSpan.FromHours(1);
+
+    public async Task<ActionRunOutcome> RunAsync(ActionRunContext context, string actionId,
+        IReadOnlyDictionary<string, string?>? arguments, bool userConfirmed,
+        CancellationToken cancellationToken)
+    {
+        var definition = EndpointActionCatalog.Find(actionId);
+        if (definition is null)
+            return ActionRunOutcome.Rejected(actionId, "Unknown action. Use list_endpoint_actions.");
+        if (definition.Tier == ActionTier.OperatorOnly && context.Source != ActionRunSources.Operator)
+            return ActionRunOutcome.Rejected(actionId, "This action is for the helpdesk only.");
+
+        var settings = await store.GetActionSettingsAsync(cancellationToken);
+        var setting = settings.GetValueOrDefault(actionId);
+        if (setting is { Enabled: false })
+            return ActionRunOutcome.Rejected(actionId, "This action is switched off by the helpdesk.");
+        if (definition.Tier == ActionTier.Disruptive && !userConfirmed)
+            return ActionRunOutcome.Rejected(actionId,
+                "This action interrupts the user. Ask the user (now or later) and call again with userConfirmed=true only after they agree.");
+
+        if (!EndpointActionValidator.TryValidate(definition, arguments, out var normalized,
+                out var argumentError))
+            return ActionRunOutcome.Rejected(actionId, argumentError);
+
+        var targets = await store.GetTargetsAsync(cancellationToken);
+        var resolved = new Dictionary<string, ResolvedTarget>(StringComparer.Ordinal);
+        foreach (var parameter in definition.Parameters.Where(item => item.Kind == ActionParameterKind.Target))
+        {
+            if (!normalized.TryGetValue(parameter.Name, out var targetId)) continue;
+            var target = targets.FirstOrDefault(item => item.Id == targetId);
+            if (target is null || parameter.TargetKinds?.Contains(target.Kind) == false)
+                return ActionRunOutcome.Rejected(actionId,
+                    $"'{targetId}' is not a matching environment-map target. Use list_environment_targets.");
+            resolved[parameter.Name] = target.ToResolved();
+        }
+        if (actionId == "net.test_port" && resolved.TryGetValue("target", out var portTarget)
+            && !PortAllowed(portTarget, int.Parse(normalized["port"])))
+            return ActionRunOutcome.Rejected(actionId, "That port is not listed for this target.");
+
+        var limit = setting?.MaxPerHour ?? definition.EffectiveMaxPerHour;
+        if (await store.CountRecentRunsAsync(context.AgentId, actionId, LimitWindow,
+                cancellationToken) >= limit)
+            return ActionRunOutcome.Rejected(actionId,
+                $"This action already ran {limit} times on this PC in the last hour. Try another step or escalate.");
+
+        var environment = await store.GetSettingsAsync(cancellationToken);
+        var masker = new TargetMasker(targets, environment);
+        var runId = Guid.NewGuid().ToString("N");
+        await store.StartRunAsync(runId, actionId, context.AgentId, context.ConversationId,
+            context.Source, JsonSerializer.Serialize(normalized), cancellationToken);
+
+        JsonObject? verification = null;
+        JsonNode? before = null;
+        if (definition.Verify is { } verify && definition.Tier != ActionTier.Look)
+            before = await RunVerificationAsync(context, verify, normalized, environment,
+                targets, cancellationToken);
+
+        var request = new EndpointActionRequest(actionId, normalized, resolved,
+            (definition.UsesSettings ?? [])
+                .Where(environment.ContainsKey)
+                .ToDictionary(key => key, key => environment[key], StringComparer.Ordinal),
+            context.UserSid);
+        var (result, transportError) = await DispatchAsync(context.AgentId, request,
+            cancellationToken);
+        if (result is null)
+        {
+            await store.CompleteRunAsync(runId, "Failed", transportError ?? "No answer.", null,
+                null, null, cancellationToken);
+            await TraceAsync(context, actionId, "Failed", transportError, cancellationToken);
+            return new ActionRunOutcome(true, transportError, runId, actionId,
+                ActionStatus.Failed, transportError, null, null, false);
+        }
+
+        if (definition.Verify is { } check && definition.Tier != ActionTier.Look
+            && result.Status == ActionStatus.Done)
+        {
+            var after = await RunVerificationAsync(context, check, normalized, environment,
+                targets, cancellationToken);
+            verification = new JsonObject
+            {
+                ["check"] = check.ActionId,
+                ["before"] = before,
+                ["after"] = after
+            };
+        }
+
+        var data = Annotate(actionId, ToNode(result.Data), targets);
+        var undoJson = result.Undo is { Count: > 0 } && definition.UndoActionId is not null
+            ? JsonSerializer.Serialize(result.Undo) : null;
+        await store.CompleteRunAsync(runId, result.Status.ToString(), result.Summary,
+            data?.ToJsonString(), verification?.ToJsonString(), undoJson, cancellationToken);
+        await TraceAsync(context, actionId, result.Status.ToString(), result.Summary,
+            cancellationToken);
+        logger.LogInformation("Endpoint action {ActionId} on {AgentId}: {Status}", actionId,
+            context.AgentId, result.Status);
+
+        return new ActionRunOutcome(true, null, runId, actionId, result.Status,
+            masker.Mask(result.Summary), masker.Mask(data), masker.Mask(verification),
+            undoJson is not null);
+    }
+
+    /// <summary>Helpdesk undo of a fix that saved its previous values.</summary>
+    public async Task<ActionRunOutcome> UndoAsync(string runId, string? requestedBy,
+        CancellationToken cancellationToken)
+    {
+        var run = await store.GetRunAsync(runId, cancellationToken);
+        var definition = run is null ? null : EndpointActionCatalog.Find(run.ActionId);
+        if (run?.UndoJson is null || definition?.UndoActionId is null || run.UndoneAtUtc is not null)
+            return ActionRunOutcome.Rejected(run?.ActionId ?? "", "This run cannot be undone.");
+        var arguments = JsonSerializer.Deserialize<Dictionary<string, string?>>(run.UndoJson)!
+            .Where(item => !string.IsNullOrEmpty(item.Value))
+            .ToDictionary(item => item.Key, item => item.Value);
+        var outcome = await RunAsync(new ActionRunContext(run.AgentId, null, run.ConversationId,
+            ActionRunSources.Operator, requestedBy), definition.UndoActionId, arguments, true,
+            cancellationToken);
+        if (outcome.Status is ActionStatus.Done or ActionStatus.NotNeeded)
+            await store.MarkUndoneAsync(runId, cancellationToken);
+        return outcome;
+    }
+
+    /// <summary>Sanitized JSON for the agent: masked names, no IP addresses or identifiers.</summary>
+    public static string ToToolResult(ActionRunOutcome outcome) =>
+        ToolResultSanitizer.Sanitize(outcome.Accepted
+            ? new
+            {
+                ok = outcome.Status is not ActionStatus.Failed,
+                actionId = outcome.ActionId,
+                status = outcome.Status?.ToString(),
+                summary = outcome.Summary,
+                data = outcome.Data,
+                verification = outcome.Verification
+            }
+            : new { ok = false, actionId = outcome.ActionId, error = outcome.Error });
+
+    private async Task<JsonNode?> RunVerificationAsync(ActionRunContext context,
+        ActionVerification verify, IReadOnlyDictionary<string, string> arguments,
+        IReadOnlyDictionary<string, string> environment, IReadOnlyList<EnvironmentTarget> targets,
+        CancellationToken cancellationToken)
+    {
+        var definition = EndpointActionCatalog.Find(verify.ActionId);
+        if (definition is null) return null;
+        var verifyArguments = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (verify.PassSameArguments)
+            foreach (var parameter in definition.Parameters)
+                if (arguments.TryGetValue(parameter.Name, out var value))
+                    verifyArguments[parameter.Name] = value;
+        foreach (var (key, value) in verify.FixedArguments ?? new Dictionary<string, string>())
+            verifyArguments[key] = value;
+        var request = new EndpointActionRequest(definition.Id, verifyArguments, null,
+            (definition.UsesSettings ?? []).Where(environment.ContainsKey)
+                .ToDictionary(key => key, key => environment[key], StringComparer.Ordinal),
+            context.UserSid);
+        var (result, error) = await DispatchAsync(context.AgentId, request, cancellationToken);
+        return result is null ? JsonValue.Create(error)
+            : new JsonObject
+            {
+                ["summary"] = result.Summary,
+                ["data"] = Annotate(definition.Id, ToNode(result.Data), targets)
+            };
+    }
+
+    private async Task<(EndpointActionResult? Result, string? Error)> DispatchAsync(
+        string agentId, EndpointActionRequest request, CancellationToken cancellationToken)
+    {
+        var rpc = RpcRequest.Create(Guid.NewGuid().ToString("N"), EndpointActionProtocol.Method,
+            JsonSerializer.SerializeToElement(request, EndpointActionProtocol.Json));
+        var response = await registry.SendCommandAsync(agentId, rpc, cancellationToken);
+        if (response.Error is not null)
+            return (null, response.Error.Code == 404 && response.Error.Message.StartsWith(
+                    "Unknown endpoint command", StringComparison.Ordinal)
+                ? "This PC runs an older endpoint version without general actions."
+                : response.Error.Message);
+        try
+        {
+            var element = response.Result is JsonElement json ? json
+                : JsonSerializer.SerializeToElement(response.Result, EndpointActionProtocol.Json);
+            return (element.Deserialize<EndpointActionResult>(EndpointActionProtocol.Json), null);
+        }
+        catch (JsonException)
+        {
+            return (null, "The endpoint sent an unreadable result.");
+        }
+    }
+
+    private Task TraceAsync(ActionRunContext context, string actionId, string outcome,
+        string? summary, CancellationToken cancellationToken) =>
+        context.ConversationId is null ? Task.CompletedTask
+            : store.AppendConversationTraceAsync(context.ConversationId, outcome,
+                new { actionId, summary, source = context.Source }, cancellationToken);
+
+    internal static bool PortAllowed(ResolvedTarget target, int port) =>
+        (target.Ports ?? []).Contains(port)
+        || target.Kind == EnvironmentTargetKinds.WebApp
+            && Uri.TryCreate(target.Address, UriKind.Absolute, out var uri) && uri.Port == port;
+
+    private static JsonNode? ToNode(object? value) => value switch
+    {
+        null => null,
+        JsonElement element => JsonNode.Parse(element.GetRawText()),
+        _ => JsonSerializer.SerializeToNode(value, EndpointActionProtocol.Json)
+    };
+
+    /// <summary>Adds environment-map matches the PC cannot know about.</summary>
+    internal static JsonNode? Annotate(string actionId, JsonNode? data,
+        IReadOnlyList<EnvironmentTarget> targets)
+    {
+        if (data is not JsonObject root) return data;
+        switch (actionId)
+        {
+            case "printer.list" when root["printers"] is JsonArray printers:
+                foreach (var printer in printers.OfType<JsonObject>())
+                    printer["matchesTarget"] = TargetMasker.Match(targets,
+                        printer["name"]?.GetValue<string>())?.Id;
+                break;
+            case "drives.list" when root["drives"] is JsonArray drives:
+                var mapped = new List<(string Letter, string? Target, bool Connected)>();
+                foreach (var drive in drives.OfType<JsonObject>())
+                {
+                    var match = TargetMasker.Match(targets, drive["share"]?.GetValue<string>());
+                    drive["matchesTarget"] = match?.Id;
+                    mapped.Add((drive["letter"]?.GetValue<string>() ?? "", match?.Id,
+                        drive["connected"]?.GetValue<bool>() == true));
+                }
+                root["missingStandardDrives"] = new JsonArray(targets
+                    .Where(target => target.Kind == EnvironmentTargetKinds.Share
+                        && target.DriveLetter is not null
+                        && !mapped.Any(item => item.Target == target.Id && item.Connected))
+                    .Select(target => (JsonNode)JsonValue.Create(target.Id)!).ToArray());
+                break;
+            case "credman.list" when root["credentials"] is JsonArray credentials:
+                foreach (var credential in credentials.OfType<JsonObject>())
+                {
+                    var server = credential["server"]?.GetValue<string>();
+                    credential["matchesTarget"] = targets.FirstOrDefault(target =>
+                        string.Equals(EndpointActionValidator.HostOf(target.ToResolved()), server,
+                            StringComparison.OrdinalIgnoreCase))?.Id;
+                }
+                break;
+        }
+        return root;
+    }
+}

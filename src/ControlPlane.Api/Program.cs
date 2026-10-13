@@ -1,3 +1,4 @@
+using ControlPlane.Api.Actions;
 using ControlPlane.Api.Agents;
 using ControlPlane.Api.Commands;
 using ControlPlane.Api.Chat;
@@ -84,7 +85,23 @@ builder.Services.AddHermesHttpClient(builder.Configuration);
 builder.Services.AddHostedService<HermesRunWorker>();
 builder.Services.AddMcpServer()
     .WithHttpTransport(options => options.Stateless = true)
-    .WithTools<EndpointSupportTools>();
+    .WithTools<EndpointSupportTools>()
+    .WithTools<EndpointActionTools>();
+// General endpoint actions: catalogue runner, environment map, incidents, helpdesk skills.
+builder.Services.AddSingleton<ActionStore>();
+builder.Services.AddSingleton<ActionRunner>();
+builder.Services.AddSingleton<ServerProbe>();
+builder.Services.AddHttpClient(ServerProbe.HttpClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        UseProxy = false
+    });
+builder.Services.Configure<ActiveDirectoryOptions>(builder.Configuration.GetSection("ActiveDirectory"));
+builder.Services.AddSingleton<ActiveDirectoryAccountChecker>();
+builder.Services.Configure<HelpdeskSkillOptions>(builder.Configuration.GetSection("HelpdeskSkills"));
+builder.Services.AddSingleton<SkillService>();
+builder.Services.Configure<PrivacyOptions>(builder.Configuration.GetSection("Privacy"));
 builder.Services.AddOptions<FileRepositoryOptions>()
     .Bind(builder.Configuration.GetSection("FileRepository"))
     .Validate(options => !string.IsNullOrWhiteSpace(options.RootPath),
@@ -130,6 +147,8 @@ var app = builder.Build();
 await app.Services.GetRequiredService<ChatStore>()
     .InitializeAsync(app.Lifetime.ApplicationStopping);
 await app.Services.GetRequiredService<OperatorUserStore>()
+    .InitializeAsync(app.Lifetime.ApplicationStopping);
+await app.Services.GetRequiredService<ActionStore>()
     .InitializeAsync(app.Lifetime.ApplicationStopping);
 
 // Endpoint agents and health monitors can reach the explicitly public routes
@@ -484,6 +503,7 @@ app.MapGet("/api/files/office/{artifactId}", async (string artifactId, HttpConte
     return Results.File(artifact.File.FullPath, "application/octet-stream",
         artifact.File.FileName, artifact.File.LastModifiedUtc, enableRangeProcessing: true);
 }).RequireAuthorization();
+app.MapActionEndpoints();
 app.MapGet("/api/activity", (int? limit, string? agentId, ActivityStore store) =>
     Results.Ok(store.Get(limit ?? 100, agentId)));
 // Requests for abilities the support agent does not have yet (loopback operator view).
