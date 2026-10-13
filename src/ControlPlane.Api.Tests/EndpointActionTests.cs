@@ -293,3 +293,47 @@ public sealed class ActionRunnerTests : IClassFixture<ControlPlaneApiFactory>
         Assert.Equal(1, skill.PublishedVersion);
     }
 }
+
+public sealed class HermesAssetConsistencyTests
+{
+    private static string RepoRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "EndpointAgents.slnx")))
+            directory = directory.Parent;
+        return directory?.FullName ?? throw new InvalidOperationException("Repository root not found.");
+    }
+
+    [Fact]
+    public void ReviewedSkillsOnlyNameRealToolsAndActions()
+    {
+        // Only the skills the sync script promotes into Hermes (ibsng-support is not promoted).
+        var script = File.ReadAllText(Path.Combine(RepoRoot(), "scripts", "sync-hermes-profile.ps1"));
+        var list = script[script.IndexOf("$Skills = @(", StringComparison.Ordinal)..];
+        list = list[..list.IndexOf(')')];
+        var skills = global::System.Text.RegularExpressions.Regex.Matches(list, "\"([a-z-]+)\"")
+            .Select(match => Path.Combine(RepoRoot(), "deploy", "hermes", "skills",
+                match.Groups[1].Value, "SKILL.md"))
+            .ToArray();
+        Assert.Contains(skills, file => file.Contains("endpoint-actions", StringComparison.Ordinal));
+        foreach (var file in skills)
+        {
+            var text = File.ReadAllText(file);
+            var errors = SkillService.Lint("repo-skill", "d", text)
+                .Where(issue => issue.Severity == "error"
+                    && !issue.Message.Contains("'---' header", StringComparison.Ordinal))
+                .Select(issue => issue.Message);
+            Assert.True(!errors.Any(), $"{file}: {string.Join("; ", errors)}");
+        }
+    }
+
+    [Fact]
+    public void HermesAllowListMatchesTheControlPlaneTools()
+    {
+        var config = File.ReadAllLines(Path.Combine(RepoRoot(), "deploy", "hermes", "config.yaml.example"));
+        var start = Array.FindIndex(config, line => line.Trim() == "include:");
+        var included = config.Skip(start + 1).TakeWhile(line => line.TrimStart().StartsWith("- "))
+            .Select(line => line.Trim()[2..].Trim()).ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(SkillService.KnownTools.Order(), included.Order());
+    }
+}

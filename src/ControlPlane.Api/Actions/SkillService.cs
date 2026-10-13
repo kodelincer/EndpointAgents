@@ -48,6 +48,10 @@ public sealed partial class SkillService(ActionStore store, IOptions<HelpdeskSki
     private static readonly HashSet<string> ActionPrefixes = EndpointActionCatalog.All
         .Select(item => item.Id[..item.Id.IndexOf('.')]).ToHashSet(StringComparer.Ordinal);
 
+    /// <summary>Older fixed RPC methods (proposed through propose_endpoint_action).</summary>
+    private static readonly HashSet<string> LegacyCommands = new Commands.CommandCatalog().GetAll()
+        .Select(item => item.Method).ToHashSet(StringComparer.Ordinal);
+
     public bool CanWriteToHermes => !string.IsNullOrWhiteSpace(options.Value.PublishPath);
 
     public static bool IsValidName(string? name) =>
@@ -81,7 +85,8 @@ public sealed partial class SkillService(ActionStore store, IOptions<HelpdeskSki
         {
             var id = match.Groups[1].Value;
             var definition = EndpointActionCatalog.Find(id);
-            if (definition is null && ActionPrefixes.Contains(id[..id.IndexOf('.')]))
+            if (definition is null && ActionPrefixes.Contains(id[..id.IndexOf('.')])
+                && !LegacyCommands.Contains(id))
                 Error($"Unknown action '{id}'. Check the id on the capabilities page, or ask for a new action.");
             else if (definition?.Tier == ActionTier.OperatorOnly)
                 Error($"'{id}' is for the helpdesk only; the agent cannot run it.");
