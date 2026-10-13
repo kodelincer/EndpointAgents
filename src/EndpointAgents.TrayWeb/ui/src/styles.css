@@ -29,6 +29,9 @@
   --warn-soft: #fcefd5;
   --bad: #c3342c;
   --bad-soft: #fbe2df;
+  --warm: #c46a00;
+  --warm-soft: #fff1d1;
+  --warm-edge: #f3c872;
   --shadow: 0 1px 2px rgba(20, 32, 59, 0.06), 0 4px 14px rgba(20, 32, 59, 0.07);
   --shadow-lift: 0 2px 6px rgba(20, 32, 59, 0.08), 0 18px 48px rgba(20, 32, 59, 0.18);
   --font: "Vazirmatn Variable", "Segoe UI", Tahoma, sans-serif;
@@ -64,6 +67,9 @@
     --warn-soft: #3a2b12;
     --bad: #f2756b;
     --bad-soft: #3d1b1a;
+    --warm: #ffb347;
+    --warm-soft: #3a2b12;
+    --warm-edge: #6e5220;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
     --shadow-lift: 0 2px 6px rgba(0, 0, 0, 0.35), 0 18px 48px rgba(0, 0, 0, 0.5);
   }
@@ -518,3 +524,16 @@ input, textarea { caret-color: var(--action); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* A warm, friendly hint beside the conversation. Shown in the details pane when it fits,
+   otherwise inline above the greeting. */
+.warm-tip {
+  display: flex; gap: 11px; align-items: flex-start; padding: 13px 14px; border-radius: 14px;
+  background: var(--warm-soft); color: var(--ink); border: 1px solid var(--warm-edge);
+}
+.warm-tip svg { flex: none; color: var(--warm); margin-top: 2px; }
+.warm-tip strong { display: block; font-size: 13.5px; margin-bottom: 2px; }
+.warm-tip p { font-size: 13px; line-height: 1.8; color: var(--ink); user-select: text; }
+.warm-tip.inline { display: none; align-self: stretch; margin-bottom: 4px; }
+@media (max-width: 1179px) { .warm-tip.inline { display: flex; } }
+.chat:not([data-details]) .warm-tip.inline { display: flex; }

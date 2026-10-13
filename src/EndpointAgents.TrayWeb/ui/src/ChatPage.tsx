@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUp, Check, CheckCheck, Clock3, Info, LoaderCircle, PanelRight, PencilLine, RotateCw, Search, ShieldCheck, X,
+  ArrowUp, Check, CheckCheck, Clock3, Info, Lightbulb, LoaderCircle, PanelRight, PencilLine, RotateCw, Search, ShieldCheck, X,
 } from "lucide-react";
 import { host, HostError } from "./bridge";
 import {
@@ -430,6 +430,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
           <div className="timeline-inner" role="log" aria-live="polite" aria-label="پیام‌های گفتگو">
             {selectedId === null && (
               <>
+                <WarmTip className="inline" />
                 <Bubble role="Assistant" body={GREETING} />
                 <div className="suggestions" aria-label="پیشنهادها">
                   {SUGGESTIONS.map((s) => (
@@ -491,6 +492,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
 
       {/* details ----------------------------------------------------------------------------------- */}
       <aside className="details" aria-label="جزئیات">
+        <WarmTip />
         <h2>جزئیات گفتگو</h2>
         {selected ? (
           <dl className="facts">
@@ -510,6 +512,19 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
         </div>
       </aside>
     </div>
+  );
+}
+
+/** A friendly nudge: the assistant works best when the first message is the problem itself. */
+function WarmTip({ className = "" }: { className?: string }) {
+  return (
+    <aside className={`warm-tip ${className}`.trim()} aria-label="راهنمای نوشتن پیام">
+      <Lightbulb size={20} aria-hidden />
+      <div>
+        <strong>نیازی به احوال‌پرسی نیست</strong>
+        <p>با دستیار سلام و احوال‌پرسی نکنید؛ فقط بنویسید چه کمکی لازم دارید، مثلاً «آفیس فعال نیست» یا «اینترنت وصل نمی‌شود».</p>
+      </div>
+    </aside>
   );
 }
 
