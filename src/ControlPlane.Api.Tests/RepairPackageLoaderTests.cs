@@ -297,6 +297,53 @@ public sealed class RepairPackageLoaderTests : IDisposable
     [MemberData(nameof(InstallPackages))]
     public async Task CheckedInInstallPackageIsReadyWithItsFiles(string id)
     {
+        var folder = await CopyCheckedInPackageAsync(id);
+
+        var repository = CreateRepository();
+        var status = await SingleStatusAsync();
+        var published = Assert.Single(await repository.GetRepairPackagesAsync(
+            TestContext.Current.CancellationToken));
+        var descriptor = published.Descriptor;
+
+        // Ready, not "Ready with lint warnings": the BAT has nothing the lint flags.
+        Assert.True(status.Status == BatPackageStatuses.Ready,
+            string.Join(" ", status.Reasons));
+        Assert.Empty(BatScriptLint.Inspect(await File.ReadAllTextAsync(
+            Path.Combine(folder, $"{id}.bat"),
+            TestContext.Current.CancellationToken)).Warnings);
+        Assert.StartsWith("install-", published.Problem);
+        Assert.NotEmpty(descriptor.SupportFiles!);
+        // 10 already installed, 3010 installed and the user signs out or restarts.
+        Assert.Contains(10, descriptor.Playbook.SuccessExitCodes!);
+        Assert.Equal([3010], descriptor.Playbook.RestartExitCodes);
+        Assert.Equal(["ERROR:"], descriptor.Playbook.FailureMarkers);
+        Assert.Empty(descriptor.Playbook.Steps);
+        Assert.Empty(descriptor.Playbook.Arguments ?? []);
+    }
+
+    [Fact]
+    public async Task CheckedInChromeResetPackageIsReady()
+    {
+        await CopyCheckedInPackageAsync("chrome-reset");
+
+        var status = await SingleStatusAsync();
+        var published = Assert.Single(await CreateRepository().GetRepairPackagesAsync(
+            TestContext.Current.CancellationToken));
+
+        Assert.True(status.Status == BatPackageStatuses.Ready,
+            string.Join(" ", status.Reasons));
+        Assert.Equal("chrome-reset-settings", published.Problem);
+        // 0 reset, 20 Chrome not installed, 21 no Chrome settings for this user.
+        Assert.Equal([0, 20, 21], published.Descriptor.Playbook.SuccessExitCodes);
+        Assert.Empty(published.Descriptor.SupportFiles ?? []);
+    }
+
+    /// <summary>
+    /// Copies a checked-in package into the test repository, with stand-ins for vendor
+    /// installers (not in git), and signs it with the test key.
+    /// </summary>
+    private async Task<string> CopyCheckedInPackageAsync(string id)
+    {
         var source = Path.Combine(RepositoryRoot(), "deploy", "control-plane",
             "FileRepository", "packages", id);
         var folder = Directory.CreateDirectory(Path.Combine(_root, "packages", id)).FullName;
@@ -321,27 +368,7 @@ public sealed class RepairPackageLoaderTests : IDisposable
         TestPackageSigner.Sign(package, folder);
         await File.WriteAllTextAsync(Path.Combine(folder, "package.json"),
             package.ToJsonString(), TestContext.Current.CancellationToken);
-
-        var repository = CreateRepository();
-        var status = await SingleStatusAsync();
-        var published = Assert.Single(await repository.GetRepairPackagesAsync(
-            TestContext.Current.CancellationToken));
-        var descriptor = published.Descriptor;
-
-        // Ready, not "Ready with lint warnings": the BAT has nothing the lint flags.
-        Assert.True(status.Status == BatPackageStatuses.Ready,
-            string.Join(" ", status.Reasons));
-        Assert.Empty(BatScriptLint.Inspect(await File.ReadAllTextAsync(
-            Path.Combine(folder, $"{id}.bat"),
-            TestContext.Current.CancellationToken)).Warnings);
-        Assert.StartsWith("install-", published.Problem);
-        Assert.NotEmpty(descriptor.SupportFiles!);
-        // 10 already installed, 3010 installed and the user signs out or restarts.
-        Assert.Contains(10, descriptor.Playbook.SuccessExitCodes!);
-        Assert.Equal([3010], descriptor.Playbook.RestartExitCodes);
-        Assert.Equal(["ERROR:"], descriptor.Playbook.FailureMarkers);
-        Assert.Empty(descriptor.Playbook.Steps);
-        Assert.Empty(descriptor.Playbook.Arguments ?? []);
+        return folder;
     }
 
     [Fact]

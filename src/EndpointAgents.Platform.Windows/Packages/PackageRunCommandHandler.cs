@@ -93,8 +93,11 @@ public sealed class PackageRunCommandHandler(
         try
         {
             var staged = await artifacts.EnsureAsync(descriptor, cancellationToken);
+            // The control plane adds the chat user's SID; packages that change the
+            // user's own profile read it from their environment.
+            OfficeRemediationCommandHandler.TryParseUserSid(request.Params, out var userSid);
             var execution = await runner.RunAsync(staged.Path, descriptor,
-                cancellationToken);
+                cancellationToken, PackageUserContext.Resolve(userSid));
             if (TryGetExecutionFailure(execution, out var code, out var message))
                 return RpcResponse.Failure(request.Id, code, message, new
                 {

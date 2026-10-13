@@ -54,3 +54,28 @@ the 10-minute repair limit.
 - 32-bit Windows: the BAT stops with an error; the user is escalated.
 - Per-user Chrome in the user's own profile is not detected, because the package runs as
   LocalSystem. The MSI then adds a system-wide copy, which is harmless.
+
+## Resetting Chrome settings
+
+When a user asks to reset Chrome, or describes a hijacked homepage or search engine or
+unwanted pop-ups, the agent explains what will change, waits for the user's "yes" in the
+chat, and runs the `chrome-reset` package (rule: the `chrome-reset-settings` entry in
+`deploy/hermes/skills/repair-packages/SKILL.md`). It works like Chrome's own
+Settings > Reset settings > "Restore settings to their original defaults":
+
+1. Checks that Chrome is installed (system-wide or in the user's profile); otherwise exit 20
+   and the agent offers to install it.
+2. Closes the user's Chrome windows.
+3. For every Chrome profile of that user, sets `Preferences` and `Secure Preferences`
+   aside as `*.before-reset`. Chrome recreates them with default startup pages, search
+   engine, new tab page, theme, site settings and extensions.
+
+Bookmarks, history, saved passwords and cookies are kept. Unlike Chrome's own reset,
+extensions are removed rather than disabled, and the user may have to sign in to Chrome
+again (sync then brings back synced settings). To undo, close Chrome and rename the
+`*.before-reset` files back.
+
+The package runs as LocalSystem like every package. The endpoint tells it which user asked
+through `ENDPOINTAGENTS_USER_SID`, `ENDPOINTAGENTS_USER_PROFILE` and
+`ENDPOINTAGENTS_USER_LOCALAPPDATA` (see [bat-packages.md](bat-packages.md)); without them the
+package refuses to run.

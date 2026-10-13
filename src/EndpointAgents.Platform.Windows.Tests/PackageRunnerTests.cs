@@ -198,6 +198,39 @@ public sealed class PackageRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task PackageSeesOnlyTheUserItRunsFor()
+    {
+        var user = PackageUserContext.Resolve(
+            System.Security.Principal.WindowsIdentity.GetCurrent().User!.Value);
+        Assert.NotNull(user);
+        Assert.True(Directory.Exists(user.ProfilePath));
+        // Exit 1 so the run keeps its output tail.
+        var path = await WriteBatAsync("@echo off\r\n"
+            + $"if \"%ENDPOINTAGENTS_USER_SID%\"==\"{user.UserSid}\" echo sid-matches\r\n"
+            + $"if \"%ENDPOINTAGENTS_USER_PROFILE%\"==\"{user.ProfilePath}\" echo profile-matches\r\n"
+            + "exit /b 1\r\n");
+        BatchPlaybookPolicy.TryNormalize(V3(), out var playbook, out _);
+
+        var withUser = await OfficeBugfixRunner.RunProcessAsync(PackageRunner.CreateStartInfo(
+            path, PackageFileTypes.Bat, [], user), playbook!, CancellationToken.None);
+        var withoutUser = PackageRunner.CreateStartInfo(path, PackageFileTypes.Bat, []);
+
+        Assert.Contains("sid-matches", withUser.OutputTail);
+        Assert.Contains("profile-matches", withUser.OutputTail);
+        Assert.False(withoutUser.Environment.ContainsKey(PackageUserContext.SidVariable));
+        Assert.False(withoutUser.Environment.ContainsKey(PackageUserContext.ProfileVariable));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-a-sid")]
+    [InlineData("S-1-5-18")] // LocalSystem
+    [InlineData("S-1-5-32-544")] // Administrators group
+    [InlineData("S-1-5-21-1-2-3-424242")] // an account with no profile on this PC
+    public void OnlyARealUserProfileIsPassedToPackages(string? sid) =>
+        Assert.Null(PackageUserContext.Resolve(sid));
+
+    [Fact]
     public async Task RunnerRunsTheStagedSamplePackageAndRejectsATamperedCopy()
     {
         var root = AppContext.BaseDirectory;

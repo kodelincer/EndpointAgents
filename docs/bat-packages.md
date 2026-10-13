@@ -192,6 +192,8 @@ them, because you reviewed it.
 .\scripts\new-package.ps1 -File C:\Vendor\NetReset.bat -Id net-reset
 ```
 
+Installing applications has its own generator and guide, [software-install.md](software-install.md).
+
 A harmless worked example is checked in at
 `deploy\control-plane\FileRepository\packages\no-input-repair-sample`.
 
@@ -209,6 +211,7 @@ What is different in a general `package.json`:
 | `playbook.arguments` | Up to 16 fixed arguments, such as `["/quiet", "/norestart"]`. Letters, digits, spaces and `- _ . / \ : = , + @ #` only; never passwords or keys. |
 | `playbook.timeoutSeconds` | Overall limit for the whole run, 30-3600 (default 480). |
 | `playbook.restartExitCodes` | Exit codes that mean "worked, restart needed", such as `[3010]`. The agent asks the user to restart; nothing restarts automatically. |
+| (environment) | Packages run as LocalSystem. When the agent runs one for a chat user, the endpoint also sets `ENDPOINTAGENTS_USER_SID`, `ENDPOINTAGENTS_USER_PROFILE` and `ENDPOINTAGENTS_USER_LOCALAPPDATA` for that user, so a package can fix something in the user's own profile (see `chrome-reset`). They are never inherited from elsewhere and are missing when no user is known. |
 
 EXE rules: a **console** EXE may answer screens like a BAT. A **windowed (GUI)** EXE, which
 includes most installers, may only run with `steps: []` and its silent-mode arguments. If

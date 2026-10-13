@@ -21,7 +21,7 @@ public sealed class PackageRunner(PackageArtifactClient artifacts,
     IOptions<PackageSigningOptions> signing)
 {
     public async Task<PackageRunResult> RunAsync(string path, PackageDescriptor descriptor,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, PackageUserContext? user = null)
     {
         if (artifacts.RequireAdministrator)
         {
@@ -47,7 +47,7 @@ public sealed class PackageRunner(PackageArtifactClient artifacts,
 
         var result = await OfficeBugfixRunner.RunProcessAsync(
             CreateStartInfo(Path.GetFullPath(path), descriptor.FileType,
-                playbook!.Arguments ?? []),
+                playbook!.Arguments ?? [], user),
             playbook, cancellationToken);
         return new PackageRunResult(result.ProcessId, result.ExitCode, result.State,
             result.State == OfficeBugfixRunStates.Completed
@@ -56,7 +56,7 @@ public sealed class PackageRunner(PackageArtifactClient artifacts,
     }
 
     internal static ProcessStartInfo CreateStartInfo(string path, string fileType,
-        IReadOnlyList<string> arguments)
+        IReadOnlyList<string> arguments, PackageUserContext? user = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -69,6 +69,11 @@ public sealed class PackageRunner(PackageArtifactClient artifacts,
             // Never write a byte-order mark into the first answer.
             StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
         };
+        // The user the package runs for; never inherited from the service's own environment.
+        startInfo.Environment.Remove(PackageUserContext.SidVariable);
+        startInfo.Environment.Remove(PackageUserContext.ProfileVariable);
+        startInfo.Environment.Remove(PackageUserContext.LocalAppDataVariable);
+        user?.Apply(startInfo);
         if (fileType == PackageFileTypes.Exe)
         {
             startInfo.FileName = path;
