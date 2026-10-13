@@ -492,7 +492,6 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
 
       {/* details ----------------------------------------------------------------------------------- */}
       <aside className="details" aria-label="جزئیات">
-        <WarmTip />
         <h2>جزئیات گفتگو</h2>
         {selected ? (
           <dl className="facts">
@@ -510,6 +509,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
           <ShieldCheck size={18} aria-hidden />
           <p>دستیار فقط کارهای تأییدشده را انجام می‌دهد و پیش از هر تغییر از شما اجازه می‌گیرد. رمز عبور خود را هرگز در گفتگو ننویسید.</p>
         </div>
+        <WarmTip />
       </aside>
     </div>
   );
