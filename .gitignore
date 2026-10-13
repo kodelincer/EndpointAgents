@@ -370,3 +370,6 @@ FodyWeavers.xsd
 .local/screenshots/
 .local/*.log
 .local/*.err
+
+# Impeccable decision-page state
+.impeccable/questions/
