@@ -23,7 +23,7 @@ public static class OperatorRoles
     public static string[] PermissionsFor(string role) => role switch
     {
         Admin => [.. ReviewerPermissions, "commands.run", "maintenance.set", "devices.manage",
-            "users.manage"],
+            "users.manage", "environment.manage"],
         Reviewer => ReviewerPermissions,
         Member => MemberPermissions,
         _ => []
@@ -33,7 +33,7 @@ public static class OperatorRoles
         ["dashboard.view", "helpdesk.reply", "helpdesk.diagnose", "skills.draft"];
 
     private static readonly string[] ReviewerPermissions =
-        [.. MemberPermissions, "feature-requests.triage", "skills.publish"];
+        [.. MemberPermissions, "feature-requests.triage", "skills.publish", "actions.undo"];
 }
 
 public static class OperatorPolicies

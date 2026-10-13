@@ -1,3 +1,4 @@
+using ControlPlane.Api.Security;
 using EndpointAgents.Shared.Actions;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -10,8 +11,9 @@ public sealed record MissingActionRequest(string Summary, string? Details);
 
 /// <summary>
 /// Operator (loopback dashboard) routes for the capabilities page, the environment map,
-/// incidents, the action run log and helpdesk-written skills. Who may call them is decided
-/// by the dashboard's sign-in; until then they follow the loopback-only operator policy.
+/// incidents, the action run log and helpdesk-written skills. Every route needs a signed-in
+/// operator (the fallback policy); members read and draft, reviewers publish skills and undo
+/// fixes, admins change the environment map, standards and action switches.
 /// </summary>
 public static partial class ActionEndpoints
 {
@@ -81,7 +83,8 @@ public static partial class ActionEndpoints
                 return Results.BadRequest(new { message = "The hourly limit must be 0 to 1000." });
             await store.SaveActionSettingAsync(actionId, input, Operator(context), cancellationToken);
             return Results.NoContent();
-        });
+        })
+            .RequireAuthorization(OperatorPolicies.Admin);
         app.MapPost("/api/actions/requests", async (MissingActionRequest request,
             HttpContext context, ActionStore store, CancellationToken cancellationToken) =>
         {
@@ -102,8 +105,8 @@ public static partial class ActionEndpoints
         {
             var outcome = await runner.UndoAsync(runId, Operator(context), cancellationToken);
             return outcome.Accepted ? Results.Ok(outcome) : Results.BadRequest(new { message = outcome.Error });
-        });
-
+        })
+            .RequireAuthorization(OperatorPolicies.Reviewer);
         // ---------------- Environment map ----------------
         app.MapGet("/api/environment/targets", async (ActionStore store,
             CancellationToken cancellationToken) =>
@@ -115,11 +118,13 @@ public static partial class ActionEndpoints
             if (error is not null) return Results.BadRequest(new { message = error });
             await store.UpsertTargetAsync(input with { Id = targetId }, cancellationToken);
             return Results.NoContent();
-        });
+        })
+            .RequireAuthorization(OperatorPolicies.Admin);
         app.MapDelete("/api/environment/targets/{targetId}", async (string targetId,
             ActionStore store, CancellationToken cancellationToken) =>
             await store.DeleteTargetAsync(targetId, cancellationToken) > 0
-                ? Results.NoContent() : Results.NotFound());
+                ? Results.NoContent() : Results.NotFound())
+            .RequireAuthorization(OperatorPolicies.Admin);
         app.MapGet("/api/environment/settings", async (ActionStore store,
             CancellationToken cancellationToken) =>
             Results.Ok(await store.GetSettingsAsync(cancellationToken)));
@@ -131,8 +136,8 @@ public static partial class ActionEndpoints
                     return Results.BadRequest(new { message = error });
             await store.SaveSettingsAsync(values, cancellationToken);
             return Results.NoContent();
-        });
-
+        })
+            .RequireAuthorization(OperatorPolicies.Admin);
         // ---------------- Incidents ----------------
         app.MapGet("/api/incidents", async (bool? activeOnly, ActionStore store,
             CancellationToken cancellationToken) =>
@@ -217,7 +222,8 @@ public static partial class ActionEndpoints
             var result = await skills.PublishAsync(name, request.Version, Operator(context),
                 request.Note, cancellationToken);
             return result.Published ? Results.Ok(result) : Results.BadRequest(result);
-        });
+        })
+            .RequireAuthorization(OperatorPolicies.Reviewer);
         app.MapPost("/api/skills/{name}/reject", async (string name, SkillReviewRequest request,
             HttpContext context, ActionStore store, CancellationToken cancellationToken) =>
         {
@@ -225,11 +231,13 @@ public static partial class ActionEndpoints
             await store.SetSkillStatusAsync(name, SkillStatus.Draft, Operator(context),
                 request.Note, cancellationToken);
             return Results.NoContent();
-        });
+        })
+            .RequireAuthorization(OperatorPolicies.Reviewer);
         app.MapPost("/api/skills/{name}/retire", async (string name, SkillReviewRequest request,
             HttpContext context, SkillService skills, CancellationToken cancellationToken) =>
             await skills.RetireAsync(name, Operator(context), request.Note, cancellationToken)
-                ? Results.NoContent() : Results.NotFound());
+                ? Results.NoContent() : Results.NotFound())
+            .RequireAuthorization(OperatorPolicies.Reviewer);
         app.MapGet("/api/skills/{name}/download", async (string name, ActionStore store,
             CancellationToken cancellationToken) =>
         {

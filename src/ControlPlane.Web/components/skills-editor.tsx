@@ -4,6 +4,7 @@ import { CheckCircle2, CircleAlert, Download, FilePlus2, History, MessageSquareT
   Sparkles, Trash2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "@/components/auth-gate";
 import { draftFromConversation, getSkill, getSkills, getSkillTemplate, issueCounts, lintSkill, publishSkill,
   rejectSkill, retireSkill, saveSkillDraft, skillDownloadUrl, skillStatusText, submitSkill, type HelpdeskSkill,
   type SkillDetail, type SkillDraft, type SkillIssue, type SkillStats } from "@/lib/capabilities";
@@ -12,6 +13,8 @@ const blank: SkillDraft = { name: "", description: "", body: "" };
 
 /** Helpdesk members write Hermes skills here; a reviewer publishes them into Hermes. */
 export function SkillsEditor() {
+  const { can } = useAuth();
+  const reviewer = can("skills.publish");
   const params = useSearchParams();
   const [skills, setSkills] = useState<{ skill: HelpdeskSkill; stats?: SkillStats | null }[]>([]);
   const [selected, setSelected] = useState<SkillDetail>();
@@ -113,7 +116,7 @@ export function SkillsEditor() {
           {selected && status === "Draft" && <button className="secondary-button" disabled={busy}
             onClick={() => void act(async () => { await submitSkill(draft.name); await reload(); }, "Submitted for review.")}>
             <Send size={14} />Submit for review</button>}
-          {selected && (status === "InReview" || status === "Draft") && <button className="primary-button" disabled={busy}
+          {selected && reviewer && (status === "InReview" || status === "Draft") && <button className="primary-button" disabled={busy}
             onClick={() => void act(async () => {
               const result = await publishSkill(draft.name, null, note);
               setIssues(result.issues);
@@ -122,9 +125,9 @@ export function SkillsEditor() {
                 : "Published. Download SKILL.md and copy it into the Hermes skills folder.");
               await reload();
             }, "")}>Publish (reviewer)</button>}
-          {selected && status === "InReview" && <button className="secondary-button" disabled={busy}
+          {selected && reviewer && status === "InReview" && <button className="secondary-button" disabled={busy}
             onClick={() => void act(async () => { await rejectSkill(draft.name, note); await reload(); }, "Sent back to the author.")}>Send back</button>}
-          {selected && status === "Published" && <button className="secondary-button" disabled={busy}
+          {selected && reviewer && status === "Published" && <button className="secondary-button" disabled={busy}
             onClick={() => window.confirm("Retire this skill? Hermes stops using it.") && void act(async () => {
               await retireSkill(draft.name, note); await reload(); }, "Retired.")}><Trash2 size={14} />Retire</button>}
           {selected && <a className="secondary-button" href={skillDownloadUrl(draft.name)} download={`${draft.name}-SKILL.md`}>
@@ -137,7 +140,7 @@ export function SkillsEditor() {
           {selected.versions.map(version => <div key={version.version} className="skills-version">
             <span>v{version.version} · {version.author} · {new Date(version.createdAtUtc).toLocaleString()}
               {version.note && <> · <span dir="auto">{version.note}</span></>}</span>
-            {version.version !== selected.skill.version && <button className="secondary-button" disabled={busy}
+            {reviewer && version.version !== selected.skill.version && <button className="secondary-button" disabled={busy}
               onClick={() => window.confirm(`Publish version ${version.version} again?`) && void act(async () => {
                 await publishSkill(draft.name, version.version, `Rollback to v${version.version}`); await reload();
               }, `Rolled back to v${version.version}.`)}>Roll back to this</button>}

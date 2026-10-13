@@ -1,4 +1,5 @@
 using ControlPlane.Api.Actions;
+using ControlPlane.Api.Security;
 using EndpointAgents.Shared.Actions;
 using Microsoft.Extensions.DependencyInjection;
 using System.Net;
@@ -198,14 +199,15 @@ public sealed class EnvironmentValidationTests
 
 public sealed class ActionRunnerTests : IClassFixture<ControlPlaneApiFactory>
 {
+    private readonly ControlPlaneApiFactory _factory;
     private readonly ActionRunner _runner;
     private readonly ActionStore _store;
-    private readonly HttpClient _client;
     private static CancellationToken TestCancellation => TestContext.Current.CancellationToken;
 
     public ActionRunnerTests(ControlPlaneApiFactory factory)
     {
-        _client = factory.CreateClient();
+        _factory = factory;
+        _ = factory.CreateClient();
         _runner = factory.Services.GetRequiredService<ActionRunner>();
         _store = factory.Services.GetRequiredService<ActionStore>();
     }
@@ -261,6 +263,7 @@ public sealed class ActionRunnerTests : IClassFixture<ControlPlaneApiFactory>
     [Fact]
     public async Task EnvironmentMapAndCapabilitiesRoutesWork()
     {
+        var _client = await _factory.CreateOperatorClientAsync(OperatorRoles.Admin, TestCancellation);
         var put = await _client.PutAsJsonAsync("/api/environment/targets/hr-portal",
             new { kind = "webapp", label = "HR portal", address = "https://hr.corp.local", ports = new[] { 443 } },
             TestCancellation);
@@ -291,6 +294,33 @@ public sealed class ActionRunnerTests : IClassFixture<ControlPlaneApiFactory>
         var skill = await _store.GetSkillAsync("hr-portal-down", TestCancellation);
         Assert.Equal(SkillStatus.Published, skill!.Status);
         Assert.Equal(1, skill.PublishedVersion);
+    }
+
+    [Fact]
+    public async Task RolesLimitWhoChangesTheMapAndPublishes()
+    {
+        using var anonymous = _factory.CreateClient();
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync("/api/capabilities", TestCancellation)).StatusCode);
+
+        var member = await _factory.CreateOperatorClientAsync(OperatorRoles.Member, TestCancellation);
+        Assert.Equal(HttpStatusCode.OK, (await member.GetAsync("/api/capabilities", TestCancellation)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PutAsJsonAsync("/api/environment/targets/x1",
+            new { kind = "host", label = "X", address = "x.corp.local" }, TestCancellation)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PutAsJsonAsync("/api/actions/dns.flush/settings",
+            new { enabled = false }, TestCancellation)).StatusCode);
+
+        var draft = await member.PostAsJsonAsync("/api/skills", new
+        {
+            name = "member-draft",
+            description = "A member's draft.",
+            body = "1. Run `network.status`. 2. Ask the user if solved, else escalate."
+        }, TestCancellation);
+        Assert.Equal(HttpStatusCode.OK, draft.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PostAsJsonAsync("/api/skills/member-draft/publish",
+            new { note = "" }, TestCancellation)).StatusCode);
+        var reviewer = await _factory.CreateOperatorClientAsync(OperatorRoles.Reviewer, TestCancellation);
+        Assert.Equal(HttpStatusCode.OK, (await reviewer.PostAsJsonAsync("/api/skills/member-draft/publish",
+            new { note = "" }, TestCancellation)).StatusCode);
     }
 }
 

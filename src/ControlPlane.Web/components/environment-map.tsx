@@ -2,6 +2,7 @@
 
 import { CircleAlert, Map as MapIcon, Plus, RefreshCw, Save, Siren, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "@/components/auth-gate";
 import { createIncident, deleteTarget, getEnvironmentSettings, getIncidents, getTargets, parseNumberList,
   parseTextList, saveEnvironmentSettings, saveTarget, setIncidentStatus, suggestId, type EnvironmentTarget,
   type Incident } from "@/lib/capabilities";
@@ -29,6 +30,8 @@ const empty: EnvironmentTarget = { id: "", kind: "webapp", label: "", address: "
 
 /** The organisation's map: what the agent may test, connect to and compare against. */
 export function EnvironmentMap() {
+  const { can } = useAuth();
+  const manage = can("environment.manage");
   const [tab, setTab] = useState<Tab>("targets");
   const [targets, setTargets] = useState<EnvironmentTarget[]>([]);
   const [settings, setSettings] = useState<Record<string, string>>({});
@@ -83,7 +86,8 @@ export function EnvironmentMap() {
     </div>
 
     {tab === "targets" && <section className="capability-group">
-      <button className="primary-button" onClick={() => setEditing({ ...empty, isNew: true })}><Plus size={14} />Add target</button>
+      {manage ? <button className="primary-button" onClick={() => setEditing({ ...empty, isNew: true })}><Plus size={14} />Add target</button>
+        : <p className="capability-note">Only an admin can change the environment map.</p>}
       {editing && <div className="environment-editor">
         <label>Kind<select value={editing.kind} onChange={event => setEditing({ ...editing, kind: event.target.value })}>
           {kinds.map(kind => <option key={kind.value} value={kind.value}>{kind.label}</option>)}</select></label>
@@ -116,20 +120,20 @@ export function EnvironmentMap() {
             {target.expectedAddresses.length > 0 && ` · expects ${target.expectedAddresses.join(", ")}`}</p>
           {(target.location || target.notes) && <p className="file-compatibility" dir="auto">{[target.location, target.notes].filter(Boolean).join(" · ")}</p>}
         </div>
-        <div className="file-row-actions">
+        {manage && <div className="file-row-actions">
           <button className="secondary-button" onClick={() => setEditing({ ...target })}>Edit</button>
           <button className="secondary-button" aria-label={`Delete ${target.label}`}
             onClick={() => window.confirm(`Delete ${target.label}?`) && void run(() => deleteTarget(target.id), "Target deleted.")}>
             <Trash2 size={14} /></button>
-        </div>
+        </div>}
       </article>)}
     </section>}
 
     {tab === "standards" && <section className="capability-group environment-editor">
       {standards.map(item => <label key={item.key} className="wide">{item.label} <code>{item.key}</code>
-        <input value={settings[item.key] ?? ""} dir="ltr" onChange={event => setSettings({ ...settings, [item.key]: event.target.value })} />
+        <input value={settings[item.key] ?? ""} dir="ltr" disabled={!manage} onChange={event => setSettings({ ...settings, [item.key]: event.target.value })} />
         <small>{item.hint}</small></label>)}
-      <div className="wide"><button className="primary-button" onClick={() => void run(() => saveEnvironmentSettings(settings), "Standards saved.")}>
+      <div className="wide"><button className="primary-button" disabled={!manage} onClick={() => void run(() => saveEnvironmentSettings(settings), "Standards saved.")}>
         <Save size={14} />Save standards</button></div>
     </section>}
 

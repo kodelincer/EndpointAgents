@@ -2,6 +2,7 @@
 
 import { BookOpen, CircleAlert, Languages, ListChecks, RefreshCw, RotateCcw, Search, Send, Wrench } from "lucide-react";
 import Link from "next/link";
+import { useAuth } from "@/components/auth-gate";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { areaText, filterActions, getActionRuns, getCapabilities, groupByArea, requestMissingAction,
   saveActionSetting, successRate, tierText, undoActionRun, type ActionInfo, type ActionRun, type Capabilities,
@@ -30,6 +31,7 @@ const toolText: Record<string, { en: string; fa: string }> = {
 
 /** The helpdesk's reference: everything the support agent can do, generated from the live catalogue. */
 export function CapabilitiesPage() {
+  const { can } = useAuth();
   const [data, setData] = useState<Capabilities>();
   const [runs, setRuns] = useState<ActionRun[]>([]);
   const [error, setError] = useState<string>();
@@ -117,7 +119,7 @@ export function CapabilitiesPage() {
         {groups.map(group => <section key={group.area} className="capability-group" aria-label={group.area}>
           <h2>{areaText[group.area]?.[language] ?? group.area}</h2>
           {group.actions.map(action => <ActionCard key={action.id} action={action} language={language}
-            busy={busy === action.id} onChange={(enabled, max) => void update(action, enabled, max)} />)}
+            busy={busy === action.id} canManage={can("environment.manage")} onChange={(enabled, max) => void update(action, enabled, max)} />)}
         </section>)}
         <MissingActionForm language={language} />
       </>}
@@ -147,7 +149,7 @@ export function CapabilitiesPage() {
                 {run.conversationId && <> · <Link href={`/support/?conversation=${encodeURIComponent(run.conversationId)}`}>
                   {fa ? "گفتگو" : "Conversation"}</Link></>}</p>
             </div>
-            {run.undoJson && !run.undoneAtUtc && <button className="secondary-button" disabled={busy === run.runId}
+            {run.undoJson && !run.undoneAtUtc && can("actions.undo") && <button className="secondary-button" disabled={busy === run.runId}
               onClick={() => void undo(run)}><RotateCcw size={14} />{fa ? "برگرداندن" : "Undo"}</button>}
           </article>)}
       </section>}
@@ -155,8 +157,8 @@ export function CapabilitiesPage() {
   </div>;
 }
 
-function ActionCard({ action, language, busy, onChange }: { action: ActionInfo; language: Language; busy: boolean;
-  onChange: (enabled: boolean, maxPerHour: number | null) => void }) {
+function ActionCard({ action, language, busy, canManage, onChange }: { action: ActionInfo; language: Language; busy: boolean;
+  canManage: boolean; onChange: (enabled: boolean, maxPerHour: number | null) => void }) {
   const fa = language === "fa";
   const rate = successRate(action.stats);
   const [limit, setLimit] = useState(String(action.maxPerHour));
@@ -183,10 +185,10 @@ function ActionCard({ action, language, busy, onChange }: { action: ActionInfo; 
       </dl>
     </div>
     {action.tier !== "OperatorOnly" && <div className="capability-controls" dir="ltr">
-      <label className="package-toggle"><input type="checkbox" checked={action.enabled} disabled={busy}
+      <label className="package-toggle"><input type="checkbox" checked={action.enabled} disabled={busy || !canManage}
         onChange={event => onChange(event.target.checked, Number(limit) || null)} />{action.enabled ? "On" : "Off"}</label>
       <label className="capability-limit">Max/hour per PC
-        <input type="number" min={0} max={1000} value={limit} disabled={busy} onChange={event => setLimit(event.target.value)}
+        <input type="number" min={0} max={1000} value={limit} disabled={busy || !canManage} onChange={event => setLimit(event.target.value)}
           onBlur={() => Number(limit) !== action.maxPerHour && onChange(action.enabled, Number(limit) || null)} /></label>
     </div>}
   </article>;

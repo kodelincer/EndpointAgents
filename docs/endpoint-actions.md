@@ -79,6 +79,13 @@ internal DNS suffixes (masked for the model), the proxy standard, the standard t
 the organisation's root CA thumbprints. Incidents: declare an outage so the agent tells
 users it is known instead of repairing PCs.
 
+## Who can do what
+
+Every page needs a signed-in operator. Members read the Capabilities page, draft and
+submit skills and declare incidents. Reviewers also publish, send back, retire and roll
+back skills, and undo fixes from Recent runs. Admins also change the environment map,
+the standards and the action switches and limits.
+
 ## Configuration (appsettings.json)
 
 ```json

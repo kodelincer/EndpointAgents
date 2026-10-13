@@ -1,4 +1,4 @@
-import { CONTROL_PLANE_URL } from "./control-plane";
+import { apiFetch, CONTROL_PLANE_URL } from "./control-plane";
 
 export type ActionTier = "Look" | "SafeFix" | "Disruptive" | "OperatorOnly";
 export type Language = "en" | "fa";
@@ -55,14 +55,15 @@ export interface SkillDraft { name: string; description: string; body: string; n
 export interface SkillPublishResult { published: boolean; writtenToHermes: boolean; path?: string | null; error?: string | null; issues: SkillIssue[] }
 
 async function request<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const response = await fetch(`${CONTROL_PLANE_URL}${path}`, {
-    method, cache: "no-store",
+  const response = await apiFetch(path, {
+    method,
     headers: body === undefined ? undefined : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body)
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({})) as { message?: string; error?: string };
-    throw new Error(error.message ?? error.error ?? `Control plane returned ${response.status}.`);
+    throw new Error(error.message ?? error.error ?? (response.status === 403
+      ? "Your role does not allow this." : `Control plane returned ${response.status}.`));
   }
   if (response.status === 204) return undefined as T;
   const type = response.headers.get("content-type") ?? "";
