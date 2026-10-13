@@ -17,6 +17,8 @@
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="10.0.9" />
     <ProjectReference Include="..\EndpointAgents.Shared\EndpointAgents.Shared.csproj" />
+    <!-- Catalogued user-context actions (EndpointActionSet.CreateUserActions). -->
+    <ProjectReference Include="..\EndpointAgents.Platform.Windows\EndpointAgents.Platform.Windows.csproj" />
   </ItemGroup>
 
   <ItemGroup>
