@@ -79,9 +79,10 @@ export function FeatureRequests() {
             <div className="file-row-title"><strong>{item.summary}</strong>
               <span className={`ticket-status ${item.status.toLowerCase()}`}>{item.status}</span></div>
             {item.userWords && <p className="file-description" dir="auto">“{item.userWords}”</p>}
-            <p className="file-compatibility">{item.userName || "Endpoint user"} · {item.machineName || item.agentId} ·
-              {" "}{new Date(item.createdAtUtc).toLocaleString()} ·{" "}
-              <Link href={`/support/?conversation=${encodeURIComponent(item.conversationId)}`}>Conversation</Link></p>
+            <p className="file-compatibility">{item.userName || "Endpoint user"} · {item.machineName || item.agentId || "Helpdesk"} ·
+              {" "}{new Date(item.createdAtUtc).toLocaleString()}
+              {item.conversationId && <>{" "}·{" "}
+              <Link href={`/support/?conversation=${encodeURIComponent(item.conversationId)}`}>Conversation</Link></>}</p>
           </div>
           <label className="feature-status"><span className="sr-only">Status</span>
             <select value={item.status} disabled={busy === item.requestId || !canTriage}

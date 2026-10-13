@@ -557,3 +557,71 @@ button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visibl
 @media (max-width: 860px) { .auth-route ol li.you strong { font-size: 19px; } .auth-route ol li strong { font-size: 16px; } }
 @media (max-width: 820px) { .operators-table { min-width: 0; } .operator-identity { min-width: 0; } .operator-identity strong { overflow-wrap: anywhere; } }
 .auth-file { white-space: nowrap; }
+/* Capabilities, environment map and skills ---------------------------------- */
+.primary-nav { overflow-x: auto; scrollbar-width: none; }
+.capability-heading-actions { display: flex; gap: 8px; }
+.capability-tabs { margin-bottom: 14px; }
+.capability-tabs button { display: inline-flex; align-items: center; gap: 6px; }
+.capability-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.capability-filters select { height: 36px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 0 8px; }
+.capability-count, .capability-note { margin: 6px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.capability-group { display: flex; flex-direction: column; gap: 10px; margin-bottom: 26px; }
+.capability-group > h2 { margin: 8px 0 0; font-size: 14px; }
+.capability-action.switched-off { opacity: .62; }
+.capability-action code, .capability-tool code, .capability-run code { font: 11px var(--font-mono); color: var(--muted); }
+.capability-facts { margin: 8px 0 0 !important; display: grid !important; grid-template-columns: 1fr; gap: 6px !important; }
+.capability-facts div { flex-direction: row !important; gap: 10px !important; }
+.capability-facts dt { min-width: 92px; font-size: 10px !important; }
+.capability-facts dd { font: 11px/1.5 var(--font-geist), system-ui, sans-serif !important; }
+.capability-parameter { display: block; }
+.capability-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; flex: 0 0 auto; font-size: 11px; }
+.capability-limit { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.capability-limit input { width: 64px; height: 30px; border: 1px solid var(--line); border-radius: 7px; padding: 0 6px; }
+.capability-tool { align-items: center; }
+.capability-tool code { min-width: 220px; color: var(--ink); }
+.capability-request input, .capability-request textarea, .skills-editor input, .skills-editor textarea, .environment-editor input, .environment-editor select, .skills-from input {
+  width: 100%; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 8px 10px; font: inherit; color: var(--ink); }
+.capability-howto { padding: 18px 20px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); line-height: 1.7; }
+.capability-howto ol { margin: 0; padding-inline-start: 20px; }
+.capability-howto .primary-button { align-self: flex-start; text-decoration: none; }
+.tier-badge { padding: 2px 8px; border-radius: 999px; font-size: 10px; font-weight: 650; background: var(--surface-2); }
+.tier-badge.look { color: oklch(0.4 0.11 155); background: color-mix(in oklch, var(--success) 12%, white); }
+.tier-badge.safefix { color: var(--action); background: color-mix(in oklch, var(--action) 10%, white); }
+.tier-badge.disruptive { color: oklch(0.43 0.1 75); background: color-mix(in oklch, var(--warning) 18%, white); }
+.tier-badge.operatoronly { color: var(--muted); }
+.environment-editor { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+.environment-editor label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; font-weight: 600; }
+.environment-editor label small { color: var(--muted); font-weight: 400; }
+.environment-editor .wide { grid-column: 1 / -1; }
+.environment-editor > div.wide { display: flex; gap: 8px; }
+.incident-targets { display: flex; flex-wrap: wrap; gap: 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 11px; }
+.incident-targets label { flex-direction: row; align-items: center; font-weight: 400; }
+.incident-targets input { width: auto; }
+.skills-layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 18px; align-items: start; }
+.skills-list { display: flex; flex-direction: column; gap: 8px; }
+.skills-from { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.skills-item { padding: 10px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); display: flex; flex-direction: column; align-items: flex-start; gap: 5px; text-align: start; cursor: pointer; }
+.skills-item.selected { border-color: var(--action); }
+.skills-item small { color: var(--muted); font-size: 10px; }
+.skills-editor { display: flex; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
+.skills-editor label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; font-weight: 600; }
+.skills-editor label small { color: var(--muted); font-weight: 400; }
+.skills-editor textarea { font: 12px/1.6 var(--font-mono); resize: vertical; }
+.skills-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.skills-actions a { text-decoration: none; color: inherit; }
+.skills-issues { padding: 10px 12px; border-radius: 9px; background: color-mix(in oklch, var(--success) 8%, white); font-size: 12px; }
+.skills-issues.has-errors { background: color-mix(in oklch, var(--danger) 7%, white); }
+.skills-issues p { margin: 3px 0; display: flex; gap: 6px; align-items: baseline; }
+.skills-issues p.error { color: var(--danger); }
+.skills-issues p.warning { color: oklch(0.43 0.1 75); }
+.skills-versions h2 { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 8px 0; }
+.skills-version { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 11px; }
+@media (max-width: 820px) { .skills-layout { grid-template-columns: 1fr; } .capability-tool { flex-direction: column; align-items: flex-start; } }
+.capability-group > .primary-button { align-self: flex-start; }
+.capability-group .file-row-title code, .capability-run .file-row-title code { font: 11px var(--font-mono); color: var(--muted); }
+.capability-group .ticket-status, .capability-run .ticket-status, .skills-item .ticket-status { margin-left: 0; }
+.capability-action .file-row-title .muted { font-size: 11px; }
+.ticket-status.active { color: var(--danger); background: color-mix(in oklch, var(--danger) 9%, white); }
+.ticket-status.published, .ticket-status.done, .ticket-status.ok { color: var(--success); background: color-mix(in oklch, var(--success) 10%, white); }
+.ticket-status.failed { color: var(--danger); background: color-mix(in oklch, var(--danger) 9%, white); }
+.ticket-status.inreview, .ticket-status.blocked { color: oklch(0.43 0.1 75); background: color-mix(in oklch, var(--warning) 18%, white); }
