@@ -1,0 +1,55 @@
+# Installing Google Chrome
+
+When a user asks for Chrome ("کروم روی سیستم نصب نیست"), the support agent runs the
+`chrome-install` repair package. It is an ordinary catalogued package (see
+[bat-packages.md](bat-packages.md)): a reviewed BAT plus Google's enterprise MSI, both
+hash-pinned and signed, run by the endpoint service with no Tray approval prompt.
+
+What the BAT does, on Windows 10 and 11 (64-bit):
+
+1. Looks for a system-wide `chrome.exe` (Program Files and the `App Paths` registry key).
+   If Chrome is there it changes nothing and exits with code 10.
+2. Otherwise runs `msiexec /i GoogleChromeStandaloneEnterprise64.msi /qn /norestart` and
+   checks again that `chrome.exe` exists. Exit 0 means installed; 3010 means installed and
+   the PC wants a restart (the agent asks the user; nothing restarts automatically).
+3. Anything else prints a line starting with `ERROR:` and the run counts as failed. The
+   MSI log is `%ProgramData%\EndpointAgents\Logs\chrome-install.log` on the user's PC.
+
+After the run the agent asks whether the problem is solved. On "no", or a failed run, it
+escalates the conversation to the helpdesk, which lists it as unsolved. The rule lives in
+the `chrome-missing` entry of `deploy/hermes/skills/repair-packages/SKILL.md`.
+
+## Putting the MSI in place
+
+The MSI (about 170 MB) is not in git. On the admin PC, with your signing key:
+
+```powershell
+# Development FileRepository in this repository:
+.\scripts\update-chrome-package.ps1 -Development -Sign
+# The server's FileRepository, after copying the package folder there:
+.\scripts\update-chrome-package.ps1 -Sign
+```
+
+The script downloads
+`https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi`, refuses it
+unless Windows verifies Google LLC's signature, copies it to
+`packages\chrome-install\files\`, pins the new hashes and signs the package. If the admin PC
+cannot reach Google, download the MSI on another PC and pass it with
+`-Msi <path>\GoogleChromeStandaloneEnterprise64.msi`.
+
+Run it again to move endpoints to a newer Chrome. Chrome updates itself afterwards, so this
+only matters for new installs.
+
+## Size limits
+
+The MSI is larger than the old 100 MB file limit. The control plane now serves files up to
+`FileRepository:MaxFileSizeBytes` = 500 MB (an existing server keeps the value in its own
+`appsettings.json`, so raise it there), and endpoints accept supporting files up to 500 MB
+with a 10-minute download timeout. The whole run, download included, must finish within
+the 10-minute repair limit.
+
+## Not covered
+
+- 32-bit Windows: the BAT stops with an error; the user is escalated.
+- Per-user Chrome in the user's own profile is not detected, because the package runs as
+  LocalSystem. The MSI then adds a system-wide copy, which is harmless.

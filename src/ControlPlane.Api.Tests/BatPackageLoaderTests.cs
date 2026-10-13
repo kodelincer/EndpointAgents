@@ -195,15 +195,17 @@ public sealed class BatPackageLoaderTests : IDisposable
         var statuses = await repository.GetPackageStatusesAsync(
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(["no-input-repair-sample", "office-activation-repair",
+        Assert.Equal(["chrome-install", "no-input-repair-sample", "office-activation-repair",
                 "windows-activation-retry"],
             statuses.Select(status => status.Id).Order(StringComparer.Ordinal));
-        foreach (var status in statuses)
+        // chrome-install needs Google's MSI, which is not in git, and an administrator's
+        // signature (scripts/update-chrome-package.ps1); RepairPackageLoaderTests covers it.
+        foreach (var status in statuses.Where(status => status.Id != "chrome-install"))
             Assert.True(status.Status == BatPackageStatuses.Ready,
                 $"{status.Id}: {string.Join(" ", status.Reasons)}");
-        Assert.Equal("no-input-repair-sample", Assert.Single(
-            await repository.GetRepairPackagesAsync(
-                TestContext.Current.CancellationToken)).Descriptor.PackageId);
+        Assert.Contains("no-input-repair-sample", (await repository.GetRepairPackagesAsync(
+                TestContext.Current.CancellationToken))
+            .Select(package => package.Descriptor.PackageId));
     }
 
     private static BatchPlaybook Playbook() => new(2,
