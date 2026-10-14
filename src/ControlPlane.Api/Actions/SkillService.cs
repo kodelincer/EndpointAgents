@@ -42,7 +42,7 @@ public sealed partial class SkillService(ActionStore store, IOptions<HelpdeskSki
         "propose_endpoint_action", "mark_problem_resolved", "escalate_to_helpdesk",
         "record_feature_request", "list_endpoint_actions", "list_environment_targets",
         "run_endpoint_action", "check_known_incidents", "recent_reports_from_others",
-        "probe_from_server", "check_user_account", "note_skill_used"
+        "probe_from_server", "check_user_account", "note_skill_used", "get_site_knowledge"
     };
 
     private static readonly HashSet<string> ActionPrefixes = EndpointActionCatalog.All

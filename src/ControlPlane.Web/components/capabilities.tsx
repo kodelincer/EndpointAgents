@@ -19,6 +19,7 @@ const toolText: Record<string, { en: string; fa: string }> = {
   probe_from_server: { en: "Checks a target from the server, to tell a PC fault from an outage.", fa: "هدف را از سرور بررسی می‌کند." },
   check_user_account: { en: "Read-only domain account state (locked, expired). Never unlocks.", fa: "وضعیت حساب دامنه را فقط می‌خواند." },
   note_skill_used: { en: "Records which skill guided a conversation (for skill statistics).", fa: "ثبت مهارت استفاده‌شده برای آمار." },
+  get_site_knowledge: { en: "The organization knowledge file (network, services, rules), with internal names masked.", fa: "فایل شناخت سازمان (شبکه، سرویس‌ها، قوانین) با نام‌های داخلی پنهان‌شده." },
   endpoint_system_info: { en: "PC configuration: network, Windows, domain, hardware, disks.", fa: "پیکربندی کامپیوتر." },
   endpoint_get_info: { en: "Basic PC, internet, proxy and time facts.", fa: "اطلاعات پایه کامپیوتر." },
   find_repair_packages: { en: "Administrator-approved BAT/EXE repair packages and their symptoms.", fa: "بسته‌های تعمیر تأییدشده." },

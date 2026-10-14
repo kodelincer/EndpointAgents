@@ -128,6 +128,38 @@ public sealed class TargetMaskerTests
     }
 }
 
+public sealed class OrganizationKnowledgeTests
+{
+    private static readonly DateOnly Today = new(2026, 10, 14);
+
+    [Fact]
+    public void TemplateIsDetectedAndIgnored()
+    {
+        var text = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..",
+            "deploy", "control-plane", "organization", "ORGANIZATION.template.md"));
+        var parsed = OrganizationKnowledgeService.Parse(text, Today);
+        Assert.True(parsed.IsTemplate);
+        Assert.Null(parsed.LastReviewed);
+    }
+
+    [Theory]
+    [InlineData("Last reviewed: 2026-09-01", false)]
+    [InlineData("Last reviewed: 2026-01-01", true)]
+    [InlineData("no date at all", true)]
+    public void StaleWhenOldOrUndated(string text, bool stale) =>
+        Assert.Equal(stale, OrganizationKnowledgeService.Parse(text, Today).Stale);
+
+    [Fact]
+    public void InternalNamesAreMaskedBeforeTheModelSeesThem()
+    {
+        var masker = new TargetMasker([],
+            new Dictionary<string, string> { [ActionSettings.InternalDnsSuffixes] = "corp.local" });
+        var text = masker.Mask(@"Mail is mail.corp.local; files at \\fs01\data.");
+        Assert.DoesNotContain("corp.local", text);
+        Assert.DoesNotContain("fs01", text);
+    }
+}
+
 public sealed class SkillLintTests
 {
     [Fact]

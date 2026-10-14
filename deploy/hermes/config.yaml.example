@@ -69,6 +69,7 @@ mcp_servers:
         - probe_from_server
         - check_user_account
         - note_skill_used
+        - get_site_knowledge
       resources: false
       prompts: false
     sampling:

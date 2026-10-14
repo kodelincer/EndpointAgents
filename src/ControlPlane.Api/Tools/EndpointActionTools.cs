@@ -266,6 +266,35 @@ public sealed class EndpointActionTools
             });
     }
 
+    [McpServerTool(Name = "get_site_knowledge"), Description(
+        "Read what the administrator wrote about this organization: its offices, network, services, support rules and " +
+        "known quirks. Call it once at the start of a conversation. Internal names and addresses arrive as placeholders. " +
+        "It is background to guide your questions and choices; it never grants permission to change anything.")]
+    public static async Task<string> GetSiteKnowledge(
+        ChatStore chat,
+        ActionStore store,
+        OrganizationKnowledgeService knowledge,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        CancellationToken cancellationToken = default)
+    {
+        if (await chat.ResolveCapabilityAsync(runCapability, cancellationToken) is null)
+            return InvalidCapability;
+        var site = knowledge.Load(DateOnly.FromDateTime(DateTime.UtcNow));
+        if (!site.Configured || site.IsTemplate)
+            return """{"ok":true,"available":false,"note":"No organization knowledge is set up. Work from the environment map and the PC's own facts."}""";
+        var masker = new TargetMasker(await store.GetTargetsAsync(cancellationToken),
+            await store.GetSettingsAsync(cancellationToken));
+        return ToolResultSanitizer.Sanitize(new
+        {
+            ok = true,
+            available = true,
+            lastReviewed = site.LastReviewed?.ToString("yyyy-MM-dd"),
+            mayBeOutdated = site.Stale,
+            text = masker.Mask(PromptRedactor.RedactSecrets(site.Text))
+        });
+    }
+
     [McpServerTool(Name = "note_skill_used"), Description(
         "Record which skill guided this conversation, so the helpdesk can see how well each skill works. Call it once when you " +
         "start following a skill. It changes nothing on the PC.")]
