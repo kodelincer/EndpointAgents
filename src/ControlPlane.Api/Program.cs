@@ -74,6 +74,7 @@ builder.Services.AddOptions<HermesOptions>()
         "Hermes API and MCP keys must each contain at least 32 characters when Hermes is enabled.")
     .ValidateOnStart();
 builder.Services.AddSingleton<ChatStore>();
+builder.Services.AddSingleton<HermesQueue>();
 builder.Services.AddHostedService<ChatRetentionWorker>();
 builder.Services.AddHermesHttpClient(builder.Configuration);
 builder.Services.AddHostedService<HermesRunWorker>();
@@ -124,6 +125,8 @@ builder.Services.AddHealthChecks()
 var app = builder.Build();
 await app.Services.GetRequiredService<ChatStore>()
     .InitializeAsync(app.Lifetime.ApplicationStopping);
+await app.Services.GetRequiredService<HermesQueue>()
+    .LoadAsync(app.Lifetime.ApplicationStopping);
 
 // Endpoint agents and health monitors can reach the explicitly public routes
 // below. The unauthenticated operator console and command surface remain local
@@ -565,6 +568,20 @@ app.MapPost("/api/system/maintenance", (MaintenanceModeRequest request,
 
     runtime.SetMaintenanceMode(request.Enabled);
     return Results.Ok(new { maintenanceMode = runtime.IsMaintenanceMode });
+});
+
+app.MapGet("/api/settings/hermes-queue", async (HermesQueue queue,
+    CancellationToken cancellationToken) =>
+    Results.Ok(await queue.GetStatusAsync(cancellationToken)));
+app.MapPut("/api/settings/hermes-queue", async (HermesQueueSettings settings,
+    HermesQueue queue, HttpContext context, CancellationToken cancellationToken) =>
+{
+    if (!LoopbackRequestGuard.IsLoopback(context.Connection.RemoteIpAddress))
+        return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+    if (await queue.SaveAsync(settings, cancellationToken) is { } error)
+        return Results.BadRequest(new { message = error });
+    return Results.Ok(await queue.GetStatusAsync(cancellationToken));
 });
 
 app.MapPost("/api/agents/{agentId}/commands", async (string agentId, RpcRequest request,

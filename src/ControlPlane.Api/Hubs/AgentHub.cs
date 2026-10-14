@@ -2,6 +2,7 @@ using ControlPlane.Api.Agents;
 using ControlPlane.Api.Chat;
 using ControlPlane.Api.Commands;
 using ControlPlane.Api.Dashboard;
+using ControlPlane.Api.Hermes;
 using ControlPlane.Api.Security;
 using EndpointAgents.Shared.Agents;
 using EndpointAgents.Shared.Chat;
@@ -17,7 +18,7 @@ namespace ControlPlane.Api.Hubs;
 
 /// <summary>SignalR endpoint used exclusively by installed endpoint agents.</summary>
 public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher support,
-    ChatStore chatStore, CommandCatalog commandCatalog,
+    ChatStore chatStore, HermesQueue hermesQueue, CommandCatalog commandCatalog,
     DashboardPublisher dashboard, IOptions<AgentSecurityOptions> security,
     ILogger<AgentHub> logger) : Hub
 {
@@ -81,7 +82,7 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
             Identity = Normalize(submission.Identity)
         };
         var receipt = await chatStore.SubmitMessageAsync(agentId, normalized,
-            Context.ConnectionAborted);
+            Context.ConnectionAborted, hermesQueue.Limits);
         if (receipt.Accepted)
             await dashboard.PublishHelpdeskAsync(new HelpdeskChange(
                 receipt.ConversationId, "message", receipt.Sequence), Context.ConnectionAborted);

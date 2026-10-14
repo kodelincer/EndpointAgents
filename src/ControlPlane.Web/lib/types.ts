@@ -147,3 +147,9 @@ export type FeatureRequest = {
   machineName: string; summary: string; userWords: string;
   status: "New" | "Planned" | "Done" | "Declined"; createdAtUtc: string; updatedAtUtc: string;
 };
+
+export interface HermesQueueSettings { maxParallelRuns: number; maxQueueLength: number; maxWaitMinutes: number }
+
+export interface HermesQueueStatus {
+  settings: HermesQueueSettings; running: number; waiting: number; oldestWaitingSinceUtc: string | null;
+}

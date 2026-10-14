@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { isTerminalStage, progressLabel, time } from "./format";
+import { isTerminalStage, progressLabel, queueLabel, time } from "./format";
 import type { ProgressEvent } from "./types";
 
 /**
  * One support run drawn as a metro line: each progress event is a station, the current one a
  * ringed stop. Finished runs fold to their terminus and can be reopened.
  */
-export function RunLine({ events }: { events: ProgressEvent[] }) {
+export function RunLine({ events, queuePosition }: { events: ProgressEvent[]; queuePosition?: number | null }) {
   const last = events[events.length - 1];
   const done = last ? isTerminalStage(last) : false;
   const failed = last?.outcome === "Failure" || last?.stage === "Failed";
@@ -22,7 +22,9 @@ export function RunLine({ events }: { events: ProgressEvent[] }) {
     <section className="run" data-tone={tone} aria-label="روند بررسی">
       <button className="run-head" aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
         <span className="run-badge" aria-hidden />
-        <span className="run-title">{progressLabel(last)}</span>
+        <span className="run-title">{progressLabel(last)}
+          {last.stage === "Queued" && queueLabel(queuePosition) && <small className="run-queue">{queueLabel(queuePosition)}</small>}
+        </span>
         <span className="run-count">{events.length.toLocaleString("fa-IR")} ایستگاه</span>
         <ChevronDown className="run-chevron" size={16} aria-hidden />
       </button>

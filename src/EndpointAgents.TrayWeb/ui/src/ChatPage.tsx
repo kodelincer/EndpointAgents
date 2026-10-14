@@ -5,7 +5,7 @@ import {
 import { host, HostError } from "./bridge";
 import {
   actionStateLabel, conversationStateLabel, dayGroup, fullDate, isRtl, isTerminalStage, listStamp, num,
-  parseYesNo, progressLabel, relative, time,
+  parseYesNo, progressLabel, queueLabel, relative, time,
 } from "./format";
 import { RunLine } from "./RunLine";
 import type {
@@ -44,6 +44,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState("");
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [unseen, setUnseen] = useState<Set<string>>(new Set());
@@ -90,6 +91,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
     stickToEnd.current = true;
     setItems([]);
     setNotice("");
+    setQueuePosition(null);
     selectedRef.current = id;
     setSelectedId(id);
     setText(drafts.current.get(id ?? "__new") ?? "");
@@ -97,6 +99,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
 
   const applyDelta = useCallback((delta: ChatDelta) => {
     setVisibleLimit(delta.visibleItemLimit || 30);
+    setQueuePosition(delta.queuePosition ?? null);
     setItems((previous) => {
       const next = [...previous];
       const index = new Map(next.map((item, i) => [item.key, i]));
@@ -132,7 +135,10 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
     const latest = delta.messages[delta.messages.length - 1];
     if (latest?.state === "Failed")
       setNotice(latest.role === "Assistant" ? "دستیار نتوانست این درخواست را کامل کند." : "بررسی این پیام ناموفق بود.");
-    else if (latest?.state === "Queued") setNotice("پیام در صف دستیار پشتیبانی است.");
+    else if (latest?.state === "Queued") {
+      const place = queueLabel(delta.queuePosition);
+      setNotice(place ? `پیام در صف دستیار پشتیبانی است؛ ${place}.` : "پیام در صف دستیار پشتیبانی است.");
+    }
     else if (latest?.state === "Working") setNotice("دستیار پشتیبانی در حال بررسی پیام است…");
     else if (latest?.state === "Completed" && latest.role !== "User") setNotice("");
   }, []);
@@ -451,7 +457,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
                   {showDay && item.kind === "message" && <div className="day-chip">{dayGroup(item.message.createdAtUtc)}</div>}
                   {item.kind === "message" && <Bubble role={item.message.role} body={item.message.body}
                     at={item.message.createdAtUtc} state={item.message.state} />}
-                  {item.kind === "run" && <RunLine events={item.events} />}
+                  {item.kind === "run" && <RunLine events={item.events} queuePosition={queuePosition} />}
                   {item.kind === "action" && (
                     <ActionCard action={item.action} busy={deciding === item.action.actionId}
                       canDecide={!readOnly && connected && deciding === null} onDecide={decide} />

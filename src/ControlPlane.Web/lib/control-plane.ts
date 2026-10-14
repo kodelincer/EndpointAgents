@@ -1,6 +1,7 @@
 import type { Activity, Agent, ApiSystemStatus, CommandDefinition, FileInventory,
   MaintenanceModeResult, PackageInventory, RpcRequest, RpcResponse, SupportRequest } from "./types";
-import type { FeatureRequest, HelpdeskConversationDetail, HelpdeskConversationSummary } from "./types";
+import type { FeatureRequest, HelpdeskConversationDetail, HelpdeskConversationSummary,
+  HermesQueueSettings, HermesQueueStatus } from "./types";
 
 export const CONTROL_PLANE_URL = process.env.NEXT_PUBLIC_CONTROL_PLANE_URL ?? "http://localhost:5052";
 
@@ -53,7 +54,7 @@ export async function setMaintenanceMode(enabled: boolean): Promise<MaintenanceM
   return response.json() as Promise<MaintenanceModeResult>;
 }
 
-async function write<T>(path: string, method: "POST" | "PATCH", body: unknown): Promise<T> {
+async function write<T>(path: string, method: "POST" | "PATCH" | "PUT", body: unknown): Promise<T> {
   const response = await fetch(`${CONTROL_PLANE_URL}${path}`, {
     method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
   });
@@ -98,4 +99,14 @@ export function runHelpdeskDiagnostic(conversationId: string, method: string): P
     ? { serverHost: "", protocol: "Auto", includeDialerLog: true } : null;
   return write(`/api/helpdesk/conversations/${encodeURIComponent(conversationId)}/diagnostics`,
     "POST", { method, parameters });
+}
+
+/** Reads the admin limits of the control plane's queue in front of Hermes with live counts. */
+export function getHermesQueue(): Promise<HermesQueueStatus> {
+  return read<HermesQueueStatus>("/api/settings/hermes-queue");
+}
+
+/** Saves the queue limits; they apply to the next request without a restart. */
+export function saveHermesQueue(settings: HermesQueueSettings): Promise<HermesQueueStatus> {
+  return write<HermesQueueStatus>("/api/settings/hermes-queue", "PUT", settings);
 }

@@ -169,6 +169,12 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
                 CREATE INDEX IF NOT EXISTS ix_feature_requests_created
                     ON feature_requests(created_at_utc);
 
+                CREATE TABLE IF NOT EXISTS control_plane_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL
+                );
+
                 UPDATE agent_runs
                 SET state = 'Queued', capability_hash = NULL,
                     capability_expires_at_utc = NULL, framework_run_id = NULL,
@@ -572,7 +578,8 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
     }
 
     public async Task<ChatMessageReceipt> SubmitMessageAsync(
-        string agentId, ChatMessageSubmission submission, CancellationToken cancellationToken)
+        string agentId, ChatMessageSubmission submission, CancellationToken cancellationToken,
+        ChatQueueLimits? queueLimits = null)
     {
         ValidateIdentity(submission.Identity);
         var body = Normalize(submission.MessageText, ChatLimits.MessageCharacters + 1);
@@ -627,6 +634,15 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
             var queueHermes = wasResolved
                 || modeReader.GetString(1) != HelpdeskResponder.Operator;
             await modeReader.DisposeAsync();
+            if (queueHermes && queueLimits is not null
+                && await CheckQueueLimitsAsync(connection, (SqliteTransaction)transaction,
+                    agentId, submission.Identity.UserSid, queueLimits, cancellationToken)
+                    is { } refusal)
+            {
+                await transaction.RollbackAsync(cancellationToken);
+                return new ChatMessageReceipt(conversation.ConversationId, string.Empty, 0,
+                    false, refusal);
+            }
 
             var runId = queueHermes ? Guid.NewGuid().ToString("N") : null;
             var sequence = conversation.LastSequence + 1;
@@ -802,7 +818,9 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
                 request.ConversationId, cancellationToken) ?? conversation;
             return new ChatDelta(refreshed, messages, actions, progressEvents)
             {
-                VisibleItemLimit = _maxVisibleItems
+                VisibleItemLimit = _maxVisibleItems,
+                QueuePosition = await GetQueuePositionAsync(connection,
+                    request.ConversationId, cancellationToken)
             };
         }
         finally
@@ -1404,8 +1422,9 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
         }
     }
 
-    private async Task FinishRunAsync(string runId, string response, bool succeeded,
-        CancellationToken cancellationToken, string? error = null)
+    private async Task<bool> FinishRunAsync(string runId, string response, bool succeeded,
+        CancellationToken cancellationToken, string? error = null,
+        string expectedState = "Running")
     {
         await _gate.WaitAsync(cancellationToken);
         try
@@ -1419,14 +1438,15 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
                 SELECT r.conversation_id, r.user_message_id
                 FROM agent_runs r
                 JOIN conversations c ON c.conversation_id = r.conversation_id
-                WHERE r.run_id = $run_id AND r.state = 'Running';
+                WHERE r.run_id = $run_id AND r.state = $expected_state;
                 """;
             lookup.Parameters.AddWithValue("$run_id", runId);
+            lookup.Parameters.AddWithValue("$expected_state", expectedState);
             await using var reader = await lookup.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken))
             {
                 await transaction.RollbackAsync(cancellationToken);
-                return;
+                return false;
             }
             var conversationId = reader.GetString(0);
             var userMessageId = reader.GetString(1);
@@ -1441,7 +1461,7 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
             if (progress is null)
             {
                 await transaction.RollbackAsync(cancellationToken);
-                return;
+                return false;
             }
             var messageSequence = progress.Sequence + 1;
 
@@ -1475,6 +1495,7 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
             update.Parameters.AddWithValue("$error", error is null ? DBNull.Value : error);
             await update.ExecuteNonQueryAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            return true;
         }
         finally
         {
