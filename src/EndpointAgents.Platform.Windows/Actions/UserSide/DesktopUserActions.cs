@@ -354,7 +354,7 @@ public sealed class InputLanguagesAction : IEndpointAction
                 foreach (var value in preload?.GetValueNames() ?? [])
                     if (preload!.GetValue(value) is string id) layouts.Add(id);
         using var toggle = Registry.CurrentUser.OpenSubKey(@"Keyboard Layout\Toggle");
-        var hotkey = (toggle?.GetValue("Language Hotkey") ?? toggle?.GetValue("Hotkey")) as string switch
+        var hotkey = ((toggle?.GetValue("Language Hotkey") ?? toggle?.GetValue("Hotkey")) as string) switch
         {
             "1" => "Alt+Shift",
             "2" => "Ctrl+Shift",
@@ -404,7 +404,7 @@ public sealed class RegionStatusAction : IEndpointAction
         CancellationToken cancellationToken)
     {
         using var key = Registry.CurrentUser.OpenSubKey(@"Control Panel\International");
-        var calendar = key?.GetValue("iCalendarType") as string switch
+        var calendar = (key?.GetValue("iCalendarType") as string) switch
         {
             "1" => "Gregorian",
             "22" => "Persian",
