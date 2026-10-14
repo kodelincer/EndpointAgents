@@ -14,7 +14,8 @@ public sealed record OperatorUser(
     bool Disabled,
     bool MustChangePassword,
     DateTimeOffset CreatedAtUtc,
-    DateTimeOffset? LastSignInAtUtc)
+    DateTimeOffset? LastSignInAtUtc,
+    string Source = OperatorSources.Local)
 {
     internal string PasswordHash { get; init; } = string.Empty;
     internal string SecurityStamp { get; init; } = string.Empty;
@@ -58,6 +59,18 @@ public sealed partial class OperatorUserStore(IOptions<ChatOptions> options,
             await create.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        // Databases created before directory sign-in have no source column.
+        await using (var columns = connection.CreateCommand())
+        {
+            columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('operator_users') WHERE name = 'source';";
+            if (Convert.ToInt64(await columns.ExecuteScalarAsync(cancellationToken)) == 0)
+            {
+                await using var alter = connection.CreateCommand();
+                alter.CommandText = "ALTER TABLE operator_users ADD COLUMN source TEXT NOT NULL DEFAULT 'local';";
+                await alter.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
+
         await using var count = connection.CreateCommand();
         count.CommandText = "SELECT COUNT(*) FROM operator_users;";
         if (Convert.ToInt64(await count.ExecuteScalarAsync(cancellationToken)) > 0) return;
@@ -87,7 +100,7 @@ public sealed partial class OperatorUserStore(IOptions<ChatOptions> options,
 
     public async Task<OperatorUser> CreateAsync(string userName, string displayName,
         string role, string password, bool mustChangePassword,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string source = OperatorSources.Local)
     {
         var now = DateTimeOffset.UtcNow;
         await using var connection = await OpenAsync(cancellationToken);
@@ -95,18 +108,21 @@ public sealed partial class OperatorUserStore(IOptions<ChatOptions> options,
         command.CommandText =
             """
             INSERT INTO operator_users (user_id, user_name, display_name, role, password_hash,
-                must_change_password, disabled, security_stamp, created_at_utc, updated_at_utc)
-            VALUES ($id, $userName, $displayName, $role, $hash, $mustChange, 0, $stamp, $now, $now);
+                must_change_password, disabled, security_stamp, created_at_utc, updated_at_utc, source)
+            VALUES ($id, $userName, $displayName, $role, $hash, $mustChange, 0, $stamp, $now, $now, $source);
             """;
         var userId = Guid.NewGuid().ToString("N");
         command.Parameters.AddWithValue("$id", userId);
         command.Parameters.AddWithValue("$userName", NormalizeUserName(userName));
         command.Parameters.AddWithValue("$displayName", displayName.Trim());
         command.Parameters.AddWithValue("$role", role);
-        command.Parameters.AddWithValue("$hash", OperatorPasswordHasher.Hash(password));
+        // A directory account has no password here: the directory checks it at every sign-in.
+        command.Parameters.AddWithValue("$hash",
+            source == OperatorSources.Local ? OperatorPasswordHasher.Hash(password) : string.Empty);
         command.Parameters.AddWithValue("$mustChange", mustChangePassword ? 1 : 0);
         command.Parameters.AddWithValue("$stamp", NewStamp());
         command.Parameters.AddWithValue("$now", Format(now));
+        command.Parameters.AddWithValue("$source", source);
         await command.ExecuteNonQueryAsync(cancellationToken);
         return (await FindByIdAsync(userId, cancellationToken))!;
     }
@@ -198,7 +214,7 @@ public sealed partial class OperatorUserStore(IOptions<ChatOptions> options,
     private const string SelectColumns =
         """
         SELECT user_id, user_name, display_name, role, disabled, must_change_password,
-            created_at_utc, last_sign_in_at_utc, password_hash, security_stamp
+            created_at_utc, last_sign_in_at_utc, password_hash, security_stamp, source
         FROM operator_users
         """;
 
@@ -221,7 +237,8 @@ public sealed partial class OperatorUserStore(IOptions<ChatOptions> options,
             users.Add(new OperatorUser(reader.GetString(0), reader.GetString(1),
                 reader.GetString(2), reader.GetString(3), reader.GetInt64(4) != 0,
                 reader.GetInt64(5) != 0, Parse(reader.GetString(6)),
-                reader.IsDBNull(7) ? null : Parse(reader.GetString(7)))
+                reader.IsDBNull(7) ? null : Parse(reader.GetString(7)),
+                reader.GetString(10))
             {
                 PasswordHash = reader.GetString(8),
                 SecurityStamp = reader.GetString(9)

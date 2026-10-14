@@ -4,12 +4,15 @@ export type OperatorRole = "member" | "reviewer" | "admin";
 
 export type OperatorSession = {
   userId: string; userName: string; displayName: string; role: OperatorRole;
-  mustChangePassword: boolean; permissions: string[];
+  mustChangePassword: boolean; permissions: string[]; source?: AccountSource;
 };
+
+export type AccountSource = "local" | "directory";
 
 export type OperatorAccount = {
   userId: string; userName: string; displayName: string; role: OperatorRole;
   disabled: boolean; mustChangePassword: boolean; createdAtUtc: string; lastSignInAtUtc: string | null;
+  source?: AccountSource;
 };
 
 /** What each role can do, mirrored from OperatorRoles on the API (which enforces it). */
@@ -31,7 +34,10 @@ export class AuthError extends Error {
 /** Persian messages for the sign-in screens; the API's own messages are English. */
 export function signInMessage(status: number, apiMessage?: string): string {
   if (status === 401) return "نام کاربری یا رمز عبور درست نیست.";
+  if (status === 503) return "سرور دامنه (Active Directory) در دسترس نیست. با حساب محلی وارد شوید یا کمی بعد امتحان کنید.";
   if (status === 429) return "چند بار پشت سر هم اشتباه وارد شد. پانزده دقیقه دیگر دوباره امتحان کنید.";
+  if (status === 400 && apiMessage?.startsWith("Your password is managed"))
+    return "رمز عبور شما در Active Directory مدیریت می‌شود.";
   if (status === 400 && apiMessage?.startsWith("Current password"))
     return "رمز فعلی درست نیست.";
   if (status === 400 && apiMessage?.startsWith("Password must have at least"))
@@ -67,6 +73,10 @@ export const changePassword = (currentPassword: string, newPassword: string) =>
   send<OperatorSession>("/api/auth/password", "POST", { currentPassword, newPassword });
 
 export const listOperators = () => send<OperatorAccount[]>("/api/operators/", "GET");
+export const getAuthOptions = () => send<{ directory: boolean; domain: string }>("/api/auth/options", "GET");
+export const addDirectoryOperator = (userName: string, role: OperatorRole) =>
+  send<{ user: OperatorAccount; temporaryPassword: null }>("/api/operators/", "POST",
+    { userName, role, source: "directory" });
 export const createOperator = (userName: string, displayName: string, role: OperatorRole) =>
   send<{ user: OperatorAccount; temporaryPassword: string }>("/api/operators/", "POST",
     { userName, displayName, role });

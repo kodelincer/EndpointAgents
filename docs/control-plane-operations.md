@@ -56,6 +56,29 @@ writes it to `initial-admin-password.txt` next to the database (`.local\` in dev
 it forces a new password; delete the file afterwards. Admins add operators on the Operators page, which shows
 each one-time password once.
 
+### Two kinds of accounts: local and Active Directory
+
+- **Local accounts** are created on the Operators page by an admin (one-time password). They always work,
+  even when the domain controller is down, so keep at least one local admin.
+- **Active Directory accounts** sign in with their normal domain password (`sara`, `CORP\sara` or
+  `sara@corp.example`). The control plane checks the password with the domain controller and never stores it.
+  An admin can add a domain user by name on the Operators page (choose "Active Directory user"), or members of
+  mapped groups are created automatically at their first sign-in. A name that has a local account is always
+  checked locally. A domain user's role is the one an admin gives on the Operators page; the group only
+  decides the starting role. Disable the account there to revoke access.
+
+Off by default. To turn it on, set in `appsettings.Production.json` (no password needed; the service's own
+domain identity is used for lookups):
+
+```json
+"ActiveDirectory": { "Server": "dc01.corp.example", "BaseDn": "DC=corp,DC=example" },
+"OperatorDirectory": { "Enabled": true, "Domain": "CORP",
+  "AdminGroup": "", "ReviewerGroup": "", "MemberGroup": "HelpdeskStaff" }
+```
+
+Empty groups mean only domain users added by name can sign in. Leave `ActiveDirectory:Enabled` as it is: that
+switch is for the agent's read-only account check, a separate feature using the same server and search base.
+
 Safety: PBKDF2-SHA256 (600k iterations) hashes; five wrong passwords for one name from one address lock it for
 15 minutes; disabling an account, changing its role or resetting its password ends its sessions at once.
 `POST /api/agent-enrollments` still works without sign-in for local scripts (loopback, no browser `Origin`),

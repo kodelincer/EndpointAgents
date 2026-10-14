@@ -77,7 +77,7 @@ function AccountMenu() {
     </button>
     {open && <div className="account-menu" role="menu">
       <span className="menu-label">Signed in as <code>{session.userName}</code></span>
-      <button role="menuitem" onClick={() => { setOpen(false); changePassword(); }}><KeyRound size={15} /><strong>Change password</strong></button>
+      {session.source !== "directory" && <button role="menuitem" onClick={() => { setOpen(false); changePassword(); }}><KeyRound size={15} /><strong>Change password</strong></button>}
       <button role="menuitem" onClick={() => void signOut()}><LogOut size={15} /><strong>Sign out</strong></button>
     </div>}
   </div>;

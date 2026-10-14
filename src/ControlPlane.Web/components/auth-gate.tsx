@@ -2,7 +2,7 @@
 
 import { CircleAlert, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, Server, ShieldCheck, UserRoundX } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { AuthError, changePassword, getSession, signIn, signInMessage, signOut,
+import { AuthError, changePassword, getAuthOptions, getSession, signIn, signInMessage, signOut,
   type OperatorSession } from "@/lib/auth";
 import { SIGNED_OUT_EVENT } from "@/lib/control-plane";
 
@@ -81,6 +81,8 @@ function SignInScreen({ onSignedIn }: { onSignedIn: (session: OperatorSession) =
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
+  const [directory, setDirectory] = useState<{ directory: boolean; domain: string }>();
+  useEffect(() => { getAuthOptions().then(setDirectory).catch(() => undefined); }, []);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -101,7 +103,9 @@ function SignInScreen({ onSignedIn }: { onSignedIn: (session: OperatorSession) =
     <section className="auth-panel" aria-labelledby="sign-in-title">
       <form className="auth-form" onSubmit={event => void submit(event)} noValidate>
         <h1 id="sign-in-title">ورود به میز پشتیبانی</h1>
-        <p className="auth-lede">با حسابی که مدیر سیستم برایتان ساخته وارد شوید.</p>
+        <p className="auth-lede">{directory?.directory
+          ? "با حساب دامنهٔ خودتان یا حسابی که مدیر سیستم ساخته وارد شوید."
+          : "با حسابی که مدیر سیستم برایتان ساخته وارد شوید."}</p>
         {error && <p className="auth-error" role="alert"><CircleAlert size={16} />{error}</p>}
         <label className="auth-field"><span>نام کاربری</span>
           <input dir="ltr" autoComplete="username" autoCapitalize="none" spellCheck={false}

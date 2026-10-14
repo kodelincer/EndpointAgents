@@ -9,17 +9,18 @@ public sealed record OperatorSignInRequest(string? UserName, string? Password);
 
 public sealed record OperatorPasswordChangeRequest(string? CurrentPassword, string? NewPassword);
 
-public sealed record OperatorUserCreateRequest(string? UserName, string? DisplayName, string? Role);
+public sealed record OperatorUserCreateRequest(string? UserName, string? DisplayName, string? Role,
+    string? Source = null);
 
 public sealed record OperatorUserPatch(string? DisplayName, string? Role, bool? Disabled,
     bool? ResetPassword);
 
 public sealed record OperatorSession(string UserId, string UserName, string DisplayName,
-    string Role, bool MustChangePassword, string[] Permissions)
+    string Role, bool MustChangePassword, string[] Permissions, string Source = OperatorSources.Local)
 {
     public static OperatorSession From(OperatorUser user) => new(user.UserId, user.UserName,
         user.DisplayName, user.Role, user.MustChangePassword,
-        OperatorRoles.PermissionsFor(user.Role));
+        OperatorRoles.PermissionsFor(user.Role), user.Source);
 }
 
 /// <summary>Slows password guessing: five failures for one name from one address lock
@@ -120,11 +121,18 @@ public static class OperatorAuthEndpoints
     {
         var auth = app.MapGroup("/api/auth");
 
+        auth.MapGet("/options", (IOperatorDirectory directory) =>
+            Results.Ok(new { directory = directory.Configured, domain = directory.Domain }))
+            .AllowAnonymous();
+
         auth.MapPost("/sign-in", async (OperatorSignInRequest request, HttpContext context,
-            OperatorUserStore store, OperatorSignInThrottle throttle,
+            OperatorUserStore store, OperatorSignInThrottle throttle, IOperatorDirectory directory,
             ILogger<OperatorUserStore> logger, CancellationToken cancellationToken) =>
         {
-            var userName = OperatorUserStore.NormalizeUserName(request.UserName);
+            var typed = request.UserName ?? string.Empty;
+            // "DOMAIN\\sara" and "sara@corp.example" are the same person as "sara".
+            var userName = OperatorUserStore.NormalizeUserName(
+                directory.Configured ? OperatorDirectory.AccountName(typed) : typed);
             var key = $"{userName}|{context.Connection.RemoteIpAddress}";
             if (throttle.IsLocked(key))
                 return Results.Json(new { message = "Too many failed attempts. Try again later." },
@@ -133,10 +141,33 @@ public static class OperatorAuthEndpoints
             var user = userName.Length == 0 ? null
                 : await store.FindByUserNameAsync(userName, cancellationToken);
             var password = request.Password ?? string.Empty;
-            // Hash even for unknown names so timing doesn't reveal which names exist.
-            var valid = OperatorPasswordHasher.Verify(password, user?.PasswordHash ?? DummyHash.Value)
-                && user is not null;
-            if (!valid || user is null || user.Disabled)
+
+            // A local account always signs in with its local password; a name that has no
+            // local account, or belongs to a directory account, is checked by the directory.
+            if (user is null || user.Source == OperatorSources.Directory)
+            {
+                if (directory.Configured && userName.Length > 0)
+                {
+                    var outcome = await DirectorySignInAsync(userName, password, user, store,
+                        directory, logger, cancellationToken);
+                    if (outcome.Unavailable)
+                        return Results.Json(new { message = "The directory server could not be reached." },
+                            statusCode: StatusCodes.Status503ServiceUnavailable);
+                    user = outcome.User;
+                }
+                else
+                {
+                    // Hash even for unknown names so timing doesn't reveal which names exist.
+                    OperatorPasswordHasher.Verify(password, DummyHash.Value);
+                    user = null;
+                }
+            }
+            else if (!OperatorPasswordHasher.Verify(password, user.PasswordHash))
+            {
+                user = null;
+            }
+
+            if (user is null || user.Disabled)
             {
                 throttle.RecordFailure(key);
                 logger.LogWarning("Dashboard sign-in failed for '{UserName}'.", userName);
@@ -147,8 +178,8 @@ public static class OperatorAuthEndpoints
             throttle.Reset(key);
             await store.RecordSignInAsync(user.UserId, cancellationToken);
             await SignInAsync(context, user);
-            logger.LogInformation("Dashboard sign-in for '{UserName}' ({Role}).",
-                user.UserName, user.Role);
+            logger.LogInformation("Dashboard sign-in for '{UserName}' ({Role}, {Source}).",
+                user.UserName, user.Role, user.Source);
             return Results.Ok(OperatorSession.From(user));
         }).AllowAnonymous();
 
@@ -173,6 +204,8 @@ public static class OperatorAuthEndpoints
             var user = await store.FindByIdAsync(OperatorAuthentication.UserId(principal)!,
                 cancellationToken);
             if (user is null) return Results.Unauthorized();
+            if (user.Source == OperatorSources.Directory)
+                return Results.BadRequest(new { message = "Your password is managed by Active Directory." });
             if (!OperatorPasswordHasher.Verify(request.CurrentPassword ?? string.Empty,
                     user.PasswordHash))
                 return Results.BadRequest(new { message = "Current password is incorrect." });
@@ -193,8 +226,27 @@ public static class OperatorAuthEndpoints
             Results.Ok(await store.ListAsync(cancellationToken)));
 
         users.MapPost("/", async (OperatorUserCreateRequest request, OperatorUserStore store,
-            CancellationToken cancellationToken) =>
+            IOperatorDirectory directory, CancellationToken cancellationToken) =>
         {
+            if (request.Source == OperatorSources.Directory)
+            {
+                if (!directory.Configured)
+                    return Results.BadRequest(new { message = "Active Directory sign-in is not set up on this server." });
+                if (!OperatorRoles.IsValid(request.Role))
+                    return Results.BadRequest(new { message = "Unknown role." });
+                var account = OperatorDirectory.AccountName(request.UserName);
+                if (OperatorUserStore.ValidateUserName(account) is { } accountProblem)
+                    return Results.BadRequest(new { message = accountProblem });
+                if (await store.FindByUserNameAsync(account, cancellationToken) is not null)
+                    return Results.Conflict(new { message = "That user name is already taken." });
+                var person = await directory.FindAsync(account, cancellationToken);
+                if (person is null)
+                    return Results.BadRequest(new { message = "That user was not found in Active Directory." });
+                var added = await store.CreateAsync(person.UserName, person.DisplayName, request.Role!,
+                    string.Empty, mustChangePassword: false, cancellationToken, OperatorSources.Directory);
+                return Results.Ok(new { user = added, temporaryPassword = (string?)null });
+            }
+
             var userName = OperatorUserStore.NormalizeUserName(request.UserName);
             if (OperatorUserStore.ValidateUserName(userName) is { } problem)
                 return Results.BadRequest(new { message = problem });
@@ -225,6 +277,8 @@ public static class OperatorAuthEndpoints
                 return Results.BadRequest(new { message = "Unknown role." });
             if (displayName.Length is < 1 or > 60)
                 return Results.BadRequest(new { message = "Display name must be 1-60 characters." });
+            if (patch.ResetPassword == true && user.Source == OperatorSources.Directory)
+                return Results.BadRequest(new { message = "Passwords of Active Directory users are managed in Active Directory." });
             var isSelf = userId == OperatorAuthentication.UserId(principal);
             var losesAdmin = user.Role == OperatorRoles.Admin && !user.Disabled
                 && (role != OperatorRoles.Admin || disabled);
@@ -248,6 +302,35 @@ public static class OperatorAuthEndpoints
                 temporaryPassword
             });
         });
+    }
+
+    private sealed record DirectoryOutcome(OperatorUser? User, bool Unavailable = false);
+
+    /// <summary>Checks the password with the directory. An existing directory account keeps the
+    /// role an admin gave it; a new person is created only when a mapped group lists them.</summary>
+    private static async Task<DirectoryOutcome> DirectorySignInAsync(string userName, string password,
+        OperatorUser? existing, OperatorUserStore store, IOperatorDirectory directory,
+        ILogger logger, CancellationToken cancellationToken)
+    {
+        var result = await directory.SignInAsync(userName, password, cancellationToken);
+        if (result.Status == DirectorySignInStatus.Unavailable) return new DirectoryOutcome(null, true);
+        if (result.Status != DirectorySignInStatus.Accepted || result.Person is null)
+            return new DirectoryOutcome(null);
+        if (existing is not null) return new DirectoryOutcome(existing);
+
+        var person = result.Person;
+        if (person.Role is null || OperatorUserStore.ValidateUserName(person.UserName) is not null)
+        {
+            logger.LogWarning("Directory user '{UserName}' signed in correctly but is not in a "
+                + "group mapped to an operator role, so no dashboard account was created.", person.UserName);
+            return new DirectoryOutcome(null);
+        }
+
+        var created = await store.CreateAsync(person.UserName, person.DisplayName, person.Role,
+            string.Empty, mustChangePassword: false, cancellationToken, OperatorSources.Directory);
+        logger.LogInformation("Created dashboard account '{UserName}' ({Role}) from the directory.",
+            created.UserName, created.Role);
+        return new DirectoryOutcome(created);
     }
 
     private static readonly Lazy<string> DummyHash =

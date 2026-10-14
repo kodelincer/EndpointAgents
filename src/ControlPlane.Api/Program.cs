@@ -36,6 +36,8 @@ builder.Services.AddAuthorization(OperatorPolicies.Add);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<OperatorSignInThrottle>();
 builder.Services.AddSingleton<OperatorUserStore>();
+builder.Services.Configure<OperatorDirectoryOptions>(builder.Configuration.GetSection("OperatorDirectory"));
+builder.Services.AddSingleton<IOperatorDirectory, OperatorDirectory>();
 builder.Services.AddCors(options => options.AddPolicy("Dashboard", policy =>
     policy.WithOrigins(builder.Configuration.GetSection("Dashboard:AllowedOrigins").Get<string[]>() ?? [])
         .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
