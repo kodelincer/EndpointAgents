@@ -8,6 +8,7 @@ using EndpointAgents.Shared.Packages;
 using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Support;
 using EndpointAgents.Shared.Windows;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 using System.Text.Json;
@@ -49,6 +50,7 @@ public sealed class EndpointSupportTools
     public static Task<string> GetEndpointSystemInfo(
         ChatStore store,
         AgentRegistry registry,
+        IOptions<PrivacyOptions> privacy,
         [Description("The random capability supplied in this run's instructions.")]
         string runCapability,
         [Description("Optional subset of sections: network, windows, domain, hardware, storage. Omit for all.")]
@@ -63,7 +65,7 @@ public sealed class EndpointSupportTools
             }));
         return RunReadOnlyAsync(store, registry, runCapability, SystemInfoContracts.Method,
             JsonSerializer.SerializeToElement(new { sections = normalized }),
-            cancellationToken, keepIpAddresses: true);
+            cancellationToken, keepIpAddresses: privacy.Value.ShareIpAddressesWithAgent);
     }
 
     [McpServerTool(Name = "windows_activation_status"), Description(

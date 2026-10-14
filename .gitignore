@@ -373,3 +373,6 @@ FodyWeavers.xsd
 
 # Impeccable decision-page state
 .impeccable/questions/
+
+# First-start dashboard admin password, written next to the control-plane database
+initial-admin-password.txt
