@@ -50,7 +50,8 @@ public sealed record PackageDescriptor(
     string? MaxWindowsVersionExclusive,
     string? Publisher,
     IReadOnlyList<string> Symptoms,
-    PackageSignature? Signature = null);
+    PackageSignature? Signature = null,
+    IReadOnlyList<string>? AcceptedRisks = null);
 
 public sealed record PackageCatalog(IReadOnlyList<PackageDescriptor> Packages);
 
