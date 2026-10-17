@@ -222,6 +222,7 @@ public sealed partial class FileArtifactRepository
             reasons.Add((BatPackageStatuses.Invalid,
                 $"order must be between {BatPackageOrdering.Minimum} and {BatPackageOrdering.Maximum}."));
         var order = manifest.Order ?? BatPackageOrdering.Default;
+        var acceptedRisks = ValidateAcceptedRisks(manifest.Review?.AcceptedRisks, reasons);
 
         // BAT file and its pinned hash.
         var batName = manifest.Bat?.FileName ?? string.Empty;
@@ -315,14 +316,14 @@ public sealed partial class FileArtifactRepository
         if (bat is not null)
         {
             var lint = BatScriptLint.Inspect(
-                await File.ReadAllTextAsync(bat.FullPath, cancellationToken));
+                await File.ReadAllTextAsync(bat.FullPath, cancellationToken), acceptedRisks);
             reasons.AddRange(lint.Errors.Select(error =>
                 (BatPackageStatuses.LintRejected, $"Lint: {error}")));
             warnings.AddRange(lint.Warnings);
         }
 
         CheckSignature(reasons, warnings, folder, $"{folder}.bat", bat?.Sha256,
-            computedPlaybook, supportFiles, null, manifest.Signature);
+            computedPlaybook, supportFiles, null, acceptedRisks, manifest.Signature);
 
         var status = OverallStatus(reasons, warnings);
         var packageStatus = new BatPackageStatus(folder, directory, status,
@@ -338,12 +339,33 @@ public sealed partial class FileArtifactRepository
         return officeEntry is not null
             ? new LoadedPackage(packageStatus, new OfficeBugfixFileArtifact(bat!,
                 CreateOfficeBugfixDescriptor(officeEntry, playbook!, bat!.Sha256,
-                    supportFiles!) with { Signature = manifest.Signature },
+                    supportFiles!) with
+                    {
+                        Signature = manifest.Signature, AcceptedRisks = acceptedRisks
+                    },
                 supportDirectory, order), null)
             : new LoadedPackage(packageStatus, null, new WindowsBugfixFileArtifact(bat!,
                 CreateWindowsBugfixDescriptor(windowsEntry!, playbook!, bat!.Sha256,
-                    supportFiles!) with { Signature = manifest.Signature },
+                    supportFiles!) with
+                    {
+                        Signature = manifest.Signature, AcceptedRisks = acceptedRisks
+                    },
                 supportDirectory, order));
+    }
+
+    /// <summary>
+    /// Only <c>self-elevation</c> and <c>embedded-payload</c> may be accepted; anything
+    /// else (including <c>network-download</c>) is rejected.
+    /// </summary>
+    private static IReadOnlyList<string> ValidateAcceptedRisks(
+        IEnumerable<string>? risks, List<(string Status, string Reason)> reasons)
+    {
+        var accepted = PackageSignaturePolicy.NormalizeRisks(risks?.ToArray());
+        var bad = accepted.FirstOrDefault(risk => !BatRisks.IsAcceptable(risk));
+        if (bad is not null)
+            reasons.Add((BatPackageStatuses.Invalid,
+                $"review.acceptedRisks may only contain {string.Join(" or ", BatRisks.Acceptable)}; '{bad}' is not allowed."));
+        return accepted;
     }
 
     /// <summary>
@@ -353,7 +375,7 @@ public sealed partial class FileArtifactRepository
     private void CheckSignature(List<(string Status, string Reason)> reasons,
         List<string> warnings, string packageId, string stagedName, string? fileSha256,
         string? playbookSha256, IReadOnlyList<BatchSupportFile>? supportFiles,
-        string? publisher, PackageSignature? signature)
+        string? publisher, IReadOnlyList<string> acceptedRisks, PackageSignature? signature)
     {
         if (fileSha256 is null || playbookSha256 is null || supportFiles is null
             || reasons.Any(reason => reason.Status is BatPackageStatuses.HashMismatch
@@ -362,7 +384,7 @@ public sealed partial class FileArtifactRepository
         var statement = PackageSignaturePolicy.BuildStatement(packageId, stagedName,
             fileSha256, playbookSha256, supportFiles.Count == 0 ? null
                 : BatchSupportFilePolicy.ComputeBundleSha256(fileSha256, supportFiles),
-            publisher);
+            publisher, acceptedRisks);
         if (PackageSignaturePolicy.Verify(statement, signature,
                 _options.TrustedPackageSigningKeys))
             return;
@@ -408,6 +430,7 @@ public sealed partial class FileArtifactRepository
         if (manifest.Bat is not null || manifest.Office is not null
             || manifest.Windows is not null)
             Invalid("Schema 2 packages describe their file in \"file\"; remove \"bat\", \"office\" and \"windows\".");
+        var acceptedRisks = ValidateAcceptedRisks(manifest.Review?.AcceptedRisks, reasons);
         var displayName = manifest.DisplayName?.Trim() ?? string.Empty;
         var description = manifest.Description?.Trim() ?? string.Empty;
         if (displayName.Length is 0 or > MaxDisplayNameCharacters)
@@ -488,7 +511,7 @@ public sealed partial class FileArtifactRepository
             if (publisher is not null)
                 Invalid("file.publisher applies only to EXE files.");
             var lint = BatScriptLint.Inspect(
-                await File.ReadAllTextAsync(file.FullPath, cancellationToken));
+                await File.ReadAllTextAsync(file.FullPath, cancellationToken), acceptedRisks);
             reasons.AddRange(lint.Errors.Select(error =>
                 (BatPackageStatuses.LintRejected, $"Lint: {error}")));
             warnings.AddRange(lint.Warnings);
@@ -534,7 +557,7 @@ public sealed partial class FileArtifactRepository
         }
 
         CheckSignature(reasons, warnings, folder, stagedName, file?.Sha256,
-            computedPlaybook, supportFiles, publisher, manifest.Signature);
+            computedPlaybook, supportFiles, publisher, acceptedRisks, manifest.Signature);
 
         var status = OverallStatus(reasons, warnings);
         var compatibility = minWindows is null && maxWindows is null ? null
