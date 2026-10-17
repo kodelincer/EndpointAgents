@@ -537,7 +537,6 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
                 <button className="stop" aria-label="توقف درخواست" title="توقف درخواست" disabled={!connected || stopping}
                   onClick={() => void stop()}>
                   {stopping ? <LoaderCircle className="spin" size={16} aria-hidden /> : <Square size={13} fill="currentColor" aria-hidden />}
-                  توقف
                 </button>
               )}
               <button className="send" aria-label="ارسال پیام" disabled={!connected || submitting || !text.trim()} onClick={() => submit()}>
