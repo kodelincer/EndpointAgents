@@ -113,6 +113,19 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
         return receipt;
     }
 
+    public async Task<ChatRunStopReceipt> StopChatRun(ChatRunStopRequest request)
+    {
+        var agentId = GetAuthenticatedAgentId();
+        EnsureRegisteredAgent(agentId);
+        var receipt = await chatStore.StopConversationRunAsync(agentId,
+            request with { Identity = Normalize(request.Identity) },
+            Context.ConnectionAborted);
+        if (receipt.Accepted)
+            await dashboard.PublishHelpdeskAsync(new HelpdeskChange(
+                request.ConversationId, "stopped"), Context.ConnectionAborted);
+        return receipt;
+    }
+
     public async Task<ChatActionDecisionReceipt> RespondToChatAction(
         ChatActionDecision decision)
     {

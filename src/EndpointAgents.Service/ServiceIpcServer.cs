@@ -238,6 +238,9 @@ public sealed class ServiceIpcServer(
             case ServiceIpcProtocol.CloseChatMethod:
                 return await CloseChatAsync(pipe, request, cancellationToken);
 
+            case ServiceIpcProtocol.StopChatRunMethod:
+                return await StopChatRunAsync(pipe, request, cancellationToken);
+
             case ServiceIpcProtocol.RespondToChatActionMethod:
                 return await RespondToChatActionAsync(pipe, request, cancellationToken);
 
@@ -327,6 +330,24 @@ public sealed class ServiceIpcServer(
             logger.LogWarning("Support action decision {ActionId} was not accepted: {State}.",
                 decision.ActionId, receipt.Proposal?.State.ToString() ?? "Unknown");
         return Success(request.Id, "Decided", receipt);
+    }
+
+    private async Task<ServiceIpcResponse> StopChatRunAsync(NamedPipeServerStream pipe,
+        ServiceIpcRequest request, CancellationToken cancellationToken)
+    {
+        var stop = request.Payload?.Deserialize<ChatRunStopRequest>()
+            ?? throw new InvalidDataException("The chat stop body is missing.");
+        var normalized = stop with
+        {
+            Identity = GetCallerIdentity(pipe, stop.Identity.SessionId)
+        };
+        var receipt = await worker.StopChatRunAsync(normalized, cancellationToken);
+        logger.LogInformation("User asked to stop the current chat request; outcome is {Outcome}.",
+            receipt.Outcome);
+        return receipt.Accepted
+            ? Success(request.Id, "Stopped", receipt)
+            : new ServiceIpcResponse(request.Id, false, "ChatStopRejected",
+                JsonSerializer.SerializeToElement(receipt), receipt.Message);
     }
 
     private async Task<ServiceIpcResponse> CloseChatAsync(NamedPipeServerStream pipe,

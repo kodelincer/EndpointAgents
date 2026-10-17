@@ -101,6 +101,8 @@ export function createMockHost(webview?: { postMessage(m: unknown): void }): Hos
         }
         case "chat.send":
           return wait({ conversationId: (params?.conversationId as string) ?? "c-office", messageId: crypto.randomUUID(), sequence: 99, accepted: true, message: "پیام شما ثبت شد." } as T);
+        case "chat.stop":
+          return wait({ accepted: true, outcome: "Stopped", message: "درخواست شما متوقف شد." } as T);
         case "chat.action.respond":
           return wait({ accepted: true, message: params?.approved ? "تعمیر آغاز شد." : "اقدام اجرا نمی‌شود.", proposal: { ...action, state: params?.approved ? "Approved" : "Rejected" } } as T);
         case "logs.read": return wait(logs as T);

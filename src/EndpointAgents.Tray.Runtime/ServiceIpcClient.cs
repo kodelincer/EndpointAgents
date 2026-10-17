@@ -86,6 +86,15 @@ public sealed class ServiceIpcClient
             await SendAsync(request, cancellationToken));
     }
 
+    public async Task<ChatRunStopReceipt> StopChatRunAsync(
+        ChatRunStopRequest stop, CancellationToken cancellationToken)
+    {
+        var request = new ServiceIpcRequest(Guid.NewGuid().ToString("N"),
+            ServiceIpcProtocol.StopChatRunMethod, JsonSerializer.SerializeToElement(stop));
+        return ReadPayload<ChatRunStopReceipt>(
+            await SendAsync(request, cancellationToken));
+    }
+
     public async Task<ChatActionDecisionReceipt> RespondToChatActionAsync(
         ChatActionDecision decision, CancellationToken cancellationToken)
     {

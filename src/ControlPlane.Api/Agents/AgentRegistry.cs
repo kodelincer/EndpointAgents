@@ -93,6 +93,16 @@ public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPub
             response = await hubContext.Clients.Client(agent.ConnectionId)
                 .InvokeAsync<RpcResponse>("RunRpc", request, cancellationToken);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller stopped waiting. Only a read-only check is told to stop on the PC;
+            // a repair that already started is left to finish.
+            if (RpcInterruptPolicy.CanInterrupt(request.Method))
+                await CancelOnEndpointBestEffortAsync(agent.ConnectionId, request.Id);
+            await PublishCompletedAsync(agentId, request, RpcResponse.Failure(request.Id, 499,
+                "Command was cancelled."), startedAt, CancellationToken.None);
+            throw;
+        }
         catch (Exception ex)
         {
             await MarkOfflineAsync(agent.ConnectionId);
@@ -102,6 +112,20 @@ public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPub
 
         await PublishCompletedAsync(agentId, request, response, startedAt, cancellationToken);
         return response;
+    }
+
+    private async Task CancelOnEndpointBestEffortAsync(string connectionId, string requestId)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await hubContext.Clients.Client(connectionId)
+                .SendAsync(RpcInterruptPolicy.CancelMethod, requestId, timeout.Token);
+        }
+        catch (Exception)
+        {
+            // The check still ends on the endpoint's own command timeout.
+        }
     }
 
     private Task PublishCompletedAsync(string agentId, RpcRequest request, RpcResponse response,

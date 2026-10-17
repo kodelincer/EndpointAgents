@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUp, Check, CheckCheck, Clock3, Info, Lightbulb, LoaderCircle, PanelRight, PencilLine, RotateCw, Search, ShieldCheck, X,
+  ArrowUp, Check, CheckCheck, Clock3, Info, Lightbulb, LoaderCircle, PanelRight, PencilLine, RotateCw, Search, ShieldCheck, Square, X,
 } from "lucide-react";
 import { host, HostError } from "./bridge";
 import {
@@ -10,7 +10,7 @@ import {
 import { RunLine } from "./RunLine";
 import type {
   ActionDecisionReceipt, ActionProposal, ChatDelta, ChatMessage, ConversationSummary, MessageReceipt,
-  ProgressEvent, TrayStatus,
+  ProgressEvent, StopReceipt, TrayStatus,
 } from "./types";
 
 type Filter = "all" | "active" | "resolved" | "closed";
@@ -51,6 +51,8 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [confirmNew, setConfirmNew] = useState(false);
   const [deciding, setDeciding] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const [finishNote, setFinishNote] = useState("");
 
   const selectedRef = useRef<string | null>(null);
   const lastSequence = useRef(0);
@@ -79,6 +81,11 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
     for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === "run") return items[i] as Extract<Item, { kind: "run" }>;
     return null;
   }, [items]);
+  // A request is in progress while a user message waits or is being worked on, or while a proposed
+  // action still waits for approval. Stop applies to exactly these.
+  const inProgress = items.some((i) => i.kind === "message" && i.message.role === "User"
+    && (i.message.state === "Queued" || i.message.state === "Working")) || pendingAction !== null;
+  const canStop = inProgress && !readOnly && selectedId !== null;
   const runningLabel = lastRun && !isTerminalStage(lastRun.events[lastRun.events.length - 1])
     ? progressLabel(lastRun.events[lastRun.events.length - 1]) : null;
 
@@ -264,6 +271,29 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
     }
   };
 
+  const stop = async () => {
+    const id = selectedRef.current;
+    if (!id || stopping) return;
+    setStopping(true);
+    setFinishNote("");
+    setNotice("در حال توقف درخواست…");
+    try {
+      const receipt = await host.call<StopReceipt>("chat.stop", { conversationId: id });
+      if (receipt.outcome === "FinishingOperation") setFinishNote(receipt.message);
+      setNotice(receipt.message);
+      await refreshList();
+      await syncChat();
+    } catch {
+      setNotice("درخواست متوقف نشد. ارتباط با سرویس را بررسی کنید و دوباره تلاش کنید.");
+    } finally {
+      setStopping(false);
+      composer.current?.focus();
+    }
+  };
+
+  // The "will finish first" note only makes sense while the request is still in progress.
+  useEffect(() => { if (!inProgress) setFinishNote(""); }, [inProgress]);
+
   const submit = async () => {
     const message = text.trim();
     if (submitting || !connected || readOnly || !message || message.length > messageLimit) return;
@@ -322,7 +352,8 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
   const headerState = !connected ? "در انتظار اتصال"
     : runningLabel ?? (selected ? conversationStateLabel[selected.state] : "گفتگوی تازه");
   const shownNotice = !connected ? DISCONNECTED
-    : readOnly ? "این گفتگو بسته شده است؛ برای درخواست تازه، گفتگوی جدید بسازید." : notice;
+    : readOnly ? "این گفتگو بسته شده است؛ برای درخواست تازه، گفتگوی جدید بسازید."
+    : finishNote && inProgress ? finishNote : notice;
 
   if (hidden) return null;
 
@@ -482,6 +513,13 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
               {text.length > messageLimit * 0.75 && (
                 <span className="counter" data-full={text.length >= messageLimit || undefined}>{num(text.length)} از {num(messageLimit)}</span>
               )}
+              {canStop && (
+                <button className="stop" aria-label="توقف درخواست" title="توقف درخواست" disabled={!connected || stopping}
+                  onClick={() => void stop()}>
+                  {stopping ? <LoaderCircle className="spin" size={16} aria-hidden /> : <Square size={13} fill="currentColor" aria-hidden />}
+                  توقف
+                </button>
+              )}
               <button className="send" aria-label="ارسال پیام" disabled={!connected || submitting || !text.trim()} onClick={() => submit()}>
                 {submitting ? <LoaderCircle className="spin" size={18} aria-hidden /> : <ArrowUp size={19} strokeWidth={2.2} aria-hidden />}
               </button>
@@ -545,6 +583,7 @@ function Bubble({ role, body, at, state }: { role: ChatMessage["role"]; body: st
           <time dateTime={at}>{time(at)}</time>
           {mine && (state === "Queued" ? <Clock3 size={13} aria-label="در صف" />
             : state === "Failed" ? <X size={13} aria-label="ناموفق" />
+            : state === "Cancelled" ? <X size={13} aria-label="متوقف شد" />
             : state === "Working" ? <Check size={13} aria-label="دریافت شد" />
             : <CheckCheck size={14} aria-label="بررسی شد" />)}
         </span>
