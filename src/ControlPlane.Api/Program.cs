@@ -103,6 +103,8 @@ builder.Services.Configure<ActiveDirectoryOptions>(builder.Configuration.GetSect
 builder.Services.AddSingleton<ActiveDirectoryAccountChecker>();
 builder.Services.Configure<HelpdeskSkillOptions>(builder.Configuration.GetSection("HelpdeskSkills"));
 builder.Services.AddSingleton<SkillService>();
+builder.Services.Configure<OrganizationKnowledgeOptions>(builder.Configuration.GetSection("Organization"));
+builder.Services.AddSingleton<OrganizationKnowledgeService>();
 builder.Services.Configure<PrivacyOptions>(builder.Configuration.GetSection("Privacy"));
 builder.Services.AddOptions<FileRepositoryOptions>()
     .Bind(builder.Configuration.GetSection("FileRepository"))
