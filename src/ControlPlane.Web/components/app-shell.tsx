@@ -41,7 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <span className="topbar-divider" /><span>{agents.length} agent{agents.length === 1 ? "" : "s"} online</span>
         <button className="icon-button" onClick={() => void refresh()} aria-label="Refresh control-plane data"><RefreshCw size={16} /></button>
         <Link className={`icon-button docs-link${path.startsWith("/docs") ? " active" : ""}`} href="/docs/" aria-label="Documentation"
-          title="Documentation / راهنما" aria-current={path.startsWith("/docs") ? "page" : undefined}><BookMarked size={16} /></Link>
+          title="Documentation / راهنما" aria-current={path.startsWith("/docs") ? "page" : undefined}><BookMarked size={16} /><span>Docs</span></Link>
         <span className="topbar-divider" /><AccountMenu />
       </div>
     </header>
