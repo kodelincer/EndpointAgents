@@ -5,6 +5,7 @@ using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Support;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
 
 namespace EndpointAgents.Service;
 
@@ -30,6 +31,7 @@ public sealed class AgentWorker : BackgroundService
     private readonly AgentRuntimeState _runtime;
     private readonly DateTimeOffset _startedAtUtc = DateTimeOffset.UtcNow;
     private HubConnection? _connection;
+    private readonly ConcurrentDictionary<string, RunningCommand> _running = new();
 
     public AgentWorker(ILogger<AgentWorker> logger, CommandDispatcher dispatcher,
         IOptions<ControlPlaneOptions> options, AgentIdentityProvider identityProvider,
@@ -166,6 +168,30 @@ public sealed class AgentWorker : BackgroundService
         // The returned task becomes the RPC result sent back to the caller.
         connection.On<RpcRequest, RpcResponse>("RunRpc",
             request => ExecuteCommandAsync(request, stoppingToken));
+        connection.On<string>(RpcInterruptPolicy.CancelMethod, InterruptCommand);
+    }
+
+    /// <summary>
+    /// The control plane's Stop. Only read-only checks are interrupted; a repair that already
+    /// started keeps running to its end whatever the caller asks.
+    /// </summary>
+    private void InterruptCommand(string requestId)
+    {
+        if (!_running.TryGetValue(requestId, out var running)
+            || !RpcInterruptPolicy.CanInterrupt(running.Method))
+            return;
+        running.Interrupted = true;
+        try { running.Source.Cancel(); }
+        catch (ObjectDisposedException) { }
+        _logger.LogInformation("Stopping read-only command {Method} with request id {RequestId}.",
+            running.Method, requestId);
+    }
+
+    private sealed class RunningCommand(string method, CancellationTokenSource source)
+    {
+        public string Method { get; } = method;
+        public CancellationTokenSource Source { get; } = source;
+        public volatile bool Interrupted;
     }
 
     private async Task<RpcResponse> ExecuteCommandAsync(RpcRequest request,
@@ -200,10 +226,24 @@ public sealed class AgentWorker : BackgroundService
             var context = new CommandExecutionContext(_agentId, null, null, DateTimeOffset.UtcNow);
             using var commandTimeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
             commandTimeout.CancelAfter(TimeSpan.FromSeconds(_options.CommandTimeoutSeconds));
+            var running = new RunningCommand(request.Method, commandTimeout);
+            _running[request.Id] = running;
 
-            var response = await _dispatcher.DispatchAsync(request, context, commandTimeout.Token);
+            RpcResponse response;
+            try
+            {
+                response = await _dispatcher.DispatchAsync(request, context, commandTimeout.Token);
+            }
+            finally
+            {
+                _running.TryRemove(request.Id, out _);
+            }
             // Distinguish a command timeout from normal service shutdown.
-            if (commandTimeout.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
+            if (running.Interrupted)
+            {
+                response = RpcResponse.Failure(request.Id, 499, "Command was cancelled.");
+            }
+            else if (commandTimeout.IsCancellationRequested && !stoppingToken.IsCancellationRequested)
             {
                 response = RpcResponse.Failure(request.Id, 408,
                     $"Command exceeded the {_options.CommandTimeoutSeconds}-second timeout.");
@@ -289,6 +329,11 @@ public sealed class AgentWorker : BackgroundService
         ChatConversationCloseRequest request, CancellationToken cancellationToken) =>
         GetConnectedConnection().InvokeAsync<ChatConversationCloseReceipt>(
             "CloseChat", request, cancellationToken);
+
+    public Task<ChatRunStopReceipt> StopChatRunAsync(
+        ChatRunStopRequest request, CancellationToken cancellationToken) =>
+        GetConnectedConnection().InvokeAsync<ChatRunStopReceipt>(
+            "StopChatRun", request, cancellationToken);
 
     public Task<ChatActionDecisionReceipt> RespondToChatActionAsync(
         ChatActionDecision decision, CancellationToken cancellationToken) =>

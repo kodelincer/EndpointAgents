@@ -7,25 +7,51 @@ Everything needed to build, run and test the system is in this repository. This 
 
 ```powershell
 git clone https://github.com/kodelincer/EndpointAgents.git
-cd EndpointAgents
-git checkout claude/tray-webview     # or master, once it has been fast-forwarded to it
+cd EndpointAgents          # master = the WebView2 Tray line, same commit as claude/tray-webview
 ```
 
-All earlier work lines are already contained in `claude/tray-webview` (it is one straight history
-on top of `master`), so there is nothing to merge. The other branches are kept as bookmarks:
+Everything below is pushed to `origin`. Branches that are **already contained in `master`** are
+history only; branches **ahead of `master`** hold work that has not been merged yet.
+
+### Branches ahead of master (unmerged work)
 
 | Branch | What it holds |
 | --- | --- |
-| `claude/tray-webview` | Latest: WebView2 Tray, one-pipe service channel, installer and docs. |
-| `claude/package-runner` | Repair-package runner, packages, system info (parent of the above). |
-| `claude/package-catalog`, `claude/generic-bat-runner`, `claude/menu-repair-sample`, `claude/system-info`, `claude/setup-skills` | Earlier steps of the same line. |
-| `claude/tray-redesign` | The redesigned WinUI Tray (the legacy front end, still buildable). |
-| `wip/menu-repair-sample-local-changes` | Uncommitted edits that were left in a working tree: an EndpointInfo handler change, removal of two `tmpfiles` bug-fixer scripts and a stray `SupportWindow.xaml`. Review before merging. |
+| `claude/org-knowledge` | Newest line. Contains `claude/dashboard-auth` and `verify/endpoint-actions` plus the organization knowledge file, the masked `get_site_knowledge` tool and the site-knowledge skill. Start here to continue that work. |
+| `verify/endpoint-actions` | Catalogued general endpoint actions (system and user side), their control-plane side, Hermes rules and symptom skills, dashboard Capabilities, Skills and Environment pages, helpdesk roles. Contained in `claude/org-knowledge`. |
+| `claude/dashboard-auth` | Dashboard sign-in, helpdesk roles and the Operators page. Contained in `claude/org-knowledge`. |
+| `claude/hermes-queue` | Admin-tunable request queue in front of Hermes. Branched from master; **not** contained in `claude/org-knowledge`, so merge it separately. |
+| `claude/chrome-install-package` | Catalogued Chrome install package, software-install skill, a general installer packager and a Chrome settings reset. |
+| `claude/package-runner` | Master plus one **WIP** commit: package signature, BAT lint and package contract changes for "generic file delivery and playbooks". Uncommitted when found, may not build or pass tests. |
+| `wip/menu-repair-sample-local-changes` | Edits that were left uncommitted in a working tree: an EndpointInfo handler change, removal of two `tmpfiles` bug-fixer scripts and a stray `SupportWindow.xaml`. Review before merging. |
+| `wip/stash-menu-repair-sample` | The contents of a local git stash ("menu-repair-sample local changes before tray-webview"), saved as a branch so they survive. Review before merging. |
 
-Old side checkouts (`EndpointAgents-runner`, `-tray`, `-sysinfo`, `-packages`) were git worktrees of
-the same repository. They are not needed on a new PC; check out the branch you want instead, or run
-`git worktree add ..\EndpointAgents-runner claude/package-runner`.
+### Branches already contained in master (bookmarks)
 
+`claude/tray-webview` (same commit as `master`), `claude/tray-redesign` (the WinUI Tray front end),
+`claude/system-info`, `claude/package-catalog`, `claude/generic-bat-runner`,
+`claude/menu-repair-sample`, `claude/setup-skills`. They can be ignored.
+
+### Recreating the side checkouts (git worktrees)
+
+The old PC used one worktree per branch next to the main clone. They are not needed to build or
+run, only for working on several branches at once:
+
+```powershell
+cd EndpointAgents
+git worktree add ..\EndpointAgents-actions  verify/endpoint-actions
+git worktree add ..\EndpointAgents-auth     claude/dashboard-auth
+git worktree add ..\EndpointAgents-orgknow  claude/org-knowledge
+git worktree add ..\EndpointAgents-queue    claude/hermes-queue
+git worktree add ..\EndpointAgents-chrome   claude/chrome-install-package
+git worktree add ..\EndpointAgents-runner   claude/package-runner
+git worktree add ..\EndpointAgents-sysinfo  claude/system-info
+git worktree add ..\EndpointAgents-packages claude/package-catalog
+git worktree add ..\EndpointAgents-tray     claude/tray-redesign
+```
+
+A branch can be checked out in only one worktree at a time, so give each branch its own folder or
+switch with `git switch`.
 ## 2. Install the tools
 
 - .NET 10 SDK (`dotnet --version` should say 10.x). Visual Studio is **not** needed.
@@ -54,6 +80,9 @@ These are per-machine or secret on purpose; recreate them, do not look for them 
 | Package signing key (private) | Created by `.\scripts\new-package-signing-key.ps1` | Make a new one, add its public key to the two `appsettings.Development.json` files as `docs/run-dev-stack.md` describes, and re-sign packages. The development sample packages are signed with the checked-in dev key. |
 | WebView2 offline installer | `deploy\endpoint\MicrosoftEdgeWebView2RuntimeInstallerX64.exe` (git-ignored) | Download the x64 Evergreen Standalone Installer from Microsoft; only needed for installs on PCs without WebView2. |
 | Control plane dev data | `.local\control-plane.db*` | These files are tracked as a baseline; a live database from another PC is not part of the history. A new PC starts from the baseline and enrolls again. |
+| `appsettings.Development.json` (control plane and service) | `src\ControlPlane.Api`, `src\EndpointAgents.Service` | Checked in with localhost-only test keys, so they come with the clone. Real or production keys (LLM key, package signing public key list, AD settings, device tokens) are **not** in git: re-enter them on the new PC, see `docs/control-plane-operations.md`. |
+| Runtime state and logs | `%LOCALAPPDATA%\EndpointAgents` (`Reports`, `Tray`), `.local\*.log` | Per-machine; nothing to copy. |
+| Live data on the old PC | `.local\control-plane.db*` in the old checkouts | The DB is tracked as a baseline, so the old PC's live copy was left modified, not committed. To keep the old chats, runs, audit and operator accounts, stop the API and copy `.local\control-plane.db` (plus `-wal`, `-shm`) over by hand. |
 
 Design-tool state (`.impeccable\questions`) and build output (`bin`, `obj`, `ui\dist`, `node_modules`,
 `.artifacts`) are git-ignored and rebuilt on demand.

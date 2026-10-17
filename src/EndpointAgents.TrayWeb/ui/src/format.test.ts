@@ -46,6 +46,8 @@ describe("progress", () => {
   it("ends a run only on a terminal stage", () => {
     expect(isTerminalStage(event("AwaitingApproval"))).toBe(false);
     expect(isTerminalStage(event("ActionRejected"))).toBe(true);
+    expect(isTerminalStage(event("Cancelled"))).toBe(true);
+    expect(progressLabel(event("Cancelled"))).toBe("درخواست متوقف شد");
   });
 });
 

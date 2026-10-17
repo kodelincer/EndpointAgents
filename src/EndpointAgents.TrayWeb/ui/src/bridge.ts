@@ -4,7 +4,7 @@ import { createMockHost } from "./mock";
 // The page talks to the .NET host only through named methods; the host refuses anything else.
 export type Method =
   | "app.ready" | "app.exit" | "status.refresh"
-  | "chat.list" | "chat.sync" | "chat.send" | "chat.close" | "chat.action.respond"
+  | "chat.list" | "chat.sync" | "chat.send" | "chat.stop" | "chat.close" | "chat.action.respond"
   | "service.control" | "logs.read" | "logs.export" | "clipboard.write"
   | "consent.answer" | "keyboard.persian"
   | "window.minimize" | "window.toggleMaximize" | "window.close" | "window.drag";

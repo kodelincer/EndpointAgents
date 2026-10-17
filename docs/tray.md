@@ -76,3 +76,16 @@ through Windows Update). When it is missing, the script runs Microsoft's x64 Eve
 Installer from `deploy\endpoint\MicrosoftEdgeWebView2RuntimeInstallerX64.exe` (or
 `-WebView2InstallerPath`) after verifying its Microsoft Authenticode signature. The installer is not
 committed; download it from https://developer.microsoft.com/microsoft-edge/webview2/.
+
+## Stopping a request
+
+While a request is in progress (queued, being worked on, or a proposed action waiting for approval) the
+chat shows a **توقف** button. It calls `chat.stop` -> pipe `chat.stop` -> `StopChatRun` on `AgentHub`.
+
+- A request still in the queue, and a proposal not yet approved, are cancelled immediately (state
+  `Cancelled`, the assistant adds "درخواست شما متوقف شد.").
+- A request the assistant is working on is stopped: the Hermes run is stopped and its capability stops
+  working, so no further tool call or proposal is accepted.
+- A read-only check running on the PC is interrupted (`CancelRpc` to the Service). Anything that repairs
+  or installs (`RpcInterruptPolicy`) is never killed halfway: the request stops after it ends, and the
+  user is told so. Approved actions already executing behave the same way.

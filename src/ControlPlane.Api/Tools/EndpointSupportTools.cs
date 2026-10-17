@@ -324,30 +324,44 @@ public sealed class EndpointSupportTools
         var requestId = Guid.NewGuid().ToString("N");
         var request = RpcRequest.Create(requestId, method,
             AddUserScope(pinned, scope.UserSid, requestId));
-        await store.WriteProgressAsync(scope.RunId, ChatProgressStage.ActionStarted,
-            activity, ChatProgressOutcome.None, cancellationToken);
 
-        var response = await registry.SendCommandAsync(scope.AgentId, request,
-            cancellationToken);
-        var succeeded = response.Error is null;
-        await store.WriteToolAuditAsync(scope, toolName,
-            succeeded ? "success" : "error", response.Error?.Message, cancellationToken);
-        await store.RecordRepairAttemptAsync(scope, toolName, artifactId, succeeded,
-            response.Error?.Message, cancellationToken);
-        await store.WriteProgressAsync(scope.RunId, ChatProgressStage.ActionCompleted,
-            activity,
-            succeeded ? ChatProgressOutcome.Success : ChatProgressOutcome.Failure,
-            cancellationToken);
+        // A repair that has started is never cut short by Stop; the run stops after it ends.
+        IDisposable? pin = null;
+        if (store.Runs.Get(scope.RunId) is { } handle && !handle.TryPin(out pin))
+            return StoppedByUser;
+        try
+        {
+            await store.WriteProgressAsync(scope.RunId, ChatProgressStage.ActionStarted,
+                activity, ChatProgressOutcome.None, cancellationToken);
+            var response = await registry.SendCommandAsync(scope.AgentId, request,
+                cancellationToken);
+            var succeeded = response.Error is null;
+            await store.WriteToolAuditAsync(scope, toolName,
+                succeeded ? "success" : "error", response.Error?.Message, cancellationToken);
+            await store.RecordRepairAttemptAsync(scope, toolName, artifactId, succeeded,
+                response.Error?.Message, cancellationToken);
+            await store.WriteProgressAsync(scope.RunId, ChatProgressStage.ActionCompleted,
+                activity,
+                succeeded ? ChatProgressOutcome.Success : ChatProgressOutcome.Failure,
+                cancellationToken);
 
-        return ToolResultSanitizer.Sanitize(succeeded
-            ? new { ok = true, result = response.Result }
-            : new
-            {
-                ok = false,
-                error = response.Error!.Message,
-                details = response.Error.Data
-            });
+            return ToolResultSanitizer.Sanitize(succeeded
+                ? new { ok = true, result = response.Result }
+                : new
+                {
+                    ok = false,
+                    error = response.Error!.Message,
+                    details = response.Error.Data
+                });
+        }
+        finally
+        {
+            pin?.Dispose();
+        }
     }
+
+    private const string StoppedByUser =
+        """{"ok":false,"error":"The user stopped this request. Do not run anything else."}""";
 
     [McpServerTool(Name = "propose_endpoint_action"), Description(
         "Create an immutable approved support action card for the endpoint user. This never executes the action and requires user consent.")]
@@ -464,10 +478,14 @@ public sealed class EndpointSupportTools
         var request = RpcRequest.Create(
             Guid.NewGuid().ToString("N"), method, scopedParameters);
         var activity = GetProgressActivity(method);
+        if (store.Runs.Get(scope.RunId)?.StopRequested == true) return StoppedByUser;
         await store.WriteProgressAsync(scope.RunId,
             ChatProgressStage.EndpointCheckStarted, activity,
             ChatProgressOutcome.None, cancellationToken);
-        var response = await registry.SendCommandAsync(scope.AgentId, request, cancellationToken);
+        // Read-only checks can be abandoned: Stop cancels this call and the endpoint stops them.
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken,
+            store.Runs.Get(scope.RunId)?.Token ?? CancellationToken.None);
+        var response = await registry.SendCommandAsync(scope.AgentId, request, stop.Token);
         var outcome = response.Error is null ? "success" : "error";
         await store.WriteToolAuditAsync(scope, method, outcome,
             response.Error?.Message, cancellationToken);

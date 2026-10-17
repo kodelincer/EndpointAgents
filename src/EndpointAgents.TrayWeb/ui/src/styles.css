@@ -396,6 +396,12 @@ input, textarea { caret-color: var(--action); }
 }
 .send:hover:not(:disabled) { transform: scale(1.05); }
 .send:disabled { opacity: 0.35; }
+.stop {
+  height: 40px; flex: none; padding: 0 14px; border-radius: 20px; border: 0; display: inline-flex; align-items: center; gap: 7px;
+  background: var(--bad-soft); color: var(--bad); font-weight: 600; font-size: 13px; transition: transform 140ms var(--ease), opacity 140ms;
+}
+.stop:hover:not(:disabled) { transform: scale(1.04); }
+.stop:disabled { opacity: 0.5; }
 .closed-bar {
   display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 10px 10px 10px; padding-inline-start: 18px;
   border-radius: 16px; background: var(--surface); box-shadow: var(--shadow); color: var(--muted); font-size: 13px;
