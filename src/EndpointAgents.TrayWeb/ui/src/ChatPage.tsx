@@ -83,8 +83,11 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
   }, [items]);
   // A request is in progress while a user message waits or is being worked on, or while a proposed
   // action still waits for approval. Stop applies to exactly these.
-  const inProgress = items.some((i) => i.kind === "message" && i.message.role === "User"
-    && (i.message.state === "Queued" || i.message.state === "Working")) || pendingAction !== null;
+  // The conversation's own state (refreshed from the service) has the last word, so a message
+  // whose final state this page never saw cannot keep the button on screen.
+  const inProgress = (items.some((i) => i.kind === "message" && i.message.role === "User"
+    && (i.message.state === "Queued" || i.message.state === "Working")) || pendingAction !== null)
+    && (selected === null || selected.state === "Working" || selected.state === "AwaitingApproval");
   const canStop = inProgress && !readOnly && selectedId !== null;
   const runningLabel = lastRun && !isTerminalStage(lastRun.events[lastRun.events.length - 1])
     ? progressLabel(lastRun.events[lastRun.events.length - 1]) : null;
@@ -127,7 +130,21 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
             next[at] = { ...run, events: [...run.events, event].sort((a, b) => a.sequence - b.sequence) };
         }
       }
-      return next.sort((a, b) => a.order - b.order);
+      // The service sends a user message only while it is queued or working, so a message that
+      // finished never arrives again. Its run's final progress event settles it here instead.
+      const settled = new Map<string, ChatMessage["state"]>();
+      for (const event of delta.progressEvents ?? []) {
+        if (event.stage === "Completed") settled.set(event.runId, "Completed");
+        else if (event.stage === "Failed") settled.set(event.runId, "Failed");
+        else if (event.stage === "Cancelled") settled.set(event.runId, "Cancelled");
+      }
+      const result = settled.size === 0 ? next : next.map((item) => {
+        if (item.kind !== "message" || item.message.role !== "User" || !item.message.runId) return item;
+        const state = settled.get(item.message.runId);
+        return state && (item.message.state === "Queued" || item.message.state === "Working")
+          ? { ...item, message: { ...item.message, state } } : item;
+      });
+      return result.sort((a, b) => a.order - b.order);
     });
     const sequences = [
       delta.conversation.lastSequence,
@@ -280,6 +297,9 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
     try {
       const receipt = await host.call<StopReceipt>("chat.stop", { conversationId: id });
       if (receipt.outcome === "FinishingOperation") setFinishNote(receipt.message);
+      // The service stopped every proposal still waiting for approval; it never sends those again.
+      setItems((list) => list.map((item) => item.kind === "action" && item.action.state === "Pending"
+        ? { ...item, action: { ...item.action, state: "Cancelled" as const } } : item));
       setNotice(receipt.message);
       await refreshList();
       await syncChat();
