@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/components/auth-gate";
 import { Activity, Check, CircleAlert, Clock3, Pause, Play, RefreshCw, Server,
   Waypoints, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -35,6 +36,7 @@ export function OperationsOverview() {
   const [statusError, setStatusError] = useState<string>();
   const [checkedAt, setCheckedAt] = useState<string>();
   const [actionState, setActionState] = useState<MaintenanceActionState>();
+  const canPause = useAuth().can("maintenance.set");
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -99,9 +101,11 @@ export function OperationsOverview() {
           ? `${status.machineName} · One Windows service hosts agents, APIs, and this console.`
           : "One Windows service hosts agents, APIs, and this console."}</span></div>
         <div className="control-actions">
-          <button className="secondary-button" disabled={busy || status?.maintenanceMode !== false}
+          <button className="secondary-button" disabled={!canPause || busy || status?.maintenanceMode !== false}
+            title={canPause ? undefined : "Only admins can pause or resume commands."}
             onClick={() => void updateMaintenance(true)}><Pause size={15} />Pause commands</button>
-          <button className="primary-button" disabled={busy || !status?.maintenanceMode}
+          <button className="primary-button" disabled={!canPause || busy || !status?.maintenanceMode}
+            title={canPause ? undefined : "Only admins can pause or resume commands."}
             onClick={() => void updateMaintenance(false)}><Play size={15} />Resume commands</button>
         </div>
       </div>

@@ -42,7 +42,7 @@ internal static class TestPackageSigner
                 BatchPlaybookPolicy.ComputeSha256(playbook!),
                 support.Length == 0 ? null
                     : BatchSupportFilePolicy.ComputeBundleSha256(sha256, support),
-                publisher);
+                publisher, PackageSignaturePolicy.NormalizeRisks(manifest.Review?.AcceptedRisks));
         }
         catch (ArgumentException) { return; } // Invalid support files are reported first.
         package["signature"] = JsonSerializer.SerializeToNode(

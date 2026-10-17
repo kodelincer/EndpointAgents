@@ -275,6 +275,9 @@ Only these tools are visible to Hermes:
 - `mark_problem_resolved`
 - `escalate_to_helpdesk`
 - `record_feature_request`
+- `list_endpoint_actions`, `list_environment_targets`, `run_endpoint_action`,
+  `check_known_incidents`, `recent_reports_from_others`, `probe_from_server`,
+  `check_user_account`, `note_skill_used` (general actions; see `docs/endpoint-actions.md`)
 
 `mark_problem_resolved` only sets the run's own conversation to Resolved. The skills ask the user
 whether the problem is solved and call it only after a clear yes; a later user message reopens

@@ -1,4 +1,5 @@
 using EndpointAgents.Core.Commands;
+using EndpointAgents.Platform.Windows.Actions;
 using EndpointAgents.Platform.Windows.EndpointInfo;
 using EndpointAgents.Platform.Windows;
 using EndpointAgents.Platform.Windows.Ibsng;
@@ -161,6 +162,10 @@ builder.Services.AddSingleton<IEndpointCommandHandler, WindowsActivationBugfixCo
 builder.Services.AddSingleton<IEndpointCommandHandler, WindowsHelloSampleCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, PackageRunCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, SystemInfoCommandHandler>();
+// General catalogued actions (EndpointActionCatalog): one RPC, fixed implementations only.
+builder.Services.AddSingleton<IEndpointCommandHandler, EndpointActionCommandHandler>();
+foreach (var action in EndpointActionSet.CreateSystemActions())
+    builder.Services.AddSingleton(action);
 
 // Read-only system.get_info sections; add a new ISystemInfoSection here to extend it.
 builder.Services.AddSingleton<ISystemInfoSection, NetworkInfoSection>();

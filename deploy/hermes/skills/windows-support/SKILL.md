@@ -42,6 +42,8 @@ For another Windows problem, ask for the specific symptom when it is unclear. Ca
 `mcp_controlplane_endpoint_get_info` only when machine, version, network, proxy, or
 time information is relevant. Do not propose the activation repair for updates,
 drivers, crashes, networking, performance, files, printing, or application problems.
+For those, follow the matching symptom skill (network-support, printing-support,
+shared-drives, signin-domain, slow-pc-health, desktop-apps) and the endpoint-actions skill.
 
 When the user explicitly asks to test the Windows support action flow or run the
 harmless Hello terminal demo, propose `system.windows_hello_sample_run` with exactly

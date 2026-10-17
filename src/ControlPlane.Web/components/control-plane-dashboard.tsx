@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/components/auth-gate";
 import { Activity as ActivityIcon, Check, ChevronDown, CircleAlert, Clock3, Copy,
   ChevronRight, MoreHorizontal, PanelRightClose, Play, RefreshCw, Search, Server, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -22,6 +23,7 @@ function relative(value: string) {
 /** Agent registry, live activity rail, command review, and RPC trace inspection. */
 export function ControlPlaneDashboard() {
   const { agents, activity, commands, loading, loadError, refresh } = useControlPlane();
+  const canRun = useAuth().can("commands.run");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"agent" | "connected">("agent");
   const [agentFilter, setAgentFilter] = useState("");
@@ -151,7 +153,7 @@ export function ControlPlaneDashboard() {
         <p className="command-description">{selectedCommand.description}</p>
         <JsonBlock title="JSON-RPC request" value={{ jsonRpc: "2.0", id: "Generated when sent", method: selectedCommand.method, params: selectedCommand.defaultParams }} copied={copied === "request"} onCopy={() => copy("request", { jsonRpc: "2.0", method: selectedCommand.method, params: selectedCommand.defaultParams })} />
         {runError && <div className="command-error" role="alert"><CircleAlert size={16} />{runError}</div>}
-        <div className="drawer-actions"><button className="secondary-button" onClick={() => setSelectedAgent(undefined)}>Cancel</button><button className="primary-button" disabled={running} onClick={() => void execute()}>{running ? <><RefreshCw className="spin" size={15} /> Running…</> : <><Play size={15} /> Run command</>}</button></div>
+        <div className="drawer-actions"><button className="secondary-button" onClick={() => setSelectedAgent(undefined)}>Cancel</button>{!canRun && <span className="drawer-note">Only admins can run endpoint commands.</span>}<button className="primary-button" disabled={running || !canRun} onClick={() => void execute()}>{running ? <><RefreshCw className="spin" size={15} /> Running…</> : <><Play size={15} /> Run command</>}</button></div>
       </div>}
     </aside></>}
   </div>;

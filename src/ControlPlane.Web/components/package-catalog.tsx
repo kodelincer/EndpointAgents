@@ -3,7 +3,7 @@
 import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, Package, RefreshCw, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getPackageInventory } from "@/lib/control-plane";
-import { describeRun, describeStep, finishRules, packageCompatibility, packageStatus } from "@/lib/packages";
+import { acceptedRiskLines, describeRun, describeStep, finishRules, packageCompatibility, packageStatus } from "@/lib/packages";
 import type { BatPackage, PackageInventory } from "@/lib/types";
 
 /** Read-only operator view of FileRepository\packages and why each package is or is not offered. */
@@ -86,6 +86,10 @@ function PackageDetail({ item, inventory }: { item: BatPackage; inventory: Packa
       <h3>Finish rules</h3>
       <ul>{finishRules(item.playbook, limits.defaultGuiDialogGraceSeconds).map(rule => <li key={rule}>{rule}</li>)}</ul>
     </> : <p>No readable playbook.</p>}
+    {acceptedRiskLines(item).length > 0 && <>
+      <h3>Accepted risks</h3>
+      <ul>{acceptedRiskLines(item).map(line => <li key={line}>{line}</li>)}</ul>
+    </>}
     <h3>Hashes</h3>
     <dl className="package-hashes">
       <div><dt>File</dt><dd>{item.batFileName ?? "—"}{item.batSizeBytes ? ` · ${item.batSizeBytes} bytes` : ""}</dd></div>

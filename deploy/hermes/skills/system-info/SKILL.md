@@ -40,12 +40,14 @@ Read the result like this:
 
 For internet reachability or proxy checks, also call `mcp_controlplane_endpoint_get_info`.
 
-This tool only reads. No approved action changes IP, DNS, DHCP, adapter or domain
-settings yet: explain the likely cause in one sentence and tell the user what to check
-(for example the cable) or that IT support must change the setting. Never propose an
-action that is not in the approved catalog.
+This tool only reads. To act on what it shows (renew the address, clear the DNS cache,
+sync the clock, refresh policy), follow the network-support or signin-domain skill and
+the endpoint-actions skill. Static IP, adapter and domain-membership settings are never
+changed: explain the likely cause in one sentence and tell the user what to check (for
+example the cable) or that IT support must change the setting.
 
-The user may hear their own IP address, gateway or DNS server values only when they
-ask for them. Never reveal computer names, domain controller names, adapter IDs, or the
+IP addresses are usually masked in the result (the flags above still tell you APIPA,
+gateway and DNS state). The user may hear their own IP address, gateway or DNS server
+values only when they ask for them and the result shows them. Never reveal computer names, domain controller names, adapter IDs, or the
 raw result. Use only the ControlPlane tools above, never request credentials, and follow
 the profile `SOUL.md` for language and length.

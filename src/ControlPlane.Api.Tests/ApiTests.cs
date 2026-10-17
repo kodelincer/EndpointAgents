@@ -12,9 +12,10 @@ using EndpointAgents.Shared.Office;
 
 namespace ControlPlane.Api.Tests;
 
-public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
+public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>, IAsyncLifetime
 {
-    private readonly HttpClient _client;
+    // Signed in as an admin; operator routes reject anonymous callers.
+    private HttpClient _client = null!;
     private readonly ControlPlaneApiFactory _factory;
     private readonly ControlPlaneRuntimeState _runtimeState;
     private static CancellationToken TestCancellation => TestContext.Current.CancellationToken;
@@ -22,9 +23,17 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>
     public ApiTests(ControlPlaneApiFactory factory)
     {
         _factory = factory;
-        _client = factory.CreateClient();
         _runtimeState = factory.Services.GetRequiredService<ControlPlaneRuntimeState>();
         _runtimeState.SetMaintenanceMode(false);
+    }
+
+    public async ValueTask InitializeAsync() =>
+        _client = await _factory.CreateOperatorClientAsync(cancellationToken: TestCancellation);
+
+    public ValueTask DisposeAsync()
+    {
+        _client.Dispose();
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

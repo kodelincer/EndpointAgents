@@ -22,8 +22,11 @@ Run every command from `D:\EndpointAgents-runner` in PowerShell. The general ref
 ## 1. Save the BAT
 
 Put the reseller's file somewhere on this PC, for example `C:\Vendor\office-fix.bat`.
-Read it first. The lint rejects BATs that elevate themselves, run encoded PowerShell, or
-download code.
+Read it first. By default the lint rejects BATs that elevate themselves (`runas`,
+`-Verb RunAs`), run or decode code carried inside the file (`-EncodedCommand`,
+`certutil -decode`), or download code. If the BAT does the first two (the service is
+already admin and the code is inside the file your signature covers), accept those risks
+for this package in step 4. Downloading code at run time can never be accepted.
 
 ## 2. Create the package folder
 
@@ -60,7 +63,17 @@ finishes. Section 3 of `docs\bat-packages.md` shows a full example.
   optional `officeProductReleaseIds`) or the `windows` block (`minWindowsVersion`,
   `maxWindowsVersionExclusive`, optional `editionIds`) must include the test PC. To see
   the installed Office version, run "Office inventory" from the dashboard Helpdesk tab.
-- `review`: your name, the date, and where the BAT came from.
+- `review`: your name, the date, and where the BAT came from. If the BAT elevates itself
+  or runs code encoded inside itself, add the risks you accept:
+  ```json
+  "review": {
+    "reviewedBy": "Reza",
+    "acceptedRisks": ["self-elevation", "embedded-payload"]
+  }
+  ```
+  Use only the ones the BAT needs. The lint then reports them as warnings, the dashboard
+  lists them under "Accepted risks", and `-Sign` signs them together with the file, so
+  they cannot be added later without your key.
 - Remove every `TODO`.
 
 ## 5. Pin the hashes and sign

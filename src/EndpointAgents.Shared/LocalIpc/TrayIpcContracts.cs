@@ -1,3 +1,4 @@
+using EndpointAgents.Shared.Actions;
 using EndpointAgents.Shared.Ibsng;
 using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Windows;
@@ -15,7 +16,11 @@ public static class TrayIpcProtocol
     public const string OfficeBugfixConsentMethod = "office.bugfix_consent";
     public const string WindowsBugfixConsentMethod = "windows.bugfix_consent";
     public const string WindowsHelloLaunchMethod = "windows.hello_sample_launch";
-    public const int MaxMessageCharacters = 16 * 1024;
+    /// <summary>Runs one catalogued user-context action (EndpointActionCatalog, RunAs User).</summary>
+    public const string EndpointUserActionMethod = "endpoint.user_action";
+    public const int MaxMessageCharacters = 64 * 1024;
+    /// <summary>User-action results larger than this are refused so a reply always fits a message.</summary>
+    public const int MaxActionResultCharacters = 48 * 1024;
 }
 
 public sealed record TrayIpcRequest(
@@ -28,7 +33,8 @@ public sealed record TrayIpcRequest(
     OfficeRemediationLaunchRequest? OfficeRemediation = null,
     OfficeBugfixConsentRequest? OfficeBugfixConsent = null,
     WindowsBugfixConsentRequest? WindowsBugfixConsent = null,
-    WindowsHelloLaunchRequest? WindowsHello = null);
+    WindowsHelloLaunchRequest? WindowsHello = null,
+    EndpointActionRequest? Action = null);
 
 public sealed record TrayIpcResponse(
     string Id,
@@ -41,4 +47,5 @@ public sealed record TrayIpcResponse(
     IbsngDialerUiSnapshot? DialerUi = null,
     OfficeActivationProbeResult? OfficeActivation = null,
     string? OfficeRemediationArtifactId = null,
-    string? SignerSubject = null);
+    string? SignerSubject = null,
+    EndpointActionResult? ActionResult = null);

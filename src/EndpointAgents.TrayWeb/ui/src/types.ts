@@ -47,7 +47,7 @@ export interface ConversationSummary {
 }
 
 export type MessageRole = "User" | "Assistant" | "System" | "Operator";
-export type MessageState = "Queued" | "Working" | "Completed" | "Failed";
+export type MessageState = "Queued" | "Working" | "Completed" | "Failed" | "Cancelled";
 
 export interface ChatMessage {
   messageId: string;
@@ -61,7 +61,7 @@ export interface ChatMessage {
   runId?: string;
 }
 
-export type ActionState = "Pending" | "Approved" | "Rejected" | "Expired" | "Executed" | "Failed";
+export type ActionState = "Pending" | "Approved" | "Rejected" | "Expired" | "Executed" | "Failed" | "Cancelled";
 
 export interface ActionProposal {
   actionId: string;
@@ -79,7 +79,7 @@ export interface ActionProposal {
 export type ProgressStage =
   | "Queued" | "AssistantStarted" | "WaitingForModel" | "EndpointCheckStarted"
   | "EndpointCheckCompleted" | "Retrying" | "Completed" | "Failed" | "AwaitingApproval"
-  | "ActionStarted" | "ActionCompleted" | "ActionRejected";
+  | "ActionStarted" | "ActionCompleted" | "ActionRejected" | "Cancelled";
 
 export type ProgressActivity =
   | "None" | "OfficeInventory" | "OfficeActivationStatus" | "OfficeRuntimeStatus"
@@ -157,3 +157,11 @@ export interface ReadyInfo {
 }
 
 export type Section = "chat" | "status" | "logs";
+
+export type StopOutcome = "NothingToStop" | "Stopped" | "FinishingOperation";
+
+export interface StopReceipt {
+  accepted: boolean;
+  outcome: StopOutcome;
+  message: string;
+}

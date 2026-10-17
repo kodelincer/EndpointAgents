@@ -28,8 +28,10 @@ Authority boundary: ControlPlane.Api, not Hermes, owns device/user identity, con
 and audit. Hermes never gets an `agentId`; a per-run capability resolves server-side to one device + user SID.
 Read-only diagnostics run automatically; Windows/Office activation repairs run automatically only via their
 dedicated pinned tools; administrator-reviewed catalog packages (schema 2, BAT or EXE) run automatically via
-`run_repair_package` when their symptoms match; anything else goes through `propose_endpoint_action` and needs the
-user's Tray approval.
+`run_repair_package` when their symptoms match; general catalogued actions (`EndpointActionCatalog`: Look, SafeFix,
+Disruptive tiers) run via `run_endpoint_action` with kill switches, hourly limits and before/after checks, and Disruptive
+ones only after the user agreed in chat; anything else goes through `propose_endpoint_action` and needs the user's Tray
+approval.
 
 ## Build, run, test (no Visual Studio needed: .NET 10 SDK + Node)
 
@@ -48,9 +50,13 @@ Stop any installed `EndpointAgents.Service` and running Tray before the dev scri
 - Nothing Windows-specific in `Shared`; put something there only if both endpoint and server must understand it.
 - `EndpointAgents.Service` is rarely edited; add features in `Platform.Windows` (and `Core` only for reusable engine pieces).
 - The Tray never accepts credentials from the control-plane channel; the Service owns runtime state.
-- Every new fix ships as all of: an MCP tool in `ControlPlane.Api/Tools`, a hash-pinned (SHA-256) script in the
+- A new general action is a catalogue entry in `Shared/Actions` plus an `IEndpointAction` in `Platform.Windows/Actions`
+  (no shell, no agent-chosen paths or addresses), a symptom-skill mention and tests; see `docs/endpoint-actions.md`.
+- Every other new fix (a script or package) ships as all of: an MCP tool in `ControlPlane.Api/Tools`, a hash-pinned (SHA-256) script in the
   file-repository manifest, a Hermes skill update in `deploy/hermes/skills`, and tests. Skill text never grants a
   tool permission; the ControlPlane and Hermes MCP allow-lists must agree.
+- After any change to `deploy/hermes/SOUL.md`, a skill or the Hermes tool list, run `scripts\sync-hermes-profile.ps1`
+  (`-Check` reports drift) so the local Hermes profile matches the repo.
 - User-facing agent replies: simple Persian, at most three short sentences, no tool names, IDs, paths or JSON (see `deploy/hermes/SOUL.md`).
 - Development keys in `appsettings.Development.json` are localhost-only test values; never commit real or production secrets, and never log run capabilities, device tokens or LLM keys.
 - UI: follow `DESIGN.md` (dashboard: dense, light-first, OKLCH tokens; Tray: Persian RTL messenger in WebView2, metro-line motif, follows Windows light/dark) and `PRODUCT.md`.
@@ -58,6 +64,8 @@ Stop any installed `EndpointAgents.Service` and running Tray before the dev scri
 
 ## Docs
 
+- `docs/guide/` - the dashboard Documentation page (Markdown in `fa/` and `en/`; edit here, the page reads it at build time)
+- `docs/endpoint-actions.md` - general action catalogue, tiers, environment map, agent tools, helpdesk skills
 - `docs/control-plane-operations.md` - ports, routes, dev and production install, troubleshooting
 - `docs/tray.md` - Tray architecture, one-pipe service channel, WebView2 bridge, preview and WebView2 install
 - `docs/hermes-support-agent.md` - enrollment, Hermes install, MCP tools, consent lifecycle, verification checklist

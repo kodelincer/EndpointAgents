@@ -84,6 +84,14 @@ public sealed class BatPackageReview
     public string? ReviewedOn { get; set; }
     public string? Source { get; set; }
     public string? Notes { get; set; }
+
+    /// <summary>
+    /// Lint risks the reviewer accepts for this package: <c>self-elevation</c> and/or
+    /// <c>embedded-payload</c>. Both stay inside the signed, hash-pinned file; downloading
+    /// code at run time can never be accepted. These are part of what the package is signed
+    /// over, so they cannot be changed without signing again.
+    /// </summary>
+    public List<string> AcceptedRisks { get; set; } = [];
 }
 
 public static class BatPackageStatuses

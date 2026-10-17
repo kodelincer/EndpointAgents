@@ -14,6 +14,7 @@ public static class ServiceIpcProtocol
     public const string SendChatMessageMethod = "chat.send";
     public const string GetChatDeltaMethod = "chat.sync";
     public const string CloseChatMethod = "chat.close";
+    public const string StopChatRunMethod = "chat.stop";
     public const string RespondToChatActionMethod = "chat.action.respond";
     public const string DiagnoseIbsngMethod = "ibsng.diagnose";
     public const string OpenIbsngMethod = "ibsng.open";

@@ -58,10 +58,12 @@ public sealed class HermesRunWorker(
         string? frameworkRunId = null;
         var hermesSessionId = $"endpoint-run-{lease.RunId}-{lease.Attempt}";
         var hermesSessionUsed = false;
+        var control = store.Runs.Get(lease.RunId) ?? store.Runs.Register(lease.RunId);
         try
         {
             hermesSessionUsed = true;
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+                stoppingToken, control.Token);
             timeout.CancelAfter(TimeSpan.FromSeconds(_options.RunTimeoutSeconds));
             var client = httpClientFactory.CreateClient("Hermes");
             await store.WriteProgressAsync(lease.RunId,
@@ -93,6 +95,12 @@ public sealed class HermesRunWorker(
 
                 await Task.Delay(_options.PollIntervalMilliseconds, timeout.Token);
             }
+        }
+        catch (Exception) when (control.StopRequested && !stoppingToken.IsCancellationRequested)
+        {
+            await StopFrameworkRunBestEffortAsync(frameworkRunId);
+            await store.FinishCancelledRunAsync(lease.RunId, CancellationToken.None);
+            logger.LogInformation("Hermes run {RunId} was stopped by the user.", lease.RunId);
         }
         catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
         {
@@ -139,6 +147,7 @@ public sealed class HermesRunWorker(
         }
         finally
         {
+            store.Runs.Remove(lease.RunId);
             if (hermesSessionUsed)
                 await DeleteHermesSessionBestEffortAsync(hermesSessionId);
             await dashboard.PublishHelpdeskAsync(new HelpdeskChange(

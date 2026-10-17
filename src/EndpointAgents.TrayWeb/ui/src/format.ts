@@ -68,7 +68,7 @@ export const conversationStateLabel: Record<ConversationState, string> = {
 
 export const actionStateLabel: Record<ActionState, string> = {
   Pending: "منتظر تأیید", Approved: "تأیید شد", Rejected: "رد شد", Expired: "منقضی شد",
-  Executed: "انجام شد", Failed: "ناموفق بود",
+  Executed: "انجام شد", Failed: "ناموفق بود", Cancelled: "متوقف شد",
 };
 
 export const levelLabel = (level: string) =>
@@ -105,12 +105,13 @@ export function progressLabel(event: ProgressEvent): string {
         : event.activity === "WindowsActivationRepair" ? (failed ? "تعمیر ویندوز ناموفق بود" : "تعمیر ویندوز انجام شد")
         : failed ? "اجرای اقدام ناموفق بود" : "اقدام تأییدشده انجام شد";
     case "ActionRejected": return "اقدام اجرا نشد";
+    case "Cancelled": return "درخواست متوقف شد";
   }
 }
 
 export const isTerminalStage = (event: ProgressEvent) =>
   event.stage === "Completed" || event.stage === "Failed" || event.stage === "ActionCompleted" ||
-  event.stage === "ActionRejected";
+  event.stage === "ActionRejected" || event.stage === "Cancelled";
 
 /** True when the first strong character is Persian/Arabic/Hebrew. */
 export function isRtl(text: string) {

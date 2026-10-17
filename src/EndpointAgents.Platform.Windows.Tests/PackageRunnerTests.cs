@@ -279,6 +279,35 @@ public sealed class PackageRunnerTests : IDisposable
     }
 
     [Fact]
+    public void AcceptedRisksAreCoveredByTheSignatureAndCannotBeAddedLater()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var publicKey = Convert.ToBase64String(key.ExportSubjectPublicKeyInfo());
+        var baseline = Descriptor();
+        var accepted = baseline with { AcceptedRisks = ["self-elevation"] };
+        var signed = Signed(accepted, key, publicKey);
+
+        Assert.True(PackageSignaturePolicy.Verify(signed, [publicKey]));
+        // A package signed with no accepted risks keeps its original statement and signature.
+        Assert.Equal(
+            PackageSignaturePolicy.BuildStatement("p", "p.bat", new string('A', 64), null, null, null),
+            PackageSignaturePolicy.BuildStatement("p", "p.bat", new string('A', 64), null, null, null, []));
+        // Adding, removing or changing a risk breaks the signature.
+        Assert.False(PackageSignaturePolicy.Verify(signed with { AcceptedRisks = null }, [publicKey]));
+        Assert.False(PackageSignaturePolicy.Verify(
+            signed with { AcceptedRisks = ["self-elevation", "embedded-payload"] }, [publicKey]));
+        Assert.False(PackageSignaturePolicy.Verify(
+            signed with { AcceptedRisks = ["embedded-payload"] }, [publicKey]));
+        var unsignedBaseline = Signed(baseline, key, publicKey);
+        Assert.False(PackageSignaturePolicy.Verify(
+            unsignedBaseline with { AcceptedRisks = ["self-elevation"] }, [publicKey]));
+        // Order and case do not matter.
+        Assert.True(PackageSignaturePolicy.Verify(Signed(
+            baseline with { AcceptedRisks = ["embedded-payload", "self-elevation"] }, key, publicKey)
+            with { AcceptedRisks = ["Self-Elevation", "EMBEDDED-PAYLOAD"] }, [publicKey]));
+    }
+
+    [Fact]
     public void ExeWithoutPinnedPublisherIsRejected()
     {
         var exe = Descriptor() with
@@ -296,7 +325,8 @@ public sealed class PackageRunnerTests : IDisposable
     {
         Signature = PackageSignaturePolicy.Sign(PackageSignaturePolicy.BuildStatement(
                 descriptor.PackageId, descriptor.FileName, descriptor.Sha256,
-                descriptor.PlaybookSha256, descriptor.BundleSha256, descriptor.Publisher),
+                descriptor.PlaybookSha256, descriptor.BundleSha256, descriptor.Publisher,
+                descriptor.AcceptedRisks),
             key, publicKey)
     };
 
