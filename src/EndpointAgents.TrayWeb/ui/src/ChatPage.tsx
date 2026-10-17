@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUp, Check, CheckCheck, Clock3, Info, Lightbulb, LoaderCircle, PanelRight, PencilLine, RotateCw, Search, ShieldCheck, Square, X,
+  ArrowUp, Check, CheckCheck, Clock3, Copy, Info, Lightbulb, LoaderCircle, PanelRight, PencilLine, RotateCw, Search, ShieldCheck, Square, X,
 } from "lucide-react";
 import { host, HostError } from "./bridge";
 import {
@@ -53,6 +53,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
   const [deciding, setDeciding] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
   const [finishNote, setFinishNote] = useState("");
+  const [copyMenu, setCopyMenu] = useState<{ x: number; y: number; text: string } | null>(null);
 
   const selectedRef = useRef<string | null>(null);
   const lastSequence = useRef(0);
@@ -107,7 +108,9 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
 
   const applyDelta = useCallback((delta: ChatDelta) => {
     setVisibleLimit(delta.visibleItemLimit || 30);
+    const changed = delta.messages.length + delta.actions.length + (delta.progressEvents?.length ?? 0) > 0;
     setItems((previous) => {
+      if (!changed) return previous;
       const next = [...previous];
       const index = new Map(next.map((item, i) => [item.key, i]));
       const upsert = (item: Item) => {
@@ -235,12 +238,47 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
   // Keep the newest message in view unless the user scrolled up to read.
   useEffect(() => {
     const element = scroller.current;
-    if (element && stickToEnd.current) element.scrollTop = element.scrollHeight;
+    if (element && stickToEnd.current && !window.getSelection()?.toString()) element.scrollTop = element.scrollHeight;
   }, [items, selectedId]);
 
   useEffect(() => {
     if (active && !readOnly) composer.current?.focus();
   }, [active, selectedId, readOnly]);
+
+  // Right-click on selected text (or on a message, which selects it) offers Copy. The window has no
+  // browser context menu, and Ctrl+C keeps working as usual.
+  const openCopyMenu = (event: React.MouseEvent) => {
+    const selection = window.getSelection();
+    let text = selection?.toString() ?? "";
+    if (!text.trim()) {
+      const paragraph = (event.target as HTMLElement).closest(".bubble p");
+      if (!paragraph || !selection) return;
+      const range = document.createRange();
+      range.selectNodeContents(paragraph);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      text = selection.toString();
+    }
+    event.preventDefault();
+    setCopyMenu({ x: Math.min(event.clientX, window.innerWidth - 110), y: Math.min(event.clientY, window.innerHeight - 50), text });
+  };
+  const copySelection = async () => {
+    if (copyMenu) await host.call("clipboard.write", { text: copyMenu.text }).catch(() => undefined);
+    setCopyMenu(null);
+  };
+  useEffect(() => {
+    if (!copyMenu) return;
+    const close = () => setCopyMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", close);
+    };
+  }, [copyMenu]);
 
   // ---- actions --------------------------------------------------------------------------------
 
@@ -473,7 +511,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
           </button>
         </header>
 
-        <div className="timeline" ref={scroller}
+        <div className="timeline" ref={scroller} onContextMenu={openCopyMenu}
           onScroll={(e) => {
             const el = e.currentTarget;
             stickToEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 64;
@@ -548,7 +586,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
       </section>
 
       {/* details ----------------------------------------------------------------------------------- */}
-      <aside className="details" aria-label="جزئیات">
+      <aside className="details" aria-label="جزئیات" onContextMenu={openCopyMenu}>
         <h2>جزئیات گفتگو</h2>
         {selected ? (
           <dl className="facts">
@@ -568,6 +606,15 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
         </div>
         <WarmTip />
       </aside>
+
+      {copyMenu && (
+        <div className="copy-menu" role="menu" style={{ left: copyMenu.x, top: copyMenu.y }}
+          onPointerDown={(e) => e.stopPropagation()}>
+          <button role="menuitem" autoFocus onClick={() => void copySelection()}>
+            <Copy size={14} aria-hidden />کپی
+          </button>
+        </div>
+      )}
     </div>
   );
 }
