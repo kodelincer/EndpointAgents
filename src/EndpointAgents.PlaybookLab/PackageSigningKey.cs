@@ -97,11 +97,22 @@ static class PackageSigningKey
         var supportFiles = (manifest.SupportFiles ?? [])
             .Select(entry => new BatchSupportFile(entry.FileName, entry.Sha256, string.Empty))
             .ToArray();
+        var acceptedRisks = PackageSignaturePolicy.NormalizeRisks(
+            manifest.Review?.AcceptedRisks);
+        var unknownRisk = acceptedRisks.FirstOrDefault(risk => !BatRisks.IsAcceptable(risk));
+        if (unknownRisk is not null)
+        {
+            Console.WriteLine($"Cannot sign: review.acceptedRisks may only contain "
+                + $"{string.Join(" or ", BatRisks.Acceptable)}; '{unknownRisk}' is not allowed.");
+            return false;
+        }
+        if (acceptedRisks.Count > 0)
+            Console.WriteLine($"Signing with accepted risks: {string.Join(", ", acceptedRisks)}.");
         var statement = PackageSignaturePolicy.BuildStatement(id, stagedName, sha256,
             BatchPlaybookPolicy.ComputeSha256(playbook!),
             supportFiles.Length == 0 ? null
                 : BatchSupportFilePolicy.ComputeBundleSha256(sha256, supportFiles),
-            publisher);
+            publisher, acceptedRisks);
 
         using var key = new ECDsaCng(CngKey.Open(name));
         var signature = PackageSignaturePolicy.Sign(statement, key, publicKey);

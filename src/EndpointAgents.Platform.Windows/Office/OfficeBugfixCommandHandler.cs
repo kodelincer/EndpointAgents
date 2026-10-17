@@ -123,7 +123,7 @@ public sealed class OfficeBugfixCommandHandler(
         if (signing?.Value.RequireForActivationRepairs == true
             && !signing.Value.IsTrusted(descriptor.ArtifactId, descriptor.FileName,
                 descriptor.Sha256, descriptor.PlaybookSha256, descriptor.BundleSha256, null,
-                descriptor.Signature))
+                descriptor.Signature, descriptor.AcceptedRisks))
             return RpcResponse.Failure(request.Id, 412,
                 "The Office repair is not signed by a trusted administrator key.");
         if (authorized && (!ChatActionApproval.MatchesArtifactAndPlaybook(

@@ -583,7 +583,7 @@ public sealed partial class FileArtifactRepository
             supportFiles!.Count == 0 ? null
                 : BatchSupportFilePolicy.ComputeBundleSha256(file.Sha256, supportFiles),
             NormalizeVersion(minWindows), NormalizeVersion(maxWindows), publisher,
-            symptoms, manifest.Signature);
+            symptoms, manifest.Signature, acceptedRisks);
         return new LoadedPackage(packageStatus, null, null,
             new RepairPackageArtifact(file, descriptor, supportDirectory, problem, order));
     }

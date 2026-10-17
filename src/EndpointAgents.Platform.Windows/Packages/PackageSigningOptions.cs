@@ -22,8 +22,8 @@ public sealed class PackageSigningOptions
 
     public bool IsTrusted(string packageId, string fileName, string sha256,
         string? playbookSha256, string? bundleSha256, string? publisher,
-        PackageSignature? signature) =>
+        PackageSignature? signature, IReadOnlyCollection<string>? acceptedRisks = null) =>
         PackageSignaturePolicy.Verify(PackageSignaturePolicy.BuildStatement(packageId,
-            fileName, sha256, playbookSha256, bundleSha256, publisher), signature,
-            TrustedPublicKeys);
+            fileName, sha256, playbookSha256, bundleSha256, publisher, acceptedRisks),
+            signature, TrustedPublicKeys);
 }

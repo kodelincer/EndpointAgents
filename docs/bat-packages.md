@@ -160,7 +160,7 @@ What the statuses mean:
 | Ready with lint warnings | Offered; read the warnings. |
 | Hash mismatch | The BAT or a supporting file changed after review. |
 | Invalid playbook | The playbook breaks a rule, or changed without a new `playbookSha256`. |
-| Rejected by lint | The BAT requests elevation, runs encoded PowerShell, or downloads code. |
+| Rejected by lint | The BAT requests elevation, runs encoded or embedded code, or downloads code. Elevation and embedded code can be accepted per package (see "Self-elevating and self-contained BATs"); downloads cannot. |
 | Invalid package | `package.json` is unreadable, still has `TODO`, or its `id` differs from the folder. |
 
 ## 8. Publish to the control plane
@@ -251,6 +251,30 @@ below into signed packages, because legacy entries cannot be signed.
 
 The packages checked into this repository are signed with a development key on the
 original developer's PC, which only `appsettings.Development.json` trusts.
+
+## Self-elevating and self-contained BATs
+
+Vendor BATs often relaunch themselves as administrator (`runas`, `-Verb RunAs`) or carry
+their code encoded inside the file (`-EncodedCommand`, `certutil -decode`) and build files
+at run time. The endpoint service already runs as administrator, and code inside the file
+is covered by its SHA-256 pin and your signature, so you can accept both for a package:
+
+```json
+"review": {
+  "reviewedBy": "Reza",
+  "acceptedRisks": ["self-elevation", "embedded-payload"]
+}
+```
+
+- Allowed values are only `self-elevation` and `embedded-payload`. The lint then reports
+  those findings as warnings ("Accepted risk (...)") and the Packages tab lists them.
+- They are part of what `-Sign` signs. Adding or changing a risk without signing again
+  makes the package **Not signed**, on the control plane and on every endpoint.
+- **Downloading code at run time is never accepted** (`certutil -urlcache`,
+  `bitsadmin /transfer`, `Invoke-WebRequest`, `DownloadString`, `DownloadFile`): the
+  signature cannot cover what is fetched later. Ship such files in `files\` instead.
+- Accepting a risk does not make the BAT safe; review it first. The risks are about
+  *what the file does*, not about where its bytes come from.
 
 ## Legacy manifests
 
