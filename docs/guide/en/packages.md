@@ -78,8 +78,6 @@ Vendor BATs often relaunch themselves as administrator (`runas`, `-Verb RunAs`) 
 
 Only those two values exist. They are signed with the package, so adding one later without signing again makes the package **Not signed**. **Downloading code at run time is never accepted**; ship the file in `files\` instead. Accepting a risk does not make the file safe, so read it first.
 
-> This applies once the `claude/package-runner` branch is merged.
-
 ## Legacy manifests
 
 `office-bugfix-managers.json` and `Windows\windows-bugfix-managers.json` still load. If a package and a manifest entry share an ID, the manifest wins and the package shows Invalid. Move the entry into a package to resolve it.

@@ -27,7 +27,7 @@ Tools are served by the control plane over a loopback-only MCP endpoint and are 
 | Fix with packages | `find_repair_packages`, `run_repair_package`, `list_repair_attempts` | Administrator-signed BAT or EXE packages. |
 | Dedicated repairs | `run_windows_activation_repair`, `run_office_activation_repair` | Pinned repairs for activation problems. |
 | Propose a change | `propose_endpoint_action` | Creates a card the user must approve in the Tray. |
-| Know the situation | `check_known_incidents`, `recent_reports_from_others`, `probe_from_server`, `check_user_account` | Outages, other reports, a server-side check, read-only domain account state. |
+| Know the situation | `check_known_incidents`, `recent_reports_from_others`, `probe_from_server`, `check_user_account`, `get_site_knowledge` | Outages, other reports, a server-side check, read-only domain account state, and the organisation notes. |
 | Finish | `mark_problem_resolved`, `escalate_to_helpdesk`, `record_feature_request`, `note_skill_used` | Closing, handing over, saving requests and statistics. |
 
 Hermes' own built-in toolsets (terminal, files, browser, web, memory, code execution and others) are switched off in the profile.
@@ -56,8 +56,6 @@ To add a package, see [Adding and signing packages](/docs/packages/).
 ## Organisation knowledge
 
 Every site is different. An `ORGANIZATION.md` file on the control-plane server can tell the agent about this site (layout, services, support rules, quirks), and the agent reads it at the start of a conversation. It is background only: it never adds a permission, internal names are masked before the cloud model sees them, and it must not contain passwords. Live facts such as servers, printers and outages belong on the **Environment** page, not in the file. The template and review rules are in `docs/organization-knowledge.md`.
-
-> This feature lives on the `claude/org-knowledge` branch; the paragraph applies once that branch is merged.
 
 ## After you change a skill or SOUL
 

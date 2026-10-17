@@ -27,7 +27,7 @@ order: 2
 | تعمیر با بسته‌ها | `find_repair_packages`، `run_repair_package`، `list_repair_attempts` | بسته‌های BAT یا EXE امضاشده توسط مدیر. |
 | تعمیرهای اختصاصی | `run_windows_activation_repair`، `run_office_activation_repair` | تعمیرهای ثابت برای مشکل فعال‌سازی. |
 | پیشنهاد تغییر | `propose_endpoint_action` | یک کارت می‌سازد که کاربر باید در Tray تأیید کند. |
-| شناخت وضعیت | `check_known_incidents`، `recent_reports_from_others`، `probe_from_server`، `check_user_account` | قطعی‌ها، گزارش‌های دیگران، بررسی از سمت سرور، وضعیت فقط‌خواندنی حساب دامنه. |
+| شناخت وضعیت | `check_known_incidents`، `recent_reports_from_others`، `probe_from_server`، `check_user_account`، `get_site_knowledge` | قطعی‌ها، گزارش‌های دیگران، بررسی از سمت سرور، وضعیت فقط‌خواندنی حساب دامنه و یادداشت‌های سازمان. |
 | پایان کار | `mark_problem_resolved`، `escalate_to_helpdesk`، `record_feature_request`، `note_skill_used` | بستن گفتگو، ارجاع، ثبت درخواست و آمار. |
 
 ابزارهای داخلی خود Hermes (ترمینال، فایل، مرورگر، وب، حافظه، اجرای کد و مانند آن) در پروفایل خاموش‌اند.
@@ -56,8 +56,6 @@ order: 2
 ## دانش سازمان
 
 هر سازمان فرق دارد. فایل `ORGANIZATION.md` روی سرور کنترل‌پلین می‌تواند دربارهٔ این سازمان (ساختار، سرویس‌ها، قواعد پشتیبانی، نکته‌های خاص) به عامل بگوید و عامل آن را ابتدای گفتگو می‌خواند. فقط زمینه است: هیچ مجوزی اضافه نمی‌کند، نام‌های داخلی قبل از رسیدن به مدل ابری پوشانده می‌شوند و نباید رمز عبور داشته باشد. واقعیت‌های زنده مثل سرورها، چاپگرها و قطعی‌ها جایشان صفحهٔ **Environment** است، نه این فایل. الگو و قواعد بازبینی در `docs/organization-knowledge.md` است.
-
-> این قابلیت در شاخهٔ `claude/org-knowledge` است؛ این بند بعد از ادغام آن شاخه درست است.
 
 ## بعد از تغییر مهارت یا SOUL
 
