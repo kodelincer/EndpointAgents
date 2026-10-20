@@ -675,3 +675,27 @@ button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visibl
 
 .section-title { margin: 18px 0 8px; font-size: 13px; font-weight: 650; }
 .approval-note { margin-top: 8px; width: 100%; max-width: 520px; }
+
+/* Sign-in illustration ------------------------------------------------------ */
+.auth-art { margin: 28px 0 0; width: 100%; max-width: 540px; align-self: center; }
+.auth-art svg { display: block; width: 100%; height: auto; overflow: visible; }
+.auth-art .art-flow { animation: art-flow 1.6s linear infinite; }
+.auth-art .art-bot { animation: art-float 4s ease-in-out infinite; }
+.auth-art .art-eyes { transform-box: fill-box; transform-origin: center; animation: art-blink 5s infinite; }
+.auth-art .art-antenna { animation: art-pulse 2s ease-in-out infinite; }
+.auth-art .art-bubble { transform-box: fill-box; transform-origin: bottom center; animation: art-pop 6s cubic-bezier(.16,1,.3,1) infinite; }
+.auth-art .art-bubble-done { animation-delay: 3s; }
+.auth-art .art-spark { opacity: .8; animation: art-twinkle 3s ease-in-out infinite; }
+.auth-art .art-spark.s2 { animation-delay: 1s; }
+.auth-art .art-spark.s3 { animation-delay: 2s; }
+@keyframes art-flow { to { stroke-dashoffset: 24; } }
+@keyframes art-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes art-blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+@keyframes art-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes art-pop { 0%, 8% { opacity: 0; transform: scale(.6); } 16%, 44% { opacity: 1; transform: scale(1); } 52%, 100% { opacity: 0; transform: scale(.85); } }
+@keyframes art-twinkle { 0%, 100% { opacity: .2; } 50% { opacity: .9; } }
+@media (prefers-reduced-motion: reduce) {
+  .auth-art * { animation: none !important; }
+  .auth-art .art-packet { display: none; }
+}
+@media (max-width: 860px) { .auth-art { max-width: 380px; margin-top: 8px; } }

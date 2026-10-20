@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { AuthError, changePassword, getAuthOptions, getSession, signIn, signInMessage, signOut,
   type OperatorSession } from "@/lib/auth";
 import { SIGNED_OUT_EVENT } from "@/lib/control-plane";
+import { SignInArt } from "./sign-in-art";
 
 type AuthContextValue = {
   session: OperatorSession;
@@ -63,6 +64,7 @@ function SupportRoute() {
   return <aside className="auth-route" aria-label="مسیر پشتیبانی">
     <div className="auth-route-brand" dir="ltr"><span className="brand-mark"><Server size={17} /></span>
       <span>EndpointAgents</span></div>
+    <SignInArt />
     <ol>
       <li><strong>رایانهٔ کاربر</strong><span>مشکل را در برنامهٔ کنار ساعت ویندوز می‌نویسد.</span></li>
       <li><strong>دستیار پشتیبانی</strong><span>بررسی می‌کند و در حدی که مجاز است رفع می‌کند.</span></li>
