@@ -1,7 +1,7 @@
 ---
 title: Adding and signing packages
 summary: Turn a vendor BAT or EXE into a reviewed, hash-pinned and signed package the agent can run unattended.
-order: 5
+order: 8
 ---
 
 # Adding and signing packages

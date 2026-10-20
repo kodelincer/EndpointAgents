@@ -1,7 +1,7 @@
 ---
 title: Daily helpdesk work
 summary: Reading conversations, escalated cases, taking over from the agent, feature requests, outages and skills.
-order: 3
+order: 6
 ---
 
 # Daily helpdesk work

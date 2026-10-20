@@ -1,7 +1,7 @@
 ---
 title: Dashboard pages and troubleshooting
 summary: What each page is for, who can change what, and what to check when something does not work.
-order: 7
+order: 10
 ---
 
 # Dashboard pages and troubleshooting

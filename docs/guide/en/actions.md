@@ -1,7 +1,7 @@
 ---
 title: Endpoint actions and tiers
 summary: The catalogue of small typed fixes, the four tiers, typed parameters, proof and undo, switches and limits.
-order: 4
+order: 7
 ---
 
 # Endpoint actions and tiers

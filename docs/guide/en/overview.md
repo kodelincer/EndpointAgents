@@ -55,12 +55,19 @@ Three rules hold at every step:
 | **Overview** and **Agents** | See which PCs are online. Admins can send catalogued commands. |
 | **Packages** | See repair packages, their status and exactly what to fix. |
 | **Helpdesk** | Read live conversations, take over, see escalated cases. |
+| **Approvals** | Approve or decline the requests that wait for a helpdesk member, such as removing software. |
 | **Feature requests** | Triage things users asked for that the system cannot do yet. |
 | **Capabilities** | The live list of everything the agent can do, with switches and limits. |
 | **Skills** | Write, check, submit and publish the instructions the agent follows. |
 | **Environment** | Describe your servers, printers, shares and standards, and declare outages. |
 | **Operators** | Admins manage accounts and roles. |
 | **Documentation** | This guide. |
+
+## Where to start as a helpdesk member
+
+1. [Setting up your site](/docs/setup/): fill in the lists the agent works from.
+2. [Common tickets and what handles them](/docs/catalog/): see what the system already does.
+3. [Writing skills](/docs/skills/): teach the agent new problems without code.
 
 ## Where the details live
 
