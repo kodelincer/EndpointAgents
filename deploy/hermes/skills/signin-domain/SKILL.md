@@ -25,6 +25,7 @@ Never ask for or accept a password.
 | Wrong time zone | `timezone.set_standard` (SafeFix, undoable by the helpdesk). |
 | No domain controller found | Follow network-support (`network.status`); do not touch the domain settings. |
 | Secure channel broken ("trust relationship") | Escalate; it needs a domain administrator. |
+| No access after being added to a group | `whoami.groups`; if the group is missing, ask the user to sign out and back in. |
 | Policy missing (drives, printers, settings) | `gpo.refresh_computer`, then `gpo.refresh_user`. |
 | Keeps asking for a password | `credman.list`; remove stale entries for internal servers with `credman.remove`, then `kerberos.purge`. |
 | Several users cannot sign in | `recent_reports_from_others`, then escalate once. |

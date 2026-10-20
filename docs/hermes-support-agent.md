@@ -184,7 +184,9 @@ file to `C:\ProgramData\EndpointAgents\Hermes\SOUL.md`. ControlPlane sends only
 run-specific capability and retry data; it does not read or synchronize
 `SOUL.md` at runtime.
 
-Promote the reviewed `office-support`, `windows-support`, `repair-packages` and `software-install` skills. The Windows skill
+Promote every reviewed skill in the `$Skills` list of `scripts\sync-hermes-profile.ps1`
+(office, Windows, repair packages, software install, drivers and devices, VPN, network,
+printing and the other symptom skills). The Windows skill
 allows general Windows intake but restricts automated remediation to activation.
 
 Do not promote `ibsng-support` until IBSng tools and actions are deliberately
@@ -193,8 +195,8 @@ tool permission that ControlPlane or the Hermes MCP allowlist has withheld.
 
 When using the service layout from this guide, the manual filesystem target is
 `C:\ProgramData\EndpointAgents\Hermes\skills`. Stop Hermes, replace only the
-reviewed `office-support`, `windows-support`, `repair-packages` and `software-install` skill folders, then start Hermes
-and verify that all four appear in the selected API-server profile and that the
+reviewed skill folders from that list, then start Hermes
+and verify that they all appear in the selected API-server profile and that the
 profile uses the promoted `SOUL.md`. The same promotion can be performed through
 Hermes Desktop if it manages that exact profile.
 

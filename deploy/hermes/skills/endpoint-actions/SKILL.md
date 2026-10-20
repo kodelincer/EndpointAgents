@@ -12,12 +12,14 @@ listed values; you never write commands, paths or addresses.
 
 - `mcp_controlplane_list_endpoint_actions` `{ runCapability, area? }`: the catalogue
   (id, tier, parameters, what it returns). Call it once per conversation with the area
-  you need: network, domain, printers, drives, browsers, office, health, desktop.
+  you need: network, domain, printers, drives, browsers, office, health, desktop,
+  software, devices.
 - `mcp_controlplane_list_environment_targets` `{ runCapability, kind? }`: the
   organisation's servers, web apps, printers and shares, by id and label.
 - `mcp_controlplane_run_endpoint_action`
   `{ runCapability, actionId, arguments?, userConfirmed? }`: runs one action.
-  `arguments` is an object of strings, e.g. `{ "target": "hr-portal" }`.
+  `arguments` is an object of strings, e.g. `{ "target": "hr-portal" }`. Add a short
+  English `reason` for actions that wait for approval.
 - `mcp_controlplane_check_known_incidents` `{ runCapability }`: outages the helpdesk declared.
 - `mcp_controlplane_recent_reports_from_others` `{ runCapability, hours? }`: what other users
   reported recently.
@@ -37,6 +39,11 @@ listed values; you never write commands, paths or addresses.
   `userConfirmed: true` only after the user said yes in this chat. A PC restart is
   `reboot.schedule` with `minutes` 5 for "now" (Windows warns them to save) or 15 or 60
   for "later"; for other actions "later" means waiting until the user says they are ready.
+- **ItApproval** (and any action with `needsApproval: true`): a helpdesk member must
+  approve it first, for example removing software. Run it once; the status is
+  `AwaitingApproval`. Tell the user in one short sentence that the helpdesk was asked and
+  the result will appear in this chat. Do not run it again or ask whether it worked until
+  that result arrives.
 
 ## Order of work
 
@@ -56,7 +63,8 @@ listed values; you never write commands, paths or addresses.
 ## Reading results
 
 - `status`: `Ok` (facts read), `Done` (fixed), `NotNeeded` (nothing to change),
-  `Blocked` (something prevents it now, read `summary`), `Failed`.
+  `Blocked` (something prevents it now, read `summary`), `Failed`, `AwaitingApproval`
+  (sent to the helpdesk).
 - An error saying the action is switched off, over its hourly limit, or needs
   `userConfirmed` is a rule, not a fault: pick another step or escalate.
 - "older endpoint version": this PC cannot run general actions yet; use the other skills

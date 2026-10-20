@@ -225,6 +225,46 @@ Try it exactly as an endpoint would, then pin the hashes and sign:
 .\scripts\test-bat-playbook.ps1 -Package <folder> -Fix -Sign
 ```
 
+## Driver packages (printers, scanners and other devices)
+
+The agent never picks a driver. You list each supported model in Dashboard → Environment
+as a **Device** (kind `device`): a label such as "Brother DCP-L2540DW", its hardware IDs
+separated by `;` (Device Manager → the device → Details → Hardware Ids; the most specific
+line, for example `USBPRINT\BrotherDCP-L2540D3A5E` or `USB\VID_04F9&PID_0321`), and
+`packageId`, the driver package below. `drivers.inventory` then marks a matching device on
+a user's PC with `catalogMatch`, and the `drivers-devices` skill runs that package.
+
+1. Get the vendor's driver as plain files (the folder with the `.inf`, `.cat` and `.sys`
+   files, not a setup EXE). Many vendors offer an "INF" or "basic" driver download.
+2. Copy `deploy\package-templates\install-driver.bat` to `<model>-driver.bat` and replace
+   `@@MODEL@@`, `@@INF@@` (the `.inf` file name) and `@@LOG@@` (for example
+   `brother-dcp-l2540-driver.log`).
+3. Create the package with no input, then add the driver files:
+
+   ```powershell
+   .\scripts\new-package.ps1 -File .\brother-dcp-l2540-driver.bat -Id brother-dcp-l2540-driver -NoInput
+   .\scripts\set-package-files.ps1 -Id brother-dcp-l2540-driver -File (Get-ChildItem C:\Drivers\DCPL2540\*).FullName
+   ```
+
+   Up to 32 files, all in one folder (names with letters, digits, `.`, `_`, `-`). Give it
+   `"problem": "driver-<model>"`, symptoms in the users' words, and
+   `playbook.restartExitCodes: [3010]`.
+4. Test on your PC with `test-bat-playbook.ps1 -Package <folder> -Execute`, then `-Fix -Sign`
+   and publish. Windows refuses a driver whose own `.cat` signature is not valid, on top of
+   the package hash and your signature.
+
+A setup EXE that installs a driver silently can be packaged the same way as an
+application (`new-install-package.ps1`); list its package id on the Device entry.
+
+## Uninstall packages
+
+`software.uninstall` removes an application on the **Removable software** list (kind
+`app`) by itself when Windows Installer installed it. For an application installed
+another way, build a no-input package that runs the vendor's silent uninstaller, give it
+`"problem": "uninstall-<app>"`, and put its id in the list entry's `packageId`. Every
+package whose `problem` starts with `uninstall-` (or with `"requiresApproval": true`)
+waits on the Approvals page until a helpdesk member approves it.
+
 ## Signing packages with your key
 
 Every package (BAT or EXE, general or activation) must be signed by an administrator

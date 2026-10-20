@@ -1,6 +1,6 @@
 ---
 name: software-install
-description: Install an approved application or font pack on the user's PC when they ask for it or say it is missing, such as Google Chrome, Adobe Connect, the Windows Photos app, Persian (Farsi) fonts, Foxit PDF Reader, or Foxit PDF Editor. Uses administrator-approved install packages only.
+description: Install an approved application or font pack when the user asks for it or says it is missing (Google Chrome, Adobe Connect, the Windows Photos app, Persian fonts, Foxit PDF Reader or Editor), or remove an application the helpdesk lists as removable, after a helpdesk member approves. Uses administrator-approved packages only.
 ---
 
 # Software Install
@@ -68,6 +68,23 @@ packages (any package whose `problem` starts with `install-`), and the catalog t
    "installer not ready" or "already installed"), and what the user said. Then tell the
    user that the helpdesk team will follow up. Also escalate when the user asks for a
    person.
+
+## Removing software
+
+Removal always waits for a helpdesk member's approval; the user cannot skip it.
+
+1. Call `mcp_controlplane_run_endpoint_action` with `actionId` `software.inventory` and
+   `{ "name": "<a short part of the application name>" }`.
+2. Find the application the user means. If it is not installed, say so and stop.
+3. If its `removable` is null, the helpdesk does not allow removing it: say so in one
+   short sentence and offer to record the request with the feature-requests skill.
+4. If `uninstallPackageId` is set, call `mcp_controlplane_run_repair_package` with that
+   `packageId` and a short English `reason`. Otherwise call
+   `mcp_controlplane_run_endpoint_action` with `actionId` `software.uninstall`,
+   `{ "target": "<removable id>" }` and a short English `reason`.
+5. The result is `AwaitingApproval`. Tell the user in one short sentence that the helpdesk
+   was asked and the result will appear in this chat. Do not run it again.
+6. If `software.uninstall` returns `Blocked` (it needs an uninstall package), escalate.
 
 ## Notes
 

@@ -21,6 +21,7 @@ The live list, with every switch and limit, is the **Capabilities** page. This t
 | **Look** | Reads facts only | Runs freely. Default limit 30 per hour per PC. |
 | **SafeFix** | Small, reversible fix | Runs without asking, with no Tray card. Default 3 per hour. Checked before and after. |
 | **Disruptive** | Interrupts the user (restart the desktop or PC, close an app) | Needs `userConfirmed=true`, which the agent sets only after the user said yes in the chat ("now" or "later"). Default 2 per hour. |
+| **ItApproval** | Needs a helpdesk member's yes (removing software) | The request waits on the **Approvals** page; it runs as soon as a member approves it, and the user sees the result in the chat. Admins can also mark any SafeFix or Disruptive action "Needs IT approval" on the Capabilities page. Default 3 per hour. |
 | **OperatorOnly** | Undo steps | Never offered to the agent. The helpdesk runs them from Recent runs. |
 
 Pick the lowest tier that fits when you add an action. A fix that changes a user setting should say how to undo itself.
@@ -59,6 +60,8 @@ Admins can switch any action off, or set another hourly limit, on the Capabiliti
 ## Environment map
 
 The **Environment** page tells the agent about your site by ID and label: internal web apps, shared folders (with their standard drive letter), office printers and key servers. Optional ports and expected IP addresses let it test the right port and spot wrong DNS answers. It also holds the standards (internal DNS suffixes, proxy, time zone, root CA thumbprints) and the incidents.
+
+Three more lists drive helpdesk requests: **Removable software** (Apps & features names, with `*`, that users may ask to remove, optionally with an uninstall package), the **Driver catalog** (device models by hardware ID, each with its signed driver package) and **Company VPNs** (server, built-in or client, connection or service name). Software users may install is the set of install packages.
 
 Only admins edit it. The model sees labels, never addresses.
 

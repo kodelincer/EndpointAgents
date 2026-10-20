@@ -14,10 +14,11 @@ order: 7
 | **Agents** | The PCs that are connected. Admins can send a catalogued command; the user still sees a consent card for commands that change the PC. | Everyone reads, admins send |
 | **Packages** | Every repair package with its status, symptoms, hashes, signer and exactly what to fix when it is not Ready. | Everyone reads |
 | **Helpdesk** | Live conversations, escalated cases, take over, read-only diagnostics. See [Daily helpdesk work](/docs/helpdesk/). | Members and above |
+| **Approvals** | Requests that wait for a helpdesk member: removing software, uninstall packages, and fixes an admin marked "Needs IT approval". **Approve and run** runs it at once; **Decline** takes a note the user sees. | Members and above |
 | **Feature requests** | Things users asked for that the system cannot do yet: New, Planned, Done, Declined. | Reviewers and above |
 | **Capabilities** | Four tabs: **Actions** (switches and limits, admins change them), **Agent tools**, **Writing a skill**, **Recent runs** (reviewers can undo a fix). | Everyone reads |
 | **Skills** | Draft, check, submit, publish, retire and roll back skills. | Members draft, reviewers publish |
-| **Environment** | Three tabs: **Targets** (servers, web apps, printers, shares), **Standards** (DNS suffixes, proxy, time zone, root CAs) and **Incidents**. | Everyone declares incidents, admins edit the rest |
+| **Environment** | Three tabs: **Targets** (servers, web apps, printers, shares, plus **Removable software**, the **Driver catalog** of device models, and **Company VPNs**), **Standards** (DNS suffixes, proxy, time zone, root CAs) and **Incidents**. | Everyone declares incidents, admins edit the rest |
 | **Operators** | Create local accounts, add domain users, change roles, disable accounts, reset passwords. | Admins |
 | **Documentation** | This guide. | Everyone |
 

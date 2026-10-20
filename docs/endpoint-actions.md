@@ -18,6 +18,7 @@ catalogued actions. It never runs commands it writes itself: every action is fix
    | Look | Reads facts only | Runs freely; 30 per hour per PC by default |
    | SafeFix | Small, reversible fix | Runs without asking (no Tray card); default 3 per hour; checked before and after |
    | Disruptive | Interrupts the user (restart desktop or PC, close an app) | Needs `userConfirmed=true`, which the agent sets only after the user said yes in chat (offer now or later); default 2 per hour |
+   | ItApproval | Needs a helpdesk member's yes (removing software) | The agent's request waits on the Approvals page; a member approves (it runs at once) or declines; the user sees the outcome in the chat; default 3 per hour |
    | OperatorOnly | Undo steps | Never offered to the agent; the helpdesk runs them from Recent runs |
 
 3. **Typed parameters only.** Choice (fixed list), Target (an environment-map id the
@@ -63,7 +64,7 @@ catalogued actions. It never runs commands it writes itself: every action is fix
 | --- | --- |
 | `list_endpoint_actions` | The catalogue for an area (switched-off actions hidden) |
 | `list_environment_targets` | Environment-map ids and labels (no addresses) |
-| `run_endpoint_action` | Run one action through every check above |
+| `run_endpoint_action` | Run one action through every check above (ItApproval returns `AwaitingApproval`) |
 | `check_known_incidents` | Outages the helpdesk declared |
 | `recent_reports_from_others` | What other users reported in the last hours |
 | `probe_from_server` | Check a target from the server, to tell a PC fault from an outage |
@@ -76,13 +77,35 @@ Dashboard → Environment. Add the internal web apps, shared folders (with their
 drive letter), office printers and key servers, by id and label. Optional ports and expected
 IP addresses let the agent test the right port and spot wrong DNS answers. Standards: the
 internal DNS suffixes (masked for the model), the proxy standard, the standard time zone and
-the organisation's root CA thumbprints. Incidents: declare an outage so the agent tells
+the organisation's root CA thumbprints, and whether DHCP hands out the right DNS servers
+(`dns.reset_to_dhcp` runs only when it does). Incidents: declare an outage so the agent tells
 users it is known instead of repairing PCs.
+
+Three lists drive the helpdesk requests:
+
+| Kind | Address | Details | Used by |
+| --- | --- | --- | --- |
+| `app` (Removable software) | The Apps & features name, `*` as wildcard, e.g. `Foxit PDF Reader*` | `publisher` (optional pattern), `packageId` (an uninstall package, for apps not installed by Windows Installer) | `software.inventory` marks matching apps `removable`; `software.uninstall` or the uninstall package removes them after approval |
+| `device` (Driver catalog) | Hardware IDs separated by `;`, e.g. `USB\VID_04F9&PID_0042` | `packageId` (the signed driver package) | `drivers.inventory` marks matching devices with `catalogMatch`; the agent runs the driver package |
+| `vpn` (Company VPN) | The VPN server's host name | `type` (`builtin` or `client`), `connection` (the Windows VPN connection name), `service` (the client's Windows service) | `vpn.status`, `vpn.client_restart` |
+
+Software the users may install is the set of install packages (`problem` starting with
+`install-`), not a list here; see `docs/software-install.md`.
+
+## Approvals
+
+Dashboard → Approvals (every operator role). The agent's ItApproval requests, the actions
+an admin switched to "Needs IT approval" on the Capabilities page, and packages whose
+`problem` starts with `uninstall-` or whose manifest has `requiresApproval: true` wait here,
+with the user, the PC, the item and the agent's reason. **Approve and run** runs it at once
+through the same checks (switches, limits, before/after); **Decline** takes an optional note
+the user sees. Either way the user gets a short helpdesk message in the Tray chat. Requests
+are kept with who decided and the result.
 
 ## Who can do what
 
-Every page needs a signed-in operator. Members read the Capabilities page, draft and
-submit skills and declare incidents. Reviewers also publish, send back, retire and roll
+Every page needs a signed-in operator. Members read the Capabilities page, approve or
+decline requests, draft and submit skills and declare incidents. Reviewers also publish, send back, retire and roll
 back skills, and undo fixes from Recent runs. Admins also change the environment map,
 the standards and the action switches and limits.
 
