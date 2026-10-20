@@ -65,6 +65,7 @@ Stop any installed `EndpointAgents.Service` and running Tray before the dev scri
 ## Docs
 
 - `docs/guide/` - the dashboard Documentation page (Markdown in `fa/` and `en/`; edit here, the page reads it at build time)
+- `docs/operation-catalog.md` - master list of common Windows helpdesk tickets mapped to safe operations, gaps and build order
 - `docs/endpoint-actions.md` - general action catalogue, tiers, environment map, agent tools, helpdesk skills
 - `docs/control-plane-operations.md` - ports, routes, dev and production install, troubleshooting
 - `docs/tray.md` - Tray architecture, one-pipe service channel, WebView2 bridge, preview and WebView2 install
