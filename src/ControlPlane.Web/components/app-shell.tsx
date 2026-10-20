@@ -1,6 +1,6 @@
 "use client";
 
-import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Package, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints } from "lucide-react";
+import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, Package, PanelRightClose, PanelRightOpen, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { roleName } from "@/lib/auth";
@@ -13,46 +13,127 @@ function statusLabel(state: ConnectionState) {
   return { connecting: "Connecting", live: "Live", reconnecting: "Reconnecting", offline: "Unavailable" }[state];
 }
 
-/** Provides persistent navigation and connection feedback across operations pages. */
+type NavItem = { href: string; label: string; icon: LucideIcon; count?: number; exact?: boolean };
+type NavGroup = { title: string; items: NavItem[] };
+
+const collapsedKey = "cp.sidebar.collapsed";
+
+function readCollapsed() {
+  try { return window.localStorage.getItem(collapsedKey) === "1"; } catch { return false; }
+}
+
+function writeCollapsed(value: boolean) {
+  try { window.localStorage.setItem(collapsedKey, value ? "1" : "0"); } catch { /* storage blocked */ }
+}
+
+function isActive(path: string, item: NavItem) {
+  return item.exact ? path === item.href : path.startsWith(item.href.replace(/\/$/, ""));
+}
+
+/** Provides the right-hand sidebar, the slim top bar and connection feedback across pages. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const { agents, supportRequests, connection, refresh } = useControlPlane();
   const { can } = useAuth();
+  const [collapsed, setCollapsed] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const sidebar = useRef<HTMLElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
 
-  return <main className="app-shell">
-    <header className="topbar">
-      <Link className="brand" href="/" aria-label="EndpointAgents operations overview">
-        <span className="brand-mark"><Server size={17} /></span>
-        <span className="brand-copy"><strong>EndpointAgents</strong><span>Control plane</span></span>
-      </Link>
-      <nav className="primary-nav" aria-label="Control plane">
-        <Link className={path === "/" ? "active" : ""} href="/"><LayoutDashboard size={15} />Overview</Link>
-        <Link className={path.startsWith("/agents") ? "active" : ""} href="/agents/"><Waypoints size={15} />Endpoints</Link>
-        <Link className={path.startsWith("/files") ? "active" : ""} href="/files/"><Package size={15} />Packages</Link>
-        <Link className={path.startsWith("/support") ? "active" : ""} href="/support/"><LifeBuoy size={15} />Helpdesk{supportRequests.length > 0 && <span className="nav-count">{supportRequests.length}</span>}</Link>
-        <Link className={path.startsWith("/approvals") ? "active" : ""} href="/approvals/"><ClipboardCheck size={15} />Approvals</Link>
-        <Link className={path.startsWith("/feature-requests") ? "active" : ""} href="/feature-requests/"><Lightbulb size={15} />Feature requests</Link>
-        <Link className={path.startsWith("/capabilities") ? "active" : ""} href="/capabilities/"><BookOpen size={15} />Capabilities</Link>
-        <Link className={path.startsWith("/skills") ? "active" : ""} href="/skills/"><Sparkles size={15} />Skills</Link>
-        <Link className={path.startsWith("/environment") ? "active" : ""} href="/environment/"><MapIcon size={15} />Environment</Link>
-        {can("users.manage") && <Link className={path.startsWith("/operators") ? "active" : ""} href="/operators/"><ShieldCheck size={15} />Operators</Link>}
-      </nav>
-      <div className="topbar-status">
-        <span className={`connection-state ${connection}`}><span className="state-dot" />{statusLabel(connection)}</span>
-        <span className="topbar-divider" /><span>{agents.length} agent{agents.length === 1 ? "" : "s"} online</span>
-        <button className="icon-button" onClick={() => void refresh()} aria-label="Refresh control-plane data"><RefreshCw size={16} /></button>
-        <Link className={`icon-button docs-link${path.startsWith("/docs") ? " active" : ""}`} href="/docs/" aria-label="Documentation"
-          title="Documentation / راهنما" aria-current={path.startsWith("/docs") ? "page" : undefined}><BookMarked size={16} /><span>Docs</span></Link>
-        <span className="topbar-divider" /><AccountMenu />
+  useEffect(() => { setCollapsed(readCollapsed()); }, []);
+  useEffect(() => { setDrawerOpen(false); }, [path]);
+  useEffect(() => {
+    if (!drawerOpen) return;
+    sidebar.current?.querySelector<HTMLElement>("a, button")?.focus();
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setDrawerOpen(false);
+      menuButton.current?.focus();
+    };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [drawerOpen]);
+
+  const toggleCollapsed = () => setCollapsed(value => { writeCollapsed(!value); return !value; });
+
+  const groups: NavGroup[] = [
+    { title: "Monitor", items: [
+      { href: "/", label: "Overview", icon: LayoutDashboard, exact: true },
+      { href: "/agents/", label: "Endpoints", icon: Waypoints }
+    ] },
+    { title: "Support", items: [
+      { href: "/support/", label: "Helpdesk", icon: LifeBuoy, count: supportRequests.length },
+      { href: "/approvals/", label: "Approvals", icon: ClipboardCheck },
+      { href: "/feature-requests/", label: "Feature requests", icon: Lightbulb }
+    ] },
+    { title: "Agent setup", items: [
+      { href: "/skills/", label: "Skills", icon: Sparkles },
+      { href: "/capabilities/", label: "Capabilities", icon: BookOpen },
+      { href: "/environment/", label: "Environment", icon: MapIcon },
+      { href: "/files/", label: "Packages", icon: Package }
+    ] },
+    ...(can("users.manage") ? [{ title: "Administration", items: [
+      { href: "/operators/", label: "Operators", icon: ShieldCheck }
+    ] }] : []),
+    { title: "Help", items: [
+      { href: "/docs/", label: "User manual", icon: BookMarked }
+    ] }
+  ];
+  const current = groups.flatMap(group => group.items).find(item => isActive(path, item));
+
+  return <div className={`app-shell${collapsed ? " collapsed" : ""}${drawerOpen ? " drawer-open" : ""}`}>
+    <aside className="sidebar" ref={sidebar} id="sidebar" aria-label="Main menu">
+      <div className="sidebar-head">
+        <Link className="brand" href="/" aria-label="EndpointAgents overview" title="EndpointAgents">
+          <span className="brand-mark"><Server size={17} /></span>
+          <span className="brand-copy"><strong>EndpointAgents</strong><span>Control plane</span></span>
+        </Link>
+        <button className="sidebar-toggle rail-toggle" onClick={toggleCollapsed} aria-expanded={!collapsed} aria-controls="sidebar"
+          aria-label={collapsed ? "Expand menu" : "Collapse menu"} title={collapsed ? "Expand menu" : "Collapse menu"}>
+          {collapsed ? <PanelRightOpen size={17} /> : <PanelRightClose size={17} />}
+        </button>
+        <button className="sidebar-toggle drawer-close" onClick={() => { setDrawerOpen(false); menuButton.current?.focus(); }} aria-label="Close menu"><X size={17} /></button>
       </div>
-    </header>
+      <nav className="sidebar-nav" aria-label="Control plane">
+        {groups.map(group => <div className="nav-group" key={group.title}>
+          <p className="nav-group-title">{group.title}</p>
+          <ul>{group.items.map(item => {
+            const active = isActive(path, item);
+            const Icon = item.icon;
+            return <li key={item.href}><Link className="nav-link" href={item.href} aria-current={active ? "page" : undefined}
+              title={collapsed ? item.label : undefined}>
+              <Icon size={17} /><span>{item.label}</span>
+              {!!item.count && <span className="nav-count" aria-label={`${item.count} waiting`}>{item.count}</span>}
+            </Link></li>;
+          })}</ul>
+        </div>)}
+      </nav>
+      <div className="sidebar-foot"><AccountMenu /></div>
+    </aside>
+    <button className="sidebar-backdrop" tabIndex={-1} aria-hidden="true" onClick={() => setDrawerOpen(false)} />
 
-    {connection !== "live" && <div className="connection-banner" role="status"><CircleAlert size={16} />
-      {connection === "reconnecting" ? "Live updates paused. Reconnecting and preserving the current view…" :
-       connection === "connecting" ? "Connecting to live control-plane updates…" :
-       "Live updates are unavailable. Service controls remain available from the overview."}</div>}
-    {children}
-  </main>;
+    <main className="app-main">
+      <header className="topbar">
+        <div className="topbar-title">
+          <span className="brand-mark"><Server size={15} /></span>
+          <span>{current?.label ?? "Control plane"}</span>
+        </div>
+        <div className="topbar-status">
+          <span className={`connection-state ${connection}`}><span className="state-dot" />{statusLabel(connection)}</span>
+          <span className="topbar-divider" /><span>{agents.length} endpoint{agents.length === 1 ? "" : "s"} online</span>
+          <button className="icon-button" onClick={() => void refresh()} aria-label="Refresh control-plane data" title="Refresh"><RefreshCw size={16} /></button>
+          <button ref={menuButton} className="menu-button" onClick={() => setDrawerOpen(true)} aria-label="Open menu"
+            aria-expanded={drawerOpen} aria-controls="sidebar"><Menu size={18} /></button>
+        </div>
+      </header>
+
+      {connection !== "live" && <div className="connection-banner" role="status"><CircleAlert size={16} />
+        {connection === "reconnecting" ? "Live updates paused. Reconnecting and preserving the current view…" :
+         connection === "connecting" ? "Connecting to live control-plane updates…" :
+         "Live updates are unavailable. Service controls remain available from the overview."}</div>}
+      {children}
+    </main>
+  </div>;
 }
 
 /** Who is signed in, with password change and sign-out. */

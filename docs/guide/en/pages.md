@@ -10,7 +10,7 @@ order: 10
 
 | Page | What you do there | Who |
 | --- | --- | --- |
-| **Overview** | See the state of the control plane, agents online and recent activity. Admins can switch maintenance mode on or off. | Everyone reads, admins change |
+| **Overview** | See the state of the control plane, endpoints online and recent activity. Admins can switch maintenance mode on or off. | Everyone reads, admins change |
 | **Endpoints** | The PCs that are connected. Admins can send a catalogued command; the user still sees a consent card for commands that change the PC. | Everyone reads, admins send |
 | **Packages** | Every repair package with its status, symptoms, hashes, signer and exactly what to fix when it is not Ready. | Everyone reads |
 | **Helpdesk** | Live conversations, escalated cases, take over, read-only diagnostics. See [Daily helpdesk work](/docs/helpdesk/). | Members and above |
@@ -20,9 +20,17 @@ order: 10
 | **Skills** | Draft, check, submit, publish, retire and roll back skills. | Members draft, reviewers publish |
 | **Environment** | Three tabs: **Targets** (servers, web apps, printers, shares, plus **Removable software**, the **Driver catalog** of device models, and **Company VPNs**), **Standards** (DNS suffixes, proxy, time zone, root CAs) and **Incidents**. | Everyone declares incidents, admins edit the rest |
 | **Operators** | Create local accounts, add domain users, change roles, disable accounts, reset passwords. | Admins |
-| **Documentation** | This guide. | Everyone |
+| **User manual** | This guide. | Everyone |
 
-The account menu in the top right shows who you are and your role, and lets local accounts change their password. Domain accounts change their password in Active Directory.
+## Finding your way
+
+All pages are in the sidebar on the right, grouped as **Monitor**, **Support**, **Agent setup**, **Administration** (admins only) and **Help**. The current page is highlighted, and red numbers show items waiting (for example open helpdesk cases).
+
+- The button at the top of the sidebar shrinks it to icons only; hover an icon to see its name. The dashboard remembers your choice on this computer.
+- On a narrow window the sidebar is hidden. Open it with the menu button in the top bar, and close it with **Esc**, the close button or a click outside.
+- The top bar shows the page name, whether live updates are connected, how many endpoints are online, and a refresh button.
+
+The account button at the bottom of the sidebar shows who you are and your role, and lets local accounts change their password or sign out. Domain accounts change their password in Active Directory.
 
 ## First start
 
