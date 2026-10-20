@@ -3,8 +3,10 @@
 This is the master list of what the support system should be able to do on a user's PC,
 so that a helpdesk team mostly writes or edits **skills** (the order in which the agent
 checks and fixes things) instead of asking developers for new code. It covers the tickets
-that almost every company on Windows 10/11 and Microsoft 365 receives, maps each one to
+that almost every company on Windows 10/11 and desktop Office receives, maps each one to
 small, fixed, safe operations, and marks what is already built and what is still missing.
+**Microsoft 365 is out of scope** (Reza, 2026-10-20): no Teams, OneDrive, Exchange Online,
+Entra ID or Microsoft 365 sign-in operations are planned.
 
 It extends, and does not replace, the existing pieces:
 
@@ -87,7 +89,7 @@ The most frequent ticket in every company. The agent should always split it into
 | PC not registered in DNS | `net.register_dns` | A | Fix | Built |
 | Stale neighbour cache | `arp.clear` | A | Fix | Built |
 | Wrong or broken proxy | `proxy.get`, `proxy.reset_to_standard`, undo `proxy.restore` | A | Fix | Built |
-| WinHTTP (system) proxy wrong: Windows Update, Teams, Office fail but browser works | `proxy.system_get`, `proxy.system_reset_to_standard` | A | Look/Fix | Built |
+| WinHTTP (system) proxy wrong: Windows Update or Office updates fail but browser works | `proxy.system_get`, `proxy.system_reset_to_standard` | A | Look/Fix | Built |
 | hosts file hijacked | `hosts.check`, `hosts.reset_default` (keeps a copy for undo) | A | Look/Fix | Built/Batch 2 |
 | Winsock / TCP-IP stack broken (malware leftovers, VPN clients) | `network.stack_reset` (winsock + ip reset, needs restart) | A | IT | Batch 2 |
 | Wi-Fi not connecting, wrong network | `wifi.status` (SSID, signal, band, auth, profile list), `wifi.connect_company` (profile from the Wi-Fi list) | A+L | Look/Fix | Batch 2 |
@@ -139,7 +141,6 @@ The most frequent ticket in every company. The agent should always split it into
 | Offline Files out of sync | `offline_files.status`, `offline_files.sync_now` | A | Look/Fix | Batch 3 |
 | Deleted or overwritten a file on a share | `previous_versions.list` (shadow copies of that file's folder, a share from the map) — restore stays with the helpdesk | A | Look | Batch 3 |
 | Profile or desktop looks empty (temp profile) | `profile.status` | A | Look | Built |
-| Folder redirection / OneDrive Known Folders | `onedrive.status` | A | Look | Built |
 
 ## 4. Printers and scanners
 
@@ -204,7 +205,7 @@ signed package that is from the **Driver catalog** and the device's hardware ID.
 | Store apps broken (Calculator, Photos, Snipping Tool) | `appx.reregister` (built-in Windows apps from a fixed list, for the user) | A | Fix | Batch 2 |
 | winget available (Windows 10 1809+ / 11) | a winget-source package type: `winget install --id <catalog id> --source <company source>` from a pinned, company-hosted source only | P+L | Fix | Batch 3 (optional) |
 
-## 8. Microsoft 365: Office, Outlook, Teams, OneDrive
+## 8. Desktop Office and Outlook (no Microsoft 365)
 
 | Common ticket | Op id | Kind | Tier | Status |
 | --- | --- | --- | --- | --- |
@@ -216,10 +217,10 @@ signed package that is from the **Driver catalog** and the device's hardware ID.
 | Outlook slow, OST huge or corrupted | `outlook.data_files` (OST/PST sizes, last write), `outlook.rebuild_ost` (renames the OST after Outlook is closed; rebuilt from the server) | A | Look/Disrupt | Batch 2 |
 | Outlook profile broken | `outlook.new_profile` (creates a fresh profile with autodiscover, keeps the old one) | A | Disrupt | Batch 3 |
 | Shared mailbox / calendar missing | escalate (Exchange permission, not a PC fault) | S | — | — |
-| Teams not loading / not signing in | `teams.clear_cache` | A | Fix | Built (check new Teams path) |
-| Teams camera/mic | `media.status`, `privacy.allow_camera_mic` | A | Fix | Built |
-| OneDrive not syncing | `onedrive.status`, `onedrive.reset` (for the user; re-syncs, no data loss) | A | Look/Disrupt | Built/Batch 2 |
-| Microsoft 365 sign-in loops (cached tokens) | `aad.status` (dsregcmd: joined, PRT present), `office.clear_identity_cache` (user's Office identity cache only) | A | Look/Fix | Batch 2 |
+
+Teams, OneDrive and Microsoft 365 sign-in are not part of this system. `teams.clear_cache`
+and `onedrive.status` were built earlier; the skills no longer use them, and an admin can
+switch them off on the Capabilities page.
 
 ## 9. Accounts, sign-in and passwords
 
@@ -259,7 +260,7 @@ signed package that is from the **Driver catalog** and the device's hardware ID.
 | Antivirus off / outdated | `security.status`, `defender.update_signatures`, `defender.quick_scan` | A | Look/Fix | Built/Batch 2 (`update_signatures`) |
 | "I think I have a virus" | `defender.quick_scan`, `defender.threats` (recent detections), `defender.full_scan` (long, user agrees) | A | Fix/Disrupt | Built/Batch 2 |
 | A threat was found | `defender.threats`; removal follows Defender's own action; escalate always | A+S | Look | Batch 2 |
-| BitLocker recovery screen | **key is never given by the agent**: approval request; a person verifies the user and reads the key from AD/Entra | S | IT | Batch 3 |
+| BitLocker recovery screen | **key is never given by the agent**: approval request; a person verifies the user and reads the key from AD | S | IT | Batch 3 |
 | BitLocker status for audits | `bitlocker.status` (protection on, method; no keys) | A | Look | Batch 2 |
 | Phishing email reported | escalate to security with the message details the user gives | S | — | — |
 
@@ -277,7 +278,7 @@ signed package that is from the **Driver catalog** and the device's hardware ID.
 | No sound | `audio.status`, `audio.set_default`, `audio.unmute` | A | Look/Fix | Built |
 | Desktop icons or wallpaper lost | `profile.status` (temp profile), escalate | A | Look | Built |
 | File opens in the wrong app | `defaults.status` and guide | A | Look | Batch 3 |
-| Notifications / Focus assist hides Teams alerts | `notifications.status` | A | Look | Batch 3 |
+| Notifications / Focus assist hides app alerts | `notifications.status` | A | Look | Batch 3 |
 
 ## 13. Power, battery and laptops
 
@@ -348,12 +349,12 @@ Missing, in order of how often companies hit them:
    hardware IDs yet.
 4. **VPN.** Only IBSng. No status for built-in VPN profiles or third-party clients, no VPN
    list, `RasMan` cannot be restarted.
-5. **WinHTTP proxy, adapters, DNS reset.** Common reasons for "browser works, Teams and
-   Windows Update don't" and for "no internet" after a user changes settings.
+5. **WinHTTP proxy, adapters, DNS reset.** Common reasons for "browser works, Windows
+   Update doesn't" and for "no internet" after a user changes settings.
 6. **Audio, devices enable/restart, printer status, disk usage, pending restart, group
    membership.** Small Look/Fix actions that close many tickets.
 7. **Wi-Fi, firewall profile, network category, Allowed sites.**
-8. **Office add-ins, OST rebuild, OneDrive reset, Windows Update reset, SFC/DISM, Defender
+8. **Office add-ins, OST rebuild, Windows Update reset, SFC/DISM, Defender
    signatures/threats, BitLocker status, startup apps.**
 9. **Approval flows for people-only work** (local admin, BitLocker key, site access, AD
    unlock) — the approval request record is the same as in point 1, just with "done by a
@@ -384,7 +385,7 @@ Missing, in order of how often companies hit them:
 
 **Batch 2** — Wi-Fi, firewall and network category, Allowed sites and site-access
 requests, org root CA install, intranet zones, Edge reset, Office add-ins and Quick Repair,
-OST rebuild, OneDrive reset, M365 identity cache, Windows Update reset and scan,
+OST rebuild, Windows Update reset and scan,
 SFC/DISM, Defender signatures and threats, BitLocker status, disk health, startup apps,
 recycle bin, search index, battery report, power plan, display detect, region standard,
 driver rollback, network stack reset (IT).

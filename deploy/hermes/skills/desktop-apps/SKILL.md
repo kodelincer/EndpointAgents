@@ -1,6 +1,6 @@
 ---
 name: desktop-apps
-description: Desktop and everyday app problems: taskbar or Start menu frozen, Persian keyboard missing, wrong date or calendar format, second monitor, no sound, camera or microphone not working in meetings, Outlook not connecting, Teams not loading, OneDrive not syncing, laptop battery. کیبورد فارسی ندارم، صدا ندارم، دوربین کار نمی‌کند، تسک‌بار گیر کرده، اوت‌لوک وصل نمی‌شود.
+description: Desktop and everyday app problems: taskbar or Start menu frozen, Persian keyboard missing, wrong date or calendar format, second monitor, no sound, camera or microphone not working in meetings, Outlook not connecting, laptop battery. کیبورد فارسی ندارم، صدا ندارم، دوربین کار نمی‌کند، تسک‌بار گیر کرده، اوت‌لوک وصل نمی‌شود.
 ---
 
 # Desktop and Everyday Apps
@@ -19,8 +19,6 @@ Office activation belongs to office-support.
 | Camera or microphone not detected | `drivers.inventory` | Follow drivers-devices. |
 | Camera or microphone blocked | `media.status` | `privacy.allow_camera_mic` with `camera` or `microphone`. |
 | Outlook not connecting | `outlook.status` | If Outlook is offline, follow network-support; if a profile or OST problem, escalate. |
-| Teams not loading or stuck | — | `teams.clear_cache` (closes Teams first if needed; say so). |
-| OneDrive not syncing | `onedrive.status` | Escalate with the status if it shows an error. |
 | Battery or power | `power.status` | Explain the result; escalate a battery health warning. |
 | Browser shows old pages | `browser.inventory` | `browser.clear_cache` for that browser. |
 

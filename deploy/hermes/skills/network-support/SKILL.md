@@ -21,7 +21,7 @@ Call `check_known_incidents`. If the user names an internal app, find its id wit
   adapter is connected.
 - Certificate or "not secure" warning: `cert.check_trust`, then `web.probe` on the app.
 - Only in one browser or after a proxy change: `proxy.get`.
-- Browsers work but Windows Update, Teams or Office sign-in do not: `proxy.system_get`.
+- Browsers work but Windows Update or Office updates do not: `proxy.system_get`.
 
 ## 3. Decide
 

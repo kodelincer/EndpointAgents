@@ -505,7 +505,7 @@ public static class EndpointActionCatalog
             UsesSettings: [ActionSettings.DnsFromDhcp]),
         new("proxy.system_get", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
             "Read the system (WinHTTP) proxy", "پروکسی سیستمی",
-            "Reads the machine-wide WinHTTP proxy that Windows Update, Teams, Office sign-in and services use (separate from the browser proxy), and compares it with the organisation standard.",
+            "Reads the machine-wide WinHTTP proxy that Windows Update, Office updates and services use (separate from the browser proxy), and compares it with the organisation standard.",
             "Direct, Server, Bypass, MatchesStandard.",
             [], UsesSettings: [ActionSettings.ProxyMode, ActionSettings.ProxyServer,
                 ActionSettings.ProxyBypass]),
