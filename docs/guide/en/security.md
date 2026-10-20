@@ -1,7 +1,7 @@
 ---
 title: Security and hardening
 summary: What the design prevents, what it accepts, how roles and sign-in work, what is masked before the cloud LLM, and what to harden in production.
-order: 9
+order: 10
 ---
 
 # Security and hardening

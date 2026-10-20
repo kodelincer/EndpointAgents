@@ -68,6 +68,7 @@ Three rules hold at every step:
 1. [Setting up your site](/docs/setup/): fill in the lists the agent works from.
 2. [Common tickets and what handles them](/docs/catalog/): see what the system already does.
 3. [Writing skills](/docs/skills/): teach the agent new problems without code.
+4. [How the system was born and where it is going](/docs/roadmap/): the history, how the system grows, and what is planned next.
 
 ## Where the details live
 

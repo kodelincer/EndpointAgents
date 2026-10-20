@@ -1,7 +1,7 @@
 ---
 title: Setting up your site
 summary: What the helpdesk fills in so the agent can work: the Environment lists, approvals, install and driver packages, and a first-week checklist.
-order: 5
+order: 6
 ---
 
 # Setting up your site
@@ -18,7 +18,9 @@ The agent only picks from lists you keep. A skill says "use the printer", and th
 | **Removable software** | An Apps & features name, with `*` as a wildcard (for example `Foxit PDF Reader*`), an optional publisher, and an optional uninstall package | Software the user may ask to remove. Anything not on the list is refused |
 | **Driver catalog** | A model label, its hardware IDs separated by `;`, and the id of its signed driver package | Match a device on a user's PC to the right driver package |
 | **Company VPNs** | Host name of the VPN server; whether it is a Windows VPN or a client; the connection name or the client's Windows service | `vpn.status` and `vpn.client_restart` for that VPN |
-| **Standards** | DNS suffixes, proxy standard, time zone, root CA thumbprints, whether DHCP hands out the right DNS | Reset a wrong proxy or DNS, check certificates |
+| **Company Wi-Fi** | The network name (SSID); the Windows profile name only when your policy names it differently | See which company networks a laptop has, connect to one |
+| **Allowed work sites** | Internet sites people need for work, as a host name or `*.domain`, with an optional category (banking, government) | Check whether a work site answers or the company filter blocks it |
+| **Standards** | DNS suffixes, proxy standard, time zone, root CA thumbprints, whether DHCP hands out the right DNS, whether PCs get their IP address from DHCP, the standard power plan | Reset a wrong proxy, DNS, hand-typed IP address or power plan, check certificates |
 | **Incidents** | Declare an outage | The agent tells users it is known instead of repairing PCs |
 
 Only admins edit the lists. The agent sees labels and ids, never addresses.
@@ -36,6 +38,12 @@ Each request shows the user, the PC, the item and the agent's reason. **Approve 
 
 Plan who watches the page. A request does not expire by itself, and the user is told only that the helpdesk was asked.
 
+### Helpdesk tasks
+
+Some work only a person may do. The agent sends it as a **Helpdesk task**: unlock an account, reset a password, temporary administrator rights, a BitLocker recovery key, open a blocked work site, or rejoin a PC to the domain. Nothing runs on the PC. Do the work yourself (in Active Directory, the network filter, or by phone for a key), then press **Mark done** with an optional note the user sees.
+
+Never put a password or a recovery key in the note. The chat is also read by the AI model, so the dashboard refuses a note that looks like one. Give those to the user in person or by phone.
+
 ## Packages: install, uninstall and drivers
 
 Packages are folders with a BAT or EXE and the files it needs. They are hash-pinned and signed by an administrator; the agent only picks one by its id. You create them with the scripts in the repository, as described in [Adding and signing packages](/docs/packages/).
@@ -52,7 +60,7 @@ Windows still refuses a driver whose own signature is invalid, on top of the pac
 
 1. Sign in as `admin`, set a new password, delete `initial-admin-password.txt`, and create personal accounts on **Operators**.
 2. Fill in **Environment**: your top servers and web apps, printers and shares, then the standards.
-3. Add your VPN or VPNs.
+3. Add your VPN or VPNs, your company Wi-Fi networks, and the internet sites people need for work.
 4. Add the software people may ask to remove (start with two or three) and the device models you own (printers, scanners, card readers).
 5. Create install packages for the five applications users ask for most, and a driver package for your most common printer.
 6. Run `scripts\sync-hermes-profile.ps1`, restart Hermes, and open a chat from the Tray on your own PC.

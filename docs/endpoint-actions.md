@@ -70,6 +70,7 @@ catalogued actions. It never runs commands it writes itself: every action is fix
 | `probe_from_server` | Check a target from the server, to tell a PC fault from an outage |
 | `check_user_account` | Read-only AD state of the signed-in user (locked, disabled, expired); never unlocks |
 | `note_skill_used` | Record which skill guided a conversation (skill statistics) |
+| `request_helpdesk_action` | Ask a person for work the PC must never do itself: `unlock-account`, `password-reset`, `local-admin`, `bitlocker-key`, `site-access`, `trust-repair`. Nothing runs on the PC; the request waits on Approvals |
 
 ## Environment map
 
@@ -78,16 +79,23 @@ drive letter), office printers and key servers, by id and label. Optional ports 
 IP addresses let the agent test the right port and spot wrong DNS answers. Standards: the
 internal DNS suffixes (masked for the model), the proxy standard, the standard time zone and
 the organisation's root CA thumbprints, and whether DHCP hands out the right DNS servers
-(`dns.reset_to_dhcp` runs only when it does). Incidents: declare an outage so the agent tells
+(`dns.reset_to_dhcp` runs only when it does), whether every PC should get its IPv4 address
+from DHCP (`ip.reset_to_dhcp` runs only when it is true) and the standard power plan
+(`balanced`, `high` or `saver`, for `power.set_plan_standard`). Incidents: declare an outage so the agent tells
 users it is known instead of repairing PCs.
 
-Three lists drive the helpdesk requests:
+These lists drive the helpdesk requests:
 
 | Kind | Address | Details | Used by |
 | --- | --- | --- | --- |
 | `app` (Removable software) | The Apps & features name, `*` as wildcard, e.g. `Foxit PDF Reader*` | `publisher` (optional pattern), `packageId` (an uninstall package, for apps not installed by Windows Installer) | `software.inventory` marks matching apps `removable`; `software.uninstall` or the uninstall package removes them after approval |
 | `device` (Driver catalog) | Hardware IDs separated by `;`, e.g. `USB\VID_04F9&PID_0042` | `packageId` (the signed driver package) | `drivers.inventory` marks matching devices with `catalogMatch`; the agent runs the driver package |
 | `vpn` (Company VPN) | The VPN server's host name | `type` (`builtin` or `client`), `connection` (the Windows VPN connection name), `service` (the client's Windows service) | `vpn.status`, `vpn.client_restart` |
+| `wifi` (Company Wi-Fi) | The SSID (1-32 characters) | `profile` (the Windows profile name your policy deploys, when it differs) | `wifi.status` marks company networks (`companyProfiles`); `wifi.connect_company` connects to one |
+| `site` (Allowed work site) | A host name, or `*.domain` for all its sites | `category` (a short word such as banking) | `site.check_access` |
+
+`zones.status` reads the PC's intranet zone list, but the control plane replaces it with one
+line per web app (`sites`: its zone and whether policy sets it) before the model sees it.
 
 Software the users may install is the set of install packages (`problem` starting with
 `install-`), not a list here; see `docs/software-install.md`.
@@ -101,6 +109,12 @@ with the user, the PC, the item and the agent's reason. **Approve and run** runs
 through the same checks (switches, limits, before/after); **Decline** takes an optional note
 the user sees. Either way the user gets a short helpdesk message in the Tray chat. Requests
 are kept with who decided and the result.
+
+Requests from `request_helpdesk_action` show as **Helpdesk task**. The member does the work
+outside the system (Active Directory, the network filter, reading a BitLocker key to the
+user by phone) and presses **Mark done**; the optional note goes to the user's chat. A note
+that looks like a password or a 48-digit recovery key is refused, since the model reads
+the chat too.
 
 ## Who can do what
 

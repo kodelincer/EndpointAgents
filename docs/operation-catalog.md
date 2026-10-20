@@ -84,20 +84,20 @@ The most frequent ticket in every company. The agent should always split it into
 | 169.254 address, no DHCP | `dhcp.renew` | A | Fix | Built |
 | DNS cache stale, site moved | `dns.flush`, `dns.resolve` | A | Fix/Look | Built |
 | DNS servers set by hand to wrong values | `dns.reset_to_dhcp` (only when the environment map says DHCP gives DNS) | A | Fix | Built |
-| Static IP set by hand on a DHCP network | `ip.reset_to_dhcp` (stores the old values for undo) | A | Fix | Batch 2 |
+| Static IP set by hand on a DHCP network | `ip.reset_to_dhcp` (stores the old values for undo) | A | Fix | Built |
 | IP address conflict | `network.status` + `events.summary network` | A | Look | Built |
 | PC not registered in DNS | `net.register_dns` | A | Fix | Built |
 | Stale neighbour cache | `arp.clear` | A | Fix | Built |
 | Wrong or broken proxy | `proxy.get`, `proxy.reset_to_standard`, undo `proxy.restore` | A | Fix | Built |
 | WinHTTP (system) proxy wrong: Windows Update or Office updates fail but browser works | `proxy.system_get`, `proxy.system_reset_to_standard` | A | Look/Fix | Built |
-| hosts file hijacked | `hosts.check`, `hosts.reset_default` (keeps a copy for undo) | A | Look/Fix | Built/Batch 2 |
-| Winsock / TCP-IP stack broken (malware leftovers, VPN clients) | `network.stack_reset` (winsock + ip reset, needs restart) | A | IT | Batch 2 |
-| Wi-Fi not connecting, wrong network | `wifi.status` (SSID, signal, band, auth, profile list), `wifi.connect_company` (profile from the Wi-Fi list) | A+L | Look/Fix | Batch 2 |
-| Forgotten or corrupted Wi-Fi profile | `wifi.forget_profile` (only a company or user-named SSID), then `wifi.connect_company` | A+L | Fix | Batch 2 |
-| Wi-Fi turned off / airplane mode | `radio.status`, `radio.wifi_on` | A | Look/Fix | Batch 2 |
+| hosts file hijacked | `hosts.check`, `hosts.reset_default` (keeps a copy for undo) | A | Look/Fix | Built (check)/Batch 3 (reset) |
+| Winsock / TCP-IP stack broken (malware leftovers, VPN clients) | `network.stack_reset` (winsock + ip reset, needs restart) | A | IT | Built |
+| Wi-Fi not connecting, wrong network | `wifi.status` (radio, SSID, signal, auth, saved profiles; the control plane marks company networks), `wifi.connect_company` (profile from the Wi-Fi list) | A+L | Look/Fix | Built |
+| Forgotten or corrupted Wi-Fi profile | `wifi.forget_profile` (only a company or user-named SSID), then `wifi.connect_company` | A+L | Fix | Batch 3 |
+| Wi-Fi turned off / airplane mode | `radio.status`, `radio.wifi_on` | A | Look/Fix | Built (radio state in `wifi.status`; the user turns it on) |
 | Slow internet | `network.adapters` (speed), `net.ping` gateway and target, `web.probe` timing, `recent_reports_from_others` | A+S | Look | Built |
-| Firewall blocks an internal app | `firewall.status` (profile, on/off, domain profile active), `firewall.reset_profile_to_domain` | A | Look/IT | Batch 2 |
-| Network profile is Public on the office LAN | `network.category` (Public/Private/Domain), `network.set_private` (not on Domain networks) | A | Look/Fix | Batch 2 |
+| Firewall blocks an internal app | `firewall.status` (profile, on/off, domain profile active), `firewall.reset_profile_to_domain` | A | Look/IT | Built (`security.status` shows firewall profiles)/Batch 3 (reset) |
+| Network profile is Public on the office LAN | `network.category` (Public/Private/Domain), `network.set_private` (not on Domain networks) | A | Look/Fix | Built |
 | Captive portal / hotel Wi-Fi (laptops) | `web.probe` to the captive-check target, guide the user | A | Look | Built |
 | Outage at the site or upstream | `check_known_incidents`, `recent_reports_from_others`, `probe_from_server` | S | Look | Built |
 
@@ -106,8 +106,8 @@ The most frequent ticket in every company. The agent should always split it into
 | Common ticket | Op id | Kind | Tier | Status |
 | --- | --- | --- | --- | --- |
 | "VPN does not connect" | `vpn.status`: listed profiles present, connected or not, last error from RasClient / the client's service, server reachable on its port | A+L | Look | Built |
-| Built-in Windows VPN profile missing or broken | `vpn.ensure_profile` (creates or repairs the profile exactly as the VPN list defines it; no credentials) | A+L | Fix | Batch 2 |
-| Built-in VPN: connect / disconnect | `vpn.connect`, `vpn.disconnect` (listed profile only; the user types any password in Windows' own prompt) | A+L | Fix | Batch 2 |
+| Built-in Windows VPN profile missing or broken | `vpn.ensure_profile` (creates or repairs the profile exactly as the VPN list defines it; no credentials) | A+L | Fix | Batch 3 |
+| Built-in VPN: connect / disconnect | `vpn.connect`, `vpn.disconnect` (listed profile only; the user types any password in Windows' own prompt) | A+L | Fix | Batch 3 |
 | Third-party VPN client stuck (FortiClient, Cisco, GlobalProtect, OpenVPN, WireGuard) | `vpn.client_restart`: restarts only the service named in the VPN list | A+L | Fix | Built |
 | VPN client missing or outdated | install package from the software catalog | P | Fix | Pkg pattern exists |
 | RAS service stopped | `service.restart` (`RasMan` is in the look list; add to restartable) | A | Fix | Built |
@@ -119,14 +119,14 @@ The most frequent ticket in every company. The agent should always split it into
 | Common ticket | Op id | Kind | Tier | Status |
 | --- | --- | --- | --- | --- |
 | Internal web app does not open | `network.triage`, `web.probe` | A | Look | Built |
-| "Is this site blocked on purpose?" | `site.check_access`: compares the site with the **Allowed sites** list and the proxy/firewall policy, then probes it | A+L | Look | Batch 2 |
-| User needs a new site opened | not a PC fix: `request_site_access` creates an approval request for the network team | S | IT | Batch 2 |
-| Certificate warning on an internal site | `cert.check_trust` (org root CAs present), `cert.install_org_roots` (only thumbprints in the environment map, from the control plane) | A | Look/Fix | Built/Batch 2 |
+| "Is this site blocked on purpose?" | `site.check_access`: probes a site from the **Allowed work sites** list as the user's browser would and says when a filter page answered | A+L | Look | Built |
+| User needs a new site opened | not a PC fix: `request_helpdesk_action` kind `site-access` puts a request on the Approvals page | S | IT | Built |
+| Certificate warning on an internal site | `cert.check_trust` (org root CAs present), `cert.install_org_roots` (only thumbprints in the environment map, from the control plane) | A | Look/Fix | Built/Batch 3 |
 | Wrong date/time breaks HTTPS | `time.status`, `time.resync` | A | Fix | Built |
-| Keeps asking for a password on an intranet site | `zones.status` (is the site in Local intranet / Trusted), `zones.add_company_site` (environment-map web apps only) | A | Look/Fix | Batch 2 |
+| Keeps asking for a password on an intranet site | `zones.status` (is the site in Local intranet / Trusted), `zones.add_company_site` (environment-map web apps only) | A | Look/Fix | Built |
 | Old app needs IE mode / compatibility | `edge.ie_mode_status`; the site list itself stays in Group Policy | A | Look | Batch 3 |
 | Browser broken, slow, pop-ups | `browser.inventory`, `browser.clear_cache` | A | Fix | Built |
-| Browser settings hijacked, extensions | `browser.extensions_list`, `browser.reset_settings` (keeps bookmarks, passwords, history; per browser) | A/P | Look/Disrupt | `chrome-reset` package on chrome-install-package; Batch 2 for Edge |
+| Browser settings hijacked, extensions | `browser.extensions_list`, `browser.reset_settings` (keeps bookmarks, passwords, history; per browser) | A/P | Look/Disrupt | `chrome-reset` package; Batch 3 for Edge |
 | Default browser / PDF app wrong | `defaults.status`, guide the user (Windows blocks silent changes since Windows 10) | A | Look | Batch 3 |
 | Saved password for a site is wrong | `credman.list`, `credman.remove` | A | Fix | Built |
 
@@ -156,7 +156,7 @@ The most frequent ticket in every company. The agent should always split it into
 | Print queue of a shared print server stuck | not a PC fix: escalate with the queue name | S | — | — |
 | Scanner not found | `services.status stisvc`, `devices.problems`, the scanner's driver package | A+L | Fix | Built |
 | Scan to folder / scan to email fails | `share.test` to the scan share; SMTP is on the device side, escalate | A | Look | Built |
-| USB printer not detected | `drivers.inventory`, `devices.rescan`, `usb.status` | A | Fix | Built (`usb.status`: Batch 2) |
+| USB printer not detected | `drivers.inventory`, `devices.rescan`, `usb.status` | A | Fix | Built (`usb.status`: Batch 3) |
 
 ## 5. Peripherals and devices
 
@@ -166,13 +166,13 @@ The most frequent ticket in every company. The agent should always split it into
 | Device not detected | `devices.rescan` | A | Fix | Built |
 | Device disabled | `device.enable` (only a device the PC reported as disabled) | A | Fix | Built |
 | Device hung (webcam, card reader, dock NIC) | `device.restart` (disable+enable one reported device; never storage, display or input devices in use) | A | Disrupt | Built |
-| USB ports dead, USB power saving | `usb.status` (hubs, selective suspend), `power.usb_suspend_off` | A | Look/Fix | Batch 2 |
-| Mouse/keyboard (Bluetooth) drops | `bluetooth.status`, `service.restart bthserv` | A | Look/Fix | Batch 2 / Built |
+| USB ports dead, USB power saving | `usb.status` (hubs, selective suspend), `power.usb_suspend_off` | A | Look/Fix | Batch 3 |
+| Mouse/keyboard (Bluetooth) drops | `bluetooth.status`, `service.restart bthserv` | A | Look/Fix | Batch 3 / Built |
 | Webcam or microphone not working in meetings | `media.status`, `privacy.allow_camera_mic` | A | Fix | Built |
 | Headset / speakers: no sound, wrong output | `audio.status` (default devices, mute, volume), `audio.set_default` (a reported device), `service.restart Audiosrv` | A | Look/Fix | Built |
-| External monitor / projector not detected | `display.status`, `display.detect` | A | Look/Fix | Built/Batch 2 |
+| External monitor / projector not detected | `display.status`, `display.detect` | A | Look/Fix | Built/Batch 3 |
 | Docking station issues | `devices.problems`, driver/firmware package from the driver catalog | A+L | Fix | Built |
-| Smart card / token / signature pad / barcode scanner (company specific) | driver catalog entry + vendor package; `smartcard.status` (readers, certificate present) | L+P/A | Fix/Look | Batch 2 |
+| Smart card / token / signature pad / barcode scanner (company specific) | driver catalog entry + vendor package; `smartcard.status` (readers, certificate present) | L+P/A | Fix/Look | Batch 3 |
 | Mobile phone / USB storage blocked | policy, not a fault: explain, escalate if the user needs an exception | — | — | — |
 
 ## 6. Drivers
@@ -187,7 +187,7 @@ signed package that is from the **Driver catalog** and the device's hardware ID.
 | Which catalog driver fits this PC | built into `drivers.inventory`: the server marks each device whose hardware ID is in the Devices list (`catalogMatch` with the model and its driver package) | S+L | Look | Built |
 | Install a catalog driver | the device's signed driver package through `run_repair_package` (hash and admin signature checked; the BAT from `deploy/package-templates/install-driver.bat` runs `pnputil /add-driver <inf> /install`, and Windows checks the driver's own signature) | P+L | Fix | Built |
 | Install a printer driver for an office printer | same, then `printer.add` | P+A | Fix | Built |
-| A new driver broke the device | `driver.rollback` (to the previous driver in the driver store for that device) | A | IT | Batch 2 |
+| A new driver broke the device | `driver.rollback` (to the previous driver in the driver store for that device) | A | IT | Batch 3 |
 | Remove a bad third-party driver | `driver.remove_package` (only an oem*.inf the inventory reported, not in use by a boot device) | A | IT | Batch 3 |
 | An unknown device appears (new model) | escalate with model and hardware IDs so an admin adds it to the driver catalog; logged as a feature request | S | — | Built |
 
@@ -201,8 +201,8 @@ signed package that is from the **Driver catalog** and the device's hardware ID.
 | User asks for software not in the catalog | feature request ("save for the dev team") or approval request "add this to the catalog" | S | — | Built (feature requests) |
 | Remove software | `software.uninstall`: only an application in the **Removable software** list that the inventory found; MSI via its product code (`msiexec /x {code} /qn`), others via the uninstall package the list names | A/P+L | IT | Built |
 | Update an application | same install package (installers upgrade in place) or a separate update package | P | Fix | Pkg pattern |
-| Repair an application (Office, Visual C++ runtimes, .NET) | `software.repair_msi` (`msiexec /fa {code} /qn`, removable/repairable list only), Office Quick Repair package | A/P | Fix | Batch 2 |
-| Store apps broken (Calculator, Photos, Snipping Tool) | `appx.reregister` (built-in Windows apps from a fixed list, for the user) | A | Fix | Batch 2 |
+| Repair an application (Office, Visual C++ runtimes, .NET) | `software.repair_msi` (`msiexec /fa {code} /qn`, removable/repairable list only), Office Quick Repair package | A/P | Fix | Batch 3 (Office: `office.quick_repair` built) |
+| Store apps broken (Calculator, Photos, Snipping Tool) | `appx.reregister` (built-in Windows apps from a fixed list, for the user) | A | Fix | Batch 3 |
 | winget available (Windows 10 1809+ / 11) | a winget-source package type: `winget install --id <catalog id> --source <company source>` from a pinned, company-hosted source only | P+L | Fix | Batch 3 (optional) |
 
 ## 8. Desktop Office and Outlook (no Microsoft 365)
@@ -210,11 +210,11 @@ signed package that is from the **Driver catalog** and the device's hardware ID.
 | Common ticket | Op id | Kind | Tier | Status |
 | --- | --- | --- | --- | --- |
 | Office not activated / unlicensed | Office activation tools and packages | A/P | Fix | Built |
-| Office app crashes, add-in problems | `office.addins_list` (per app, load behaviour, crashes), `office.addin_disable` (one reported add-in, for the user, undo kept) | A | Look/Fix | Batch 2 |
-| Office repair | `office.quick_repair` (Click-to-Run `OfficeClickToRun.exe scenario=Repair` quick, silent) | A | Disrupt (closes Office) | Batch 2 |
+| Office app crashes, add-in problems | `office.addins_list` (per app, load behaviour, crashes), `office.addin_disable` (one reported add-in, for the user, undo kept) | A | Look/Fix | Built |
+| Office repair | `office.quick_repair` (Click-to-Run `OfficeClickToRun.exe scenario=Repair` quick, silent) | A | Disrupt (closes Office) | Built |
 | Office updates stuck | `office.update_status`, `office.update_now` | A | Look/Fix | Batch 3 |
 | Outlook not connecting | `outlook.status` | A | Look | Built |
-| Outlook slow, OST huge or corrupted | `outlook.data_files` (OST/PST sizes, last write), `outlook.rebuild_ost` (renames the OST after Outlook is closed; rebuilt from the server) | A | Look/Disrupt | Batch 2 |
+| Outlook slow, OST huge or corrupted | `outlook.status` (data files with size and near-limit flag), `outlook.rebuild_ost` (renames the OST after Outlook is closed; rebuilt from the server) | A | Look/Disrupt | Built |
 | Outlook profile broken | `outlook.new_profile` (creates a fresh profile with autodiscover, keeps the old one) | A | Disrupt | Batch 3 |
 | Shared mailbox / calendar missing | escalate (Exchange permission, not a PC fault) | S | — | — |
 
@@ -226,12 +226,12 @@ Teams, OneDrive and Microsoft 365 sign-in are not part of this system (the earli
 | Common ticket | Op id | Kind | Tier | Status |
 | --- | --- | --- | --- | --- |
 | Account locked / password expired / disabled | `check_user_account` (read-only) | S | Look | Built |
-| Password reset / unlock | **never on the PC by the agent**. Optional later: a self-service reset through a separate verified flow, or an approval request to the helpdesk with the AD action done by a person | S | IT | Batch 3 (design only) |
-| "Trust relationship failed" | `domain.health` (secure channel); repair needs a domain admin: approval request | A+S | Look/IT | Built/Batch 3 |
+| Password reset / unlock | **never on the PC by the agent**: `request_helpdesk_action` kinds `unlock-account` and `password-reset` put a request on the Approvals page; a person does it in AD and marks it done | S | IT | Built |
+| "Trust relationship failed" | `domain.health` (secure channel); repair needs a domain admin: `request_helpdesk_action` kind `trust-repair` | A+S | Look/IT | Built |
 | Cached credentials wrong after password change | `credman.list`, `credman.remove`, `kerberos.purge` | A | Fix | Built |
-| Group Policy not applied | `gpo.refresh_computer`, `gpo.refresh_user`, `gpo.result_summary` (applied GPO names, last refresh, errors) | A | Fix/Look | Built/Batch 2 |
+| Group Policy not applied | `gpo.refresh_computer`, `gpo.refresh_user`, `gpo.result_summary` (applied GPO names, last refresh, errors) | A | Fix/Look | Built/Batch 3 |
 | Windows Hello / PIN broken | `hello.status`, `hello.reset_pin_container` (user re-enrolls) | A | Look/Disrupt | Batch 3 |
-| Local admin rights request | not automated: approval request, time-limited group membership done by IT (or LAPS) | S | IT | Batch 3 |
+| Local admin rights request | not automated: `request_helpdesk_action` kind `local-admin`; time-limited group membership done by IT (or LAPS) | S | IT | Built |
 | Who am I / which groups | `whoami.groups` | A | Look | Built |
 
 ## 10. Performance, disk, startup, crashes
@@ -240,27 +240,27 @@ Teams, OneDrive and Microsoft 365 sign-in are not part of this system (the earli
 | --- | --- | --- | --- | --- |
 | PC is slow | `perf.snapshot`, `system.recent_changes`, `events.summary` | A | Look | Built |
 | Disk full | `disk.usage` (free space per drive, largest known folders: temp, downloads size only, recycle bin, Windows Update cache, user profile size), `disk.cleanup_safe` | A | Look/Fix | Built |
-| Empty the recycle bin | `recyclebin.empty` (for the user, after a chat yes) | A | Disrupt | Batch 2 |
-| Too many startup apps | `startup.list`, `startup.disable` (an entry the PC reported, for the user; undo kept) | A | Look/Fix | Batch 2 |
+| Empty the recycle bin | `recyclebin.empty` (for the user, after a chat yes) | A | Disrupt | Built |
+| Too many startup apps | `startup.list`, `startup.disable` (an entry the PC reported, for the user; undo kept) | A | Look/Fix | Built |
 | An app hangs | `app.close` | A | Disrupt | Built |
 | Process eats CPU/RAM | `perf.snapshot` (top processes) | A | Look | Built |
-| System files corrupted | `system.file_check` (`sfc /scannow`, then `DISM /RestoreHealth` against Windows Update or the company source) | A | Fix (long) | Batch 2 |
-| Disk errors | `disk.health` (SMART predict-failure, chkdsk dirty bit, media type), schedule `chkdsk` on restart | A | Look/IT | Batch 2 |
+| System files corrupted | `system.image_repair` (DISM RestoreHealth) and `system.file_check` (sfc), both in the background; `system.repair_status` reads the result from Windows' logs | A | Fix (long) | Built |
+| Disk errors | `disk.health` (Windows health status, SMART predict-failure, media type) | A | Look/IT | Built (chkdsk scheduling: Batch 3) |
 | Blue screens / unexpected restarts | `events.summary bluescreen`, `crash.summary` (bugcheck codes, faulting driver names from minidumps' metadata) | A | Look | Built/Batch 3 |
-| Search not finding files | `service.restart WSearch`, `search.rebuild_index` | A | Fix | Built/Batch 2 |
+| Search not finding files | `service.restart WSearch`, `search.rebuild_index` | A | Fix | Built/Batch 3 |
 | Pending restart for days | `restart.pending` (CBS, Windows Update, file renames, uptime), `reboot.schedule` | A | Look/Disrupt | Built |
 
 ## 11. Windows Update, security and encryption
 
 | Common ticket | Op id | Kind | Tier | Status |
 | --- | --- | --- | --- | --- |
-| Updates failing or stuck | `windows_update.status`, `windows_update.reset_components` (stops BITS/wuauserv, renames SoftwareDistribution and catroot2, starts again) | A | Look/Fix | Built/Batch 2 |
-| Check for updates now | `windows_update.scan_now` | A | Fix | Batch 2 |
-| Antivirus off / outdated | `security.status`, `defender.update_signatures`, `defender.quick_scan` | A | Look/Fix | Built/Batch 2 (`update_signatures`) |
-| "I think I have a virus" | `defender.quick_scan`, `defender.threats` (recent detections), `defender.full_scan` (long, user agrees) | A | Fix/Disrupt | Built/Batch 2 |
-| A threat was found | `defender.threats`; removal follows Defender's own action; escalate always | A+S | Look | Batch 2 |
-| BitLocker recovery screen | **key is never given by the agent**: approval request; a person verifies the user and reads the key from AD | S | IT | Batch 3 |
-| BitLocker status for audits | `bitlocker.status` (protection on, method; no keys) | A | Look | Batch 2 |
+| Updates failing or stuck | `windows_update.status`, `windows_update.reset_components` (stops BITS/wuauserv, renames SoftwareDistribution and catroot2, starts again) | A | Look/Fix | Built |
+| Check for updates now | `windows_update.scan_now` | A | Fix | Built |
+| Antivirus off / outdated | `security.status`, `defender.update_signatures`, `defender.quick_scan` | A | Look/Fix | Built |
+| "I think I have a virus" | `defender.quick_scan`, `defender.threats` (recent detections), `defender.full_scan` (long, user agrees) | A | Fix/Disrupt | Built (`defender.full_scan`: Batch 3) |
+| A threat was found | `defender.threats`; removal follows Defender's own action; escalate always | A+S | Look | Built |
+| BitLocker recovery screen | **key is never given by the agent**: `request_helpdesk_action` kind `bitlocker-key`; a person verifies the user and reads the key from AD, never through the chat | S | IT | Built |
+| BitLocker status for audits | `bitlocker.status` (protection on, method; no keys) | A | Look | Built |
 | Phishing email reported | escalate to security with the message details the user gives | S | — | — |
 
 ## 12. Desktop, display, sound, language and region
@@ -270,10 +270,10 @@ Teams, OneDrive and Microsoft 365 sign-in are not part of this system (the earli
 | Taskbar or Start frozen | `explorer.status`, `explorer.restart` | A | Disrupt | Built |
 | Persian keyboard missing | `input.languages`, `input.add_layout` | A | Fix | Built |
 | Persian text shows as boxes (fonts) | install package `persian-fonts-install` | P | Fix | Pkg on chrome-install-package |
-| Date, calendar or number format wrong | `region.status`, `region.set_standard` (company standard formats, for the user) | A | Look/Fix | Built/Batch 2 |
+| Date, calendar or number format wrong | `region.status`, `region.set_standard` (company standard formats, for the user) | A | Look/Fix | Built/Batch 3 |
 | Wrong time zone | `timezone.set_standard` | A | Fix | Built |
 | Screen too small/large, resolution, scaling | `display.status`, guide the user (per-user scaling changes need a sign-out) | A | Look | Built |
-| Second monitor not shown | `display.detect` (re-enumerate), `display.status` | A | Fix | Batch 2 |
+| Second monitor not shown | `display.detect` (re-enumerate), `display.status` | A | Fix | Batch 3 |
 | No sound | `audio.status`, `audio.set_default`, `audio.unmute` | A | Look/Fix | Built |
 | Desktop icons or wallpaper lost | `profile.status` (temp profile), escalate | A | Look | Built |
 | File opens in the wrong app | `defaults.status` and guide | A | Look | Batch 3 |
@@ -283,8 +283,8 @@ Teams, OneDrive and Microsoft 365 sign-in are not part of this system (the earli
 
 | Common ticket | Op id | Kind | Tier | Status |
 | --- | --- | --- | --- | --- |
-| Laptop battery drains, not charging | `battery.report` (design vs full charge capacity, cycle count, charging state) | A | Look | Batch 2 |
-| PC sleeps too fast / does not sleep | `power.status`, `power.set_plan_standard` (company power plan) | A | Look/Fix | Built/Batch 2 |
+| Laptop battery drains, not charging | `battery.report` (design vs full charge capacity, cycle count, charging state) | A | Look | Built |
+| PC sleeps too fast / does not sleep | `power.status`, `power.set_plan_standard` (company power plan) | A | Look/Fix | Built |
 | Wakes up by itself | `power.wake_sources` (last wake, wake timers, devices allowed to wake) | A | Look | Batch 3 |
 | Fast startup causes stale state | `power.fast_startup_off` | A | Fix | Batch 3 |
 
@@ -303,7 +303,7 @@ Teams, OneDrive and Microsoft 365 sign-in are not part of this system (the earli
 | PC name, IP, Windows version, serial, model, uptime | `endpoint_system_info` (masked for the model) | A | Look | Built |
 | Warranty / asset tag | system info (BIOS serial, model) + site knowledge | A+S | Look | Built |
 | Activation state | Windows/Office activation status | A | Look | Built |
-| Full inventory for an asset report | `software.inventory`, `drivers.inventory`, `disk.health`, `battery.report` | A | Look | Built/Batch 2 |
+| Full inventory for an asset report | `software.inventory`, `drivers.inventory`, `disk.health`, `battery.report` | A | Look | Built |
 
 ## 16. Things the system should never do by itself
 
@@ -335,9 +335,9 @@ with playbooks and fallbacks; install packages and a software-install skill on t
 branch `claude/chrome-install-package` (not yet merged anywhere); escalation, feature
 requests, incidents, server probe, AD account check, masking, kill switches and limits.
 
-Missing, in order of how often companies hit them. **Items 1 to 6 are now built (batch 1,
-branch `claude/ops-catalog`); the text below keeps the original reasoning.** Items 7 to 9
-are the next batch:
+Missing, in order of how often companies hit them. **All nine items are now built on branch
+`claude/ops-catalog`: 1 to 6 in batch 1, 7 to 9 in batch 2. The text below keeps the
+original reasoning.**
 
 1. **IT approval tier and Approvals page.** Needed before anything that removes or rolls
    back. Nothing in the code today lets a helpdesk member approve a step that then runs on
@@ -384,17 +384,42 @@ are the next batch:
   packages; a package whose problem starts with `uninstall-` (or with `requiresApproval: true`)
   waits for IT approval.
 
-**Batch 2** — Wi-Fi, firewall and network category, Allowed sites and site-access
-requests, org root CA install, intranet zones, Edge reset, Office add-ins and Quick Repair,
-OST rebuild, Windows Update reset and scan,
-SFC/DISM, Defender signatures and threats, BitLocker status, disk health, startup apps,
-recycle bin, search index, battery report, power plan, display detect, region standard,
-driver rollback, network stack reset (IT).
+**Batch 2 (built on `claude/ops-catalog`, 2026-10-20)**
+
+- Network: `network.category`, `network.set_private` (undo `network.set_public`; restart
+  `NlaSvc` when it flips back), `ip.reset_to_dhcp` (undo `ip.restore`; only when the
+  standard **PCs get their IP address from DHCP** is true), `network.stack_reset` (IT tier,
+  restart needed), `wifi.status` (native Wi-Fi API, so it works in every Windows language)
+  and `wifi.connect_company` (only a profile listed under **Company Wi-Fi**).
+- Sites: new list **Allowed work sites** (kind `site`), `site.check_access`, `zones.status`
+  (the control plane returns only matches with your web apps, never the PC's own list),
+  `zones.add_company_site` (undo `zones.remove_company_site`).
+- Health: `windows_update.reset_components`, `windows_update.scan_now`,
+  `defender.update_signatures`, `defender.threats`, `bitlocker.status`, `disk.health`,
+  `system.file_check`, `system.image_repair` and `system.repair_status` (sfc and DISM run in
+  the background because they take longer than an action may), `battery.report`,
+  `power.set_plan_standard` (standard **Standard power plan**, undo `power.restore_plan`),
+  `startup.list`, `startup.disable` (undo `startup.enable`), `recyclebin.empty` (Disrupt).
+- Office: `office.addins_list`, `office.addin_disable` (undo `office.addin_enable`),
+  `office.quick_repair` (Disrupt), `outlook.rebuild_ost` (Disrupt).
+- People-only work: MCP tool `request_helpdesk_action` with fixed kinds `unlock-account`,
+  `password-reset`, `local-admin`, `bitlocker-key`, `site-access`, `trust-repair`. It puts a
+  "Helpdesk task" on the Approvals page; the member does the work and presses **Mark done**,
+  and their note reaches the user's chat. Notes that look like a password or recovery key
+  are refused, because the chat is also read by the model.
+- Skills: `network-support`, `slow-pc-health`, `desktop-apps`, `signin-domain`, and SOUL.md.
+- Dashboard: right-hand sidebar navigation.
+
+Moved from batch 2 to batch 3 because they need more than one small fixed step, or are
+rare: firewall profile reset, Wi-Fi profile forget, built-in VPN profile and connect, org
+root CA install, Edge reset, hosts reset, USB and Bluetooth status, smart cards, display
+detect, search index rebuild, region standard, driver rollback, MSI repair, Store app
+re-register, group policy result summary, Defender full scan, chkdsk scheduling.
 
 **Batch 3** — Offline Files, previous versions, IE mode status, default apps, Outlook new
 profile, Office updates, Windows Hello reset, crash summary, RDP status, remote-support
-launch, wake sources, fast startup, driver package removal, winget company source, and the
-people-only approval flows (local admin, BitLocker key, trust repair, unlock).
+launch, wake sources, fast startup, driver package removal, winget company source, plus
+the items moved from batch 2 above.
 
 ## What the helpdesk team configures (no code)
 
@@ -405,10 +430,10 @@ people-only approval flows (local admin, BitLocker key, trust repair, unlock).
 | Removable software | name/publisher patterns that may be removed, approval yes/no |
 | Driver catalog | device models, hardware IDs, driver package per Windows version |
 | VPN profiles | built-in VPN settings or client app + service name |
-| Wi-Fi profiles | company SSIDs (batch 2) |
-| Allowed sites | work sites by category (batch 2) |
+| Company Wi-Fi | company SSIDs and the policy profile name (built) |
+| Allowed work sites | internet sites people need for work, by category (built) |
 | Capabilities | kill switch, hourly limit, approval requirement per operation |
-| Approvals | approve or decline pending requests |
+| Approvals | approve or decline pending requests; mark helpdesk tasks (unlock, key, rejoin) done |
 | Skills | the order of checks and fixes for each kind of ticket |
 
 With these in place, a new kind of ticket is usually: write a skill that orders existing

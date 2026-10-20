@@ -1,7 +1,7 @@
 ---
 title: How the agent uses skills, tools and packages
 summary: What a skill is, which tools Hermes can call, how packages are chosen, and what the agent can never do.
-order: 2
+order: 3
 ---
 
 # How the agent uses skills, tools and packages

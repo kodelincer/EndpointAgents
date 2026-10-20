@@ -1,7 +1,7 @@
 ---
 title: Writing skills: a practical guide
 summary: How the helpdesk team teaches the agent a new problem without code: the shape of a skill, the tools and actions you can name, worked examples and the review steps.
-order: 3
+order: 4
 ---
 
 # Writing skills: a practical guide
