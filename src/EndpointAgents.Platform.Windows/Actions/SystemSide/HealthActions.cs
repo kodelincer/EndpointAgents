@@ -432,7 +432,7 @@ public sealed class DeviceProblemsAction : IEndpointAction
 {
     public string Id => "devices.problems";
 
-    private static readonly Dictionary<long, string> Problems = new()
+    internal static readonly Dictionary<long, string> Problems = new()
     {
         [1] = "Not configured correctly",
         [3] = "Driver may be corrupted or low memory",

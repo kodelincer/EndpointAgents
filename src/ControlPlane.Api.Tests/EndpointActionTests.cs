@@ -85,9 +85,69 @@ public sealed class EndpointActionCatalogTests
     [InlineData("share", @"\\fs01\finance", true)]
     [InlineData("share", @"C:\Windows", false)]
     [InlineData("printer", @"\\print01\HP-2F", true)]
+    [InlineData("app", "Foxit PDF Reader*", true)]
+    [InlineData("app", "*", false)]
+    [InlineData("app", "calc.exe /c del", false)]
+    [InlineData("device", @"USB\VID_04F9&PID_0042;PCI\VEN_8086&DEV_15B8", true)]
+    [InlineData("device", @"..\..\windows", false)]
+    [InlineData("device", "", false)]
     public void TargetAddressesAreChecked(string kind, string address, bool valid) =>
         Assert.Equal(valid, EndpointActionValidator.IsValidTarget(
             new ResolvedTarget("t1", kind, "Label", address)));
+
+    [Fact]
+    public void VpnAndListDetailsAreChecked()
+    {
+        ResolvedTarget Vpn(params (string Key, string Value)[] details) =>
+            new("vpn1", "vpn", "Office VPN", "vpn.corp.example",
+                Details: details.ToDictionary(item => item.Key, item => item.Value));
+        Assert.True(EndpointActionValidator.IsValidTarget(Vpn(("type", "builtin"), ("connection", "Office VPN"))));
+        Assert.True(EndpointActionValidator.IsValidTarget(Vpn(("type", "client"), ("service", "FA_Scheduler"))));
+        Assert.False(EndpointActionValidator.IsValidTarget(Vpn(("type", "client"), ("service", "x & calc"))));
+        Assert.False(EndpointActionValidator.IsValidTarget(Vpn(("type", "other"))));
+        Assert.False(EndpointActionValidator.IsValidTarget(new ResolvedTarget("a1", "app", "Foxit",
+            "Foxit*", Details: new Dictionary<string, string> { ["packageId"] = "Bad Id" })));
+        Assert.True(EndpointActionValidator.MatchesAppPattern("Foxit PDF Reader*", "Foxit PDF Reader 2024.1"));
+        Assert.False(EndpointActionValidator.MatchesAppPattern("Foxit PDF Reader*", "Foxit PDF Editor"));
+        Assert.False(EndpointActionValidator.MatchesAppPattern("7-Zip", "7-Zip 23.01 (x64)"));
+    }
+
+    [Fact]
+    public void RemovalAndApprovalTiersFollowTheDesign()
+    {
+        Assert.Equal(ActionTier.ItApproval, EndpointActionCatalog.Find("software.uninstall")!.Tier);
+        Assert.True(ActionRunner.NeedsApproval(EndpointActionCatalog.Find("software.uninstall")!, null));
+        Assert.False(ActionRunner.NeedsApproval(EndpointActionCatalog.Find("dns.flush")!, null));
+        var switched = new ActionSetting("dns.flush", true, null, DateTimeOffset.UtcNow, "admin", true);
+        Assert.True(ActionRunner.NeedsApproval(EndpointActionCatalog.Find("dns.flush")!, switched));
+        Assert.False(ActionRunner.NeedsApproval(EndpointActionCatalog.Find("network.status")!,
+            switched with { ActionId = "network.status" }));
+    }
+
+    [Fact]
+    public void InventoriesAreMatchedWithTheHelpdeskLists()
+    {
+        EnvironmentTarget Entry(string id, string kind, string label, string address,
+            Dictionary<string, string>? details = null) =>
+            new(id, kind, label, address, [], [], null, null, null, DateTimeOffset.UtcNow, details);
+        var targets = new[]
+        {
+            Entry("foxit", "app", "Foxit Reader", "Foxit PDF Reader*",
+                new() { ["publisher"] = "Foxit*", ["packageId"] = "uninstall-foxit" }),
+            Entry("brother-l2350", "device", "Brother HL-L2350DW", @"USB\VID_04F9&PID_0042",
+                new() { ["packageId"] = "driver-brother-l2350" })
+        };
+        var software = JsonNode.Parse("""{"apps":[{"name":"Foxit PDF Reader","publisher":"Foxit Software Inc."},{"name":"7-Zip 23.01","publisher":"Igor Pavlov"}]}""");
+        var apps = ActionRunner.Annotate("software.inventory", software, targets)!["apps"]!.AsArray();
+        Assert.Equal("foxit", apps[0]!["removable"]!.GetValue<string>());
+        Assert.Equal("uninstall-foxit", apps[0]!["uninstallPackageId"]!.GetValue<string>());
+        Assert.Null(apps[1]!["removable"]);
+
+        var drivers = JsonNode.Parse("""{"devices":[{"name":"Brother printer","hardwareIds":["USB\\VID_04F9&PID_0042&REV_0100"]},{"name":"Unknown","hardwareIds":["USB\\VID_1234&PID_0001"]}]}""");
+        var devices = ActionRunner.Annotate("drivers.inventory", drivers, targets)!["devices"]!.AsArray();
+        Assert.Equal("driver-brother-l2350", devices[0]!["catalogMatch"]!["packageId"]!.GetValue<string>());
+        Assert.Null(devices[1]!["catalogMatch"]);
+    }
 }
 
 public sealed class TargetMaskerTests
@@ -278,6 +338,59 @@ public sealed class ActionRunnerTests : IClassFixture<ControlPlaneApiFactory>
         var limited = await _runner.RunAsync(Agent(agent), "dns.flush", null, false, TestCancellation);
         Assert.False(limited.Accepted);
         Assert.Contains($"{limit} times", limited.Error);
+    }
+
+    [Fact]
+    public async Task ApprovalTierWaitsForAHelpdeskMember()
+    {
+        var agent = Guid.NewGuid().ToString("D");
+        await _store.UpsertTargetAsync(new EnvironmentTargetInput("anydesk", "app", "AnyDesk",
+            "AnyDesk*", null, null, null, null, null), TestCancellation);
+        var first = await _runner.RunAsync(Agent(agent), "software.uninstall",
+            new Dictionary<string, string?> { ["target"] = "anydesk" }, false, TestCancellation,
+            "User asked to remove AnyDesk.");
+        Assert.True(first.Accepted);
+        Assert.Equal(ActionStatus.AwaitingApproval, first.Status);
+        var again = await _runner.RunAsync(Agent(agent), "software.uninstall",
+            new Dictionary<string, string?> { ["target"] = "anydesk" }, false, TestCancellation);
+        Assert.Equal(first.Data!["approvalId"]!.GetValue<string>(), again.Data!["approvalId"]!.GetValue<string>());
+        Assert.Empty(await _store.GetRecentRunsAsync(agent, null, 10, TestCancellation));
+
+        var pending = (await _store.GetApprovalsAsync(true, 500, TestCancellation))
+            .Single(item => item.AgentId == agent);
+        Assert.Equal("Remove software: AnyDesk", pending.Title);
+        Assert.Equal("User asked to remove AnyDesk.", pending.Reason);
+
+        var member = await _factory.CreateOperatorClientAsync(OperatorRoles.Member, TestCancellation);
+        var approved = await member.PostAsJsonAsync($"/api/approvals/{pending.ApprovalId}/approve",
+            new { note = "ok" }, TestCancellation);
+        Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        var decided = await _store.GetApprovalAsync(pending.ApprovalId, TestCancellation);
+        // The test PC is offline, so the approved run is recorded as failed.
+        Assert.Equal(ApprovalStatus.Failed, decided!.Status);
+        Assert.Single(await _store.GetRecentRunsAsync(agent, null, 10, TestCancellation));
+        Assert.Equal(HttpStatusCode.Conflict, (await member.PostAsJsonAsync(
+            $"/api/approvals/{pending.ApprovalId}/decline", new { note = "late" }, TestCancellation)).StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminCanRequireApprovalForAFix()
+    {
+        var agent = Guid.NewGuid().ToString("D");
+        await _store.SaveActionSettingAsync("net.register_dns",
+            new ActionSettingInput(true, null, RequiresApproval: true), "test", TestCancellation);
+        var outcome = await _runner.RunAsync(Agent(agent), "net.register_dns", null, false,
+            TestCancellation);
+        Assert.Equal(ActionStatus.AwaitingApproval, outcome.Status);
+        var request = (await _store.GetApprovalsAsync(true, 500, TestCancellation))
+            .Single(item => item.AgentId == agent);
+        var member = await _factory.CreateOperatorClientAsync(OperatorRoles.Member, TestCancellation);
+        Assert.Equal(HttpStatusCode.OK, (await member.PostAsJsonAsync(
+            $"/api/approvals/{request.ApprovalId}/decline", new { note = "Not now" }, TestCancellation)).StatusCode);
+        Assert.Equal(ApprovalStatus.Declined, (await _store.GetApprovalAsync(request.ApprovalId,
+            TestCancellation))!.Status);
+        await _store.SaveActionSettingAsync("net.register_dns", new ActionSettingInput(true, null),
+            "test", TestCancellation);
     }
 
     [Fact]

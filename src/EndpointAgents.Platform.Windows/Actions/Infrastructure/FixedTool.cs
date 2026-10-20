@@ -20,7 +20,7 @@ public static class FixedTool
     private static readonly HashSet<string> AllowedPrograms = new(StringComparer.OrdinalIgnoreCase)
     {
         "ipconfig.exe", "w32tm.exe", "gpupdate.exe", "klist.exe", "netsh.exe",
-        "tzutil.exe", "shutdown.exe", "powercfg.exe"
+        "tzutil.exe", "shutdown.exe", "powercfg.exe", "msiexec.exe"
     };
 
     private const int MaxOutputCharacters = 8 * 1024;

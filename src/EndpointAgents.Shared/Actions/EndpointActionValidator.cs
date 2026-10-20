@@ -124,11 +124,67 @@ public static partial class EndpointActionValidator
             EnvironmentTargetKinds.Printer => IsValidUncPath(target.Address),
             EnvironmentTargetKinds.Share => IsValidUncPath(target.Address)
                 && (target.DriveLetter is null || IsValidDriveLetter(target.DriveLetter)),
+            EnvironmentTargetKinds.App => IsValidAppPattern(target.Address)
+                && (target.Detail(EnvironmentTargetDetails.Publisher) is not { } publisher
+                    || IsValidAppPattern(publisher)),
+            EnvironmentTargetKinds.Device => SplitHardwareIds(target.Address) is { Count: > 0 },
+            EnvironmentTargetKinds.Vpn => IsValidHost(target.Address) && IsValidVpnDetails(target),
             _ => false
         }
+        && (target.Detail(EnvironmentTargetDetails.PackageId) is not { } package
+            || PackageIdPattern().IsMatch(package))
         && (target.Ports ?? []).All(port => port is > 0 and <= 65535)
         && (target.ExpectedAddresses ?? []).All(address =>
             System.Net.IPAddress.TryParse(address, out _));
+
+    /// <summary>An Apps &amp; features name or publisher, optionally with * wildcards.</summary>
+    public static bool IsValidAppPattern(string? value) =>
+        value is not null && AppPatternRegex().IsMatch(value) && value.Trim('*', ' ').Length >= 2;
+
+    /// <summary>True when <paramref name="value"/> matches a pattern with * wildcards, ignoring case.</summary>
+    public static bool MatchesAppPattern(string pattern, string? value) =>
+        value is not null && Regex.IsMatch(value.Trim(),
+            "^" + Regex.Escape(pattern.Trim()).Replace(@"\*", ".*", StringComparison.Ordinal) + "$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+
+    /// <summary>Hardware IDs such as <c>USB\VID_04F9&amp;PID_0042</c>, separated by semicolons.</summary>
+    public static IReadOnlyList<string> SplitHardwareIds(string? value)
+    {
+        var ids = (value ?? string.Empty).Split(';',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return ids.Length is > 0 and <= 20 && ids.All(id => HardwareIdPattern().IsMatch(id))
+            ? ids : [];
+    }
+
+    /// <summary>A Windows service name (letters, digits, dot, dash, underscore).</summary>
+    public static bool IsValidServiceName(string? value) =>
+        value is not null && ServiceNamePattern().IsMatch(value);
+
+    private static bool IsValidVpnDetails(ResolvedTarget target) =>
+        target.Detail(EnvironmentTargetDetails.VpnType) switch
+        {
+            EnvironmentTargetDetails.VpnBuiltin =>
+                target.Detail(EnvironmentTargetDetails.Connection) is { } name
+                && ConnectionNamePattern().IsMatch(name),
+            EnvironmentTargetDetails.VpnClient =>
+                IsValidServiceName(target.Detail(EnvironmentTargetDetails.Service)),
+            _ => false
+        };
+
+    [GeneratedRegex(@"^[\p{L}\p{N} .+\-_()&,'*]{2,100}$")]
+    private static partial Regex AppPatternRegex();
+
+    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9\\&_.\-]{2,199}$")]
+    private static partial Regex HardwareIdPattern();
+
+    [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,79}$")]
+    private static partial Regex ServiceNamePattern();
+
+    [GeneratedRegex(@"^[\p{L}\p{N}][\p{L}\p{N} .\-_()]{0,63}$")]
+    private static partial Regex ConnectionNamePattern();
+
+    [GeneratedRegex(@"^[a-z0-9][a-z0-9._-]{0,99}$")]
+    private static partial Regex PackageIdPattern();
 
     [GeneratedRegex(@"^[a-z0-9][a-z0-9-]{0,47}$")]
     private static partial Regex TargetIdPattern();

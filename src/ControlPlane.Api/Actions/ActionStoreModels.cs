@@ -13,11 +13,15 @@ public sealed record EnvironmentTarget(
     string? DriveLetter,
     string? Location,
     string? Notes,
-    DateTimeOffset UpdatedAtUtc)
+    DateTimeOffset UpdatedAtUtc,
+    IReadOnlyDictionary<string, string>? Details = null)
 {
     public ResolvedTarget ToResolved() => new(Id, Kind, Label, Address,
         Ports.Count == 0 ? null : Ports,
-        ExpectedAddresses.Count == 0 ? null : ExpectedAddresses, DriveLetter);
+        ExpectedAddresses.Count == 0 ? null : ExpectedAddresses, DriveLetter,
+        Details is { Count: > 0 } ? Details : null);
+
+    public string? Detail(string key) => ToResolved().Detail(key);
 }
 
 public sealed record EnvironmentTargetInput(
@@ -29,18 +33,62 @@ public sealed record EnvironmentTargetInput(
     IReadOnlyList<string>? ExpectedAddresses,
     string? DriveLetter,
     string? Location,
-    string? Notes);
+    string? Notes,
+    IReadOnlyDictionary<string, string>? Details = null);
 
 public sealed record ActionSetting(string ActionId, bool Enabled, int? MaxPerHour,
-    DateTimeOffset UpdatedAtUtc, string? UpdatedBy);
+    DateTimeOffset UpdatedAtUtc, string? UpdatedBy, bool RequiresApproval = false);
 
-public sealed record ActionSettingInput(bool Enabled, int? MaxPerHour);
+/// <param name="RequiresApproval">Make the agent wait for a helpdesk member's approval
+/// before this action runs, even when its tier would not.</param>
+public sealed record ActionSettingInput(bool Enabled, int? MaxPerHour,
+    bool RequiresApproval = false);
 
 public static class ActionRunSources
 {
     public const string Agent = "Agent";
     public const string Operator = "Operator";
+    /// <summary>An agent request a helpdesk member approved on the Approvals page.</summary>
+    public const string Approval = "Approval";
 }
+
+public static class ApprovalKinds
+{
+    /// <summary>A catalogue action (ItApproval tier, or switched to "needs approval").</summary>
+    public const string Action = "action";
+    /// <summary>A signed package that needs approval (removal packages, or flagged by its manifest).</summary>
+    public const string Package = "package";
+}
+
+public static class ApprovalStatus
+{
+    public const string Pending = "Pending";
+    public const string Declined = "Declined";
+    /// <summary>Approved and being run on the PC.</summary>
+    public const string Running = "Running";
+    public const string Done = "Done";
+    public const string Failed = "Failed";
+}
+
+/// <summary>A step the agent asked for that waits for a helpdesk member.</summary>
+public sealed record ApprovalRequest(
+    string ApprovalId,
+    string Kind,
+    string ItemId,
+    string Title,
+    string AgentId,
+    string? UserSid,
+    string? ConversationId,
+    string ArgumentsJson,
+    string Reason,
+    string Status,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset? DecidedAtUtc,
+    string? DecidedBy,
+    string? Note,
+    string? ResultSummary);
+
+public sealed record ApprovalDecisionInput(string? Note);
 
 public sealed record ActionRunRecord(
     string RunId,

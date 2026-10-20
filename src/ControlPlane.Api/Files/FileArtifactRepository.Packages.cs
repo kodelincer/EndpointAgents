@@ -7,12 +7,15 @@ namespace ControlPlane.Api.Files;
 
 /// <param name="Problem">Groups packages that fix the same problem.</param>
 /// <param name="Order">Try order within <paramref name="Problem"/>, lower first.</param>
+/// <param name="RequiresApproval">A helpdesk member approves each run first (removal
+/// packages, whose problem starts with <c>uninstall-</c>, and packages that ask for it).</param>
 public sealed record RepairPackageArtifact(
     FileArtifact File,
     PackageDescriptor Descriptor,
     string SupportDirectory,
     string Problem,
-    int Order = BatPackageOrdering.Default);
+    int Order = BatPackageOrdering.Default,
+    bool RequiresApproval = false);
 
 /// <summary>
 /// Loads packages from <c>FileRepository/packages/&lt;id&gt;/package.json</c>. Schema 1
@@ -585,6 +588,8 @@ public sealed partial class FileArtifactRepository
             NormalizeVersion(minWindows), NormalizeVersion(maxWindows), publisher,
             symptoms, manifest.Signature, acceptedRisks);
         return new LoadedPackage(packageStatus, null, null,
-            new RepairPackageArtifact(file, descriptor, supportDirectory, problem, order));
+            new RepairPackageArtifact(file, descriptor, supportDirectory, problem, order,
+                manifest.RequiresApproval
+                || problem.StartsWith("uninstall-", StringComparison.Ordinal)));
     }
 }

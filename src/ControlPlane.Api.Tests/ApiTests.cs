@@ -323,7 +323,7 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>, IAsyncLife
         var packageRunInputs = packageRun.GetProperty("inputSchema")
             .GetProperty("properties").EnumerateObject()
             .Select(property => property.Name).Order().ToArray();
-        Assert.Equal(["packageId", "runCapability"], packageRunInputs);
+        Assert.Equal(["packageId", "reason", "runCapability"], packageRunInputs);
     }
 
     [Fact]

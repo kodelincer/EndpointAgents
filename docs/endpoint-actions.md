@@ -26,7 +26,7 @@ catalogued actions. It never runs commands it writes itself: every action is fix
    ever a path, URL, command or address chosen by the agent.
 4. **No shell.** Actions use Windows APIs, WMI, the service controller, event logs and a
    fixed allow-list of System32 tools (`ipconfig`, `w32tm`, `gpupdate`, `klist`, `netsh`,
-   `tzutil`, `shutdown`, `powercfg`) with fixed arguments.
+   `tzutil`, `shutdown`, `powercfg`, `msiexec` for removing listed software) with fixed arguments.
 5. **Right identity.** System actions run in the LocalSystem service. User actions (proxy,
    printers, mapped drives, browser caches, keyboard layouts, saved passwords) run in the
    signed-in user's Tray through the one service pipe (`endpoint.user_action`).

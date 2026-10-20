@@ -25,7 +25,14 @@ public static class EndpointActionSet
         new SecurityStatusAction(), new DefenderQuickScanAction(), new DeviceProblemsAction(),
         new DevicesRescanAction(), new AppsFindAction(), new DiskCleanupSafeAction(),
         new TimeZoneSetStandardAction(), new TimeZoneRestoreAction(), new PowerStatusAction(),
-        new RebootScheduleAction(), new RebootCancelAction()
+        new RebootScheduleAction(), new RebootCancelAction(),
+        new NetworkAdaptersAction(), new NetworkAdapterEnableAction(),
+        new NetworkAdapterRestartAction(), new DnsResetToDhcpAction(), new DnsRestoreAction(),
+        new SystemProxyGetAction(), new SystemProxyResetAction(), new SystemProxyRestoreAction(),
+        new VpnStatusAction(), new VpnClientRestartAction(),
+        new SoftwareInventoryAction(), new SoftwareUninstallAction(),
+        new DriversInventoryAction(), new DeviceEnableAction(), new DeviceRestartAction(),
+        new DiskUsageAction(), new RestartPendingAction()
     ];
 
     /// <summary>Actions the Tray runs with the signed-in user's own token.</summary>
@@ -41,7 +48,9 @@ public static class EndpointActionSet
         new OutlookStatusAction(), new TeamsClearCacheAction(), new ExplorerStatusAction(),
         new ExplorerRestartAction(), new InputLanguagesAction(), new InputAddLayoutAction(),
         new RegionStatusAction(), new DisplayStatusAction(), new MediaStatusAction(),
-        new AllowCameraMicAction(), new OneDriveStatusAction(), new AppCloseAction()
+        new AllowCameraMicAction(), new OneDriveStatusAction(), new AppCloseAction(),
+        new AudioStatusAction(), new AudioUnmuteAction(), new AudioSetDefaultAction(),
+        new AudioRestoreDefaultAction(), new PrinterStatusAction(), new WhoAmIGroupsAction()
     ];
 }
 

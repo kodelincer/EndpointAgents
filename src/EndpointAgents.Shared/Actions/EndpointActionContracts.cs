@@ -6,7 +6,8 @@ namespace EndpointAgents.Shared.Actions;
 /// <summary>
 /// How much an action is allowed to change. The tier decides the rules the control plane
 /// applies: Look runs freely, SafeFix runs without asking but is rate-limited and verified,
-/// Disruptive needs the user's go-ahead in the chat, OperatorOnly is never offered to the agent.
+/// Disruptive needs the user's go-ahead in the chat, ItApproval waits until a helpdesk member
+/// approves it on the dashboard, OperatorOnly is never offered to the agent.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<ActionTier>))]
 public enum ActionTier
@@ -14,6 +15,7 @@ public enum ActionTier
     Look,
     SafeFix,
     Disruptive,
+    ItApproval,
     OperatorOnly
 }
 
@@ -46,8 +48,40 @@ public static class EnvironmentTargetKinds
     public const string WebApp = "webapp";
     public const string Printer = "printer";
     public const string Share = "share";
+    /// <summary>Installed software that may be removed. Address: the Apps &amp; features name, * allowed.</summary>
+    public const string App = "app";
+    /// <summary>A device model in the driver catalog. Address: its hardware IDs, separated by semicolons.</summary>
+    public const string Device = "device";
+    /// <summary>A company VPN. Address: the VPN server host name.</summary>
+    public const string Vpn = "vpn";
 
-    public static IReadOnlyList<string> All { get; } = [Host, WebApp, Printer, Share];
+    public static IReadOnlyList<string> All { get; } = [Host, WebApp, Printer, Share, App, Device, Vpn];
+}
+
+/// <summary>Extra fields some environment-map kinds carry in <see cref="ResolvedTarget.Details"/>.</summary>
+public static class EnvironmentTargetDetails
+{
+    /// <summary>app: exact or wildcard publisher the installed entry must match.</summary>
+    public const string Publisher = "publisher";
+    /// <summary>app: uninstall package; device: driver package.</summary>
+    public const string PackageId = "packageId";
+    /// <summary>vpn: builtin (Windows VPN profile) or client (a vendor client's service).</summary>
+    public const string VpnType = "type";
+    /// <summary>vpn builtin: the Windows VPN connection name.</summary>
+    public const string Connection = "connection";
+    /// <summary>vpn client: the Windows service name of the client.</summary>
+    public const string Service = "service";
+
+    public const string VpnBuiltin = "builtin";
+    public const string VpnClient = "client";
+
+    public static IReadOnlyList<string> For(string kind) => kind switch
+    {
+        EnvironmentTargetKinds.App => [Publisher, PackageId],
+        EnvironmentTargetKinds.Device => [PackageId],
+        EnvironmentTargetKinds.Vpn => [VpnType, Connection, Service],
+        _ => []
+    };
 }
 
 public sealed record ActionChoice(string Value, string Label);
@@ -92,6 +126,7 @@ public sealed record EndpointActionDefinition(
         ActionTier.Look => 30,
         ActionTier.SafeFix => 3,
         ActionTier.Disruptive => 2,
+        ActionTier.ItApproval => 3,
         _ => 5
     };
 }
@@ -104,7 +139,13 @@ public sealed record ResolvedTarget(
     string Address,
     IReadOnlyList<int>? Ports = null,
     IReadOnlyList<string>? ExpectedAddresses = null,
-    string? DriveLetter = null);
+    string? DriveLetter = null,
+    IReadOnlyDictionary<string, string>? Details = null)
+{
+    public string? Detail(string key) =>
+        Details is not null && Details.TryGetValue(key, out var value)
+        && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
+}
 
 /// <summary>Params of the <see cref="EndpointActionProtocol.Method"/> RPC.</summary>
 public sealed record EndpointActionRequest(
@@ -125,7 +166,9 @@ public enum ActionStatus
     NotNeeded,
     /// <summary>Something prevents the action right now (e.g. the app must be closed first).</summary>
     Blocked,
-    Failed
+    Failed,
+    /// <summary>Set by the control plane only: the run waits for a helpdesk member's approval.</summary>
+    AwaitingApproval
 }
 
 /// <summary>What every endpoint action returns.</summary>

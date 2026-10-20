@@ -30,6 +30,8 @@ public sealed class BatPackageManifest
     public string? Problem { get; set; }
     /// <summary>Try order within a problem (lower first), 1-999; defaults to 100.</summary>
     public int? Order { get; set; }
+    /// <summary>Wait for a helpdesk member's approval before each run (always true for <c>uninstall-</c> problems).</summary>
+    public bool RequiresApproval { get; set; }
     public List<BatchSupportFileManifestEntry> SupportFiles { get; set; } = [];
     public BatchPlaybook? Playbook { get; set; }
     public string PlaybookSha256 { get; set; } = string.Empty;

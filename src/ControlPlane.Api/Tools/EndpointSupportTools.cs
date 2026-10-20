@@ -185,6 +185,7 @@ public sealed class EndpointSupportTools
                 problem = item.Problem,
                 order = item.Order,
                 alreadyTried = tried.Contains(item.Descriptor.PackageId),
+                requiresApproval = item.RequiresApproval,
                 displayName = item.Descriptor.DisplayName,
                 description = item.Descriptor.Description,
                 symptoms = item.Descriptor.Symptoms,
@@ -274,20 +275,66 @@ public sealed class EndpointSupportTools
     }
 
     [McpServerTool(Name = "run_repair_package"), Description(
-        "Run one administrator-approved repair package on the user's PC by the exact packageId from find_repair_packages. It runs unattended with the administrator's fixed arguments and answers; nothing else can be passed.")]
-    public static Task<string> RunRepairPackage(
+        "Run one administrator-approved repair package on the user's PC by the exact packageId from find_repair_packages. It runs unattended with the administrator's fixed arguments and answers; nothing else can be passed. A package with requiresApproval=true is sent to the helpdesk for approval instead (status AwaitingApproval) and runs once a helpdesk member approves it.")]
+    public static async Task<string> RunRepairPackage(
         ChatStore store,
         AgentRegistry registry,
         CommandCatalog catalog,
         FileArtifactRepository files,
+        Actions.ActionStore actions,
         [Description("The random capability supplied in this run's instructions.")]
         string runCapability,
         [Description("The exact packageId returned by find_repair_packages.")]
         string packageId,
-        CancellationToken cancellationToken) =>
-        RunAutomaticRepairAsync(store, registry, catalog, files, runCapability,
-            PackageCommands.Run, packageId, "repair package", "run_repair_package",
+        [Description("For packages that need approval: one short English line for the helpdesk on why (what the user asked for).")]
+        string? reason = null,
+        CancellationToken cancellationToken = default)
+    {
+        var package = await files.GetRepairPackageAsync(packageId?.Trim() ?? string.Empty,
+            cancellationToken);
+        if (package?.RequiresApproval == true)
+        {
+            var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+            if (scope is null)
+                return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+            await actions.CreateApprovalAsync(Actions.ApprovalKinds.Package,
+                package.Descriptor.PackageId, package.Descriptor.DisplayName, scope.AgentId,
+                scope.UserSid, scope.ConversationId, "{}", reason ?? string.Empty,
+                cancellationToken);
+            await store.WriteToolAuditAsync(scope, "run_repair_package", "awaiting-approval",
+                null, cancellationToken);
+            return ToolResultSanitizer.Sanitize(new
+            {
+                ok = true,
+                status = "AwaitingApproval",
+                summary = Actions.ActionRunner.AwaitingApprovalSummary
+            });
+        }
+        return await RunAutomaticRepairAsync(store, registry, catalog, files, runCapability,
+            PackageCommands.Run, packageId ?? string.Empty, "repair package", "run_repair_package",
             ChatProgressActivity.EndpointCheck, cancellationToken);
+    }
+
+    /// <summary>Runs a package a helpdesk member approved, for the PC and user that asked.</summary>
+    public static async Task<(bool Ok, string Summary)> RunApprovedPackageAsync(
+        AgentRegistry registry, CommandCatalog catalog, FileArtifactRepository files,
+        string agentId, string? userSid, string packageId, CancellationToken cancellationToken)
+    {
+        if (!catalog.Contains(PackageCommands.Run))
+            return (false, "Packages are not allow-listed on this control plane.");
+        if (!TryValidateActionParameters(PackageCommands.Run, new EndpointActionParameters(packageId),
+                out var validated, out var error))
+            return (false, error);
+        var pinned = await PinCataloguedActionAsync(files, PackageCommands.Run, validated,
+            cancellationToken);
+        if (pinned is null) return (false, "The package is no longer in the approved catalog.");
+        var requestId = Guid.NewGuid().ToString("N");
+        var response = await registry.SendCommandAsync(agentId, RpcRequest.Create(requestId,
+                PackageCommands.Run, AddUserScope(pinned, userSid ?? string.Empty, requestId)),
+            cancellationToken);
+        return response.Error is null ? (true, "The package finished on the PC.")
+            : (false, response.Error.Message);
+    }
 
     private static async Task<string> RunAutomaticRepairAsync(
         ChatStore store,

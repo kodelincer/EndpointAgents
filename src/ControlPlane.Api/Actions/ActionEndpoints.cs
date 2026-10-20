@@ -53,6 +53,8 @@ public static partial class ActionEndpoints
                         DefaultMaxPerHour = definition.EffectiveMaxPerHour,
                         MaxPerHour = setting?.MaxPerHour ?? definition.EffectiveMaxPerHour,
                         Enabled = setting?.Enabled ?? true,
+                        RequiresApproval = ActionRunner.NeedsApproval(definition, setting),
+                        ApprovalConfigurable = definition.Tier is ActionTier.SafeFix or ActionTier.Disruptive,
                         VerifiedBy = definition.Verify?.ActionId,
                         definition.UndoActionId,
                         definition.ExampleResult,
@@ -93,6 +95,32 @@ public static partial class ActionEndpoints
             await store.RecordMissingActionRequestAsync(request.Summary, request.Details ?? "",
                 Operator(context), cancellationToken);
             return Results.NoContent();
+        });
+
+        // ---------------- Approvals (steps the agent sent to the helpdesk) ----------------
+        app.MapGet("/api/approvals", async (bool? pendingOnly, int? limit, ActionStore store,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await store.GetApprovalsAsync(pendingOnly ?? false, limit ?? 100,
+                cancellationToken)));
+        app.MapPost("/api/approvals/{approvalId}/approve", async (string approvalId,
+            ApprovalDecisionInput? input, HttpContext context, ApprovalService approvals,
+            CancellationToken cancellationToken) =>
+        {
+            var outcome = await approvals.ApproveAsync(approvalId, Operator(context), input?.Note,
+                cancellationToken);
+            return outcome.Accepted ? Results.Ok(outcome.Approval)
+                : outcome.Approval is null ? Results.NotFound(new { message = outcome.Error })
+                : Results.Conflict(new { message = outcome.Error });
+        });
+        app.MapPost("/api/approvals/{approvalId}/decline", async (string approvalId,
+            ApprovalDecisionInput? input, HttpContext context, ApprovalService approvals,
+            CancellationToken cancellationToken) =>
+        {
+            var outcome = await approvals.DeclineAsync(approvalId, Operator(context), input?.Note,
+                cancellationToken);
+            return outcome.Accepted ? Results.Ok(outcome.Approval)
+                : outcome.Approval is null ? Results.NotFound(new { message = outcome.Error })
+                : Results.Conflict(new { message = outcome.Error });
         });
 
         // ---------------- Run log and undo ----------------
@@ -252,7 +280,9 @@ public static partial class ActionEndpoints
         if (!EndpointActionValidator.IsValidTargetId(input.Id))
             return "Id: lowercase English letters, digits and dashes, up to 48 characters.";
         if (!EnvironmentTargetKinds.All.Contains(input.Kind))
-            return "Kind must be host, webapp, printer or share.";
+            return $"Kind must be one of: {string.Join(", ", EnvironmentTargetKinds.All)}.";
+        if (input.Details?.Keys.FirstOrDefault(key => !EnvironmentTargetDetails.For(input.Kind).Contains(key)) is { } extra)
+            return $"'{extra}' does not apply to a {input.Kind} entry.";
         if (string.IsNullOrWhiteSpace(input.Label) || input.Label.Length > 80)
             return "A label of up to 80 characters is required.";
         if (input.Ports is { } ports && (ports.Count > 8 || ports.Any(port => port is < 1 or > 65535)))
@@ -265,11 +295,15 @@ public static partial class ActionEndpoints
             return "A drive letter (D: to Z:) only fits a share.";
         if (input.Location?.Length > 120 || input.Notes?.Length > 1000)
             return "Location or notes are too long.";
-        var resolved = new ResolvedTarget(input.Id, input.Kind, input.Label, input.Address?.Trim() ?? "");
+        var resolved = new ResolvedTarget(input.Id, input.Kind, input.Label, input.Address?.Trim() ?? "",
+            Details: input.Details);
         return EndpointActionValidator.IsValidTarget(resolved) ? null : input.Kind switch
         {
             EnvironmentTargetKinds.WebApp => "Address must be an http(s) URL, e.g. https://hr.corp.local.",
             EnvironmentTargetKinds.Host => "Address must be a host name or IPv4 address.",
+            EnvironmentTargetKinds.App => "Name must be the Apps & features name (or a pattern with *, e.g. \"Foxit PDF Reader*\"); publisher the same; package id lowercase.",
+            EnvironmentTargetKinds.Device => "Hardware IDs must look like USB\\VID_04F9&PID_0042, separated by semicolons (up to 20); package id lowercase.",
+            EnvironmentTargetKinds.Vpn => "Address must be the VPN server host name; type builtin needs the Windows connection name, type client the client's service name.",
             _ => @"Address must be a UNC path, e.g. \\server\share."
         };
     }
@@ -296,6 +330,8 @@ public static partial class ActionEndpoints
                 "network.internalSuffixes must be comma-separated DNS suffixes.",
             ActionSettings.StandardTimeZone when value.Length > 100 || value.Any(char.IsControl) =>
                 "time.standardZone must be a Windows time zone id.",
+            ActionSettings.DnsFromDhcp when value is not ("true" or "false") =>
+                "network.dnsFromDhcp must be true or false.",
             _ => null
         };
     }

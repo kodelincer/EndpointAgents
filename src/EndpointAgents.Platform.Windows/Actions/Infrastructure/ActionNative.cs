@@ -16,6 +16,17 @@ internal static partial class ActionNative
     [LibraryImport("cfgmgr32.dll", EntryPoint = "CM_Reenumerate_DevNode")]
     internal static partial int CM_Reenumerate_DevNode(uint devInst, uint flags);
 
+    // Turn one device on or off (Device Manager's Enable/Disable).
+    [LibraryImport("cfgmgr32.dll", EntryPoint = "CM_Enable_DevNode")]
+    internal static partial int CM_Enable_DevNode(uint devInst, uint flags);
+
+    [LibraryImport("cfgmgr32.dll", EntryPoint = "CM_Disable_DevNode")]
+    internal static partial int CM_Disable_DevNode(uint devInst, uint flags);
+
+    internal const uint CM_LOCATE_DEVNODE_NORMAL = 0;
+    /// <summary>Fail instead of asking the user (or needing a restart) when a device cannot stop now.</summary>
+    internal const uint CM_DISABLE_UI_NOT_OK = 0x4;
+
     // Saved Windows credentials (only metadata is read; secrets are never touched).
     [LibraryImport("advapi32.dll", EntryPoint = "CredEnumerateW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
     [return: MarshalAs(UnmanagedType.Bool)]

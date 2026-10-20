@@ -18,7 +18,9 @@ public sealed partial class TargetMasker
     public TargetMasker(IEnumerable<EnvironmentTarget> targets,
         IReadOnlyDictionary<string, string> settings)
     {
-        foreach (var target in targets)
+        // Software and device entries hold name patterns and hardware IDs, not internal names.
+        foreach (var target in targets.Where(target =>
+                     target.Kind is not (EnvironmentTargetKinds.App or EnvironmentTargetKinds.Device)))
         {
             var label = $"[{target.Label}]";
             _known.Add((target.Address, label));

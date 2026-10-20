@@ -92,6 +92,7 @@ builder.Services.AddMcpServer()
 // General endpoint actions: catalogue runner, environment map, incidents, helpdesk skills.
 builder.Services.AddSingleton<ActionStore>();
 builder.Services.AddSingleton<ActionRunner>();
+builder.Services.AddSingleton<ApprovalService>();
 builder.Services.AddSingleton<ServerProbe>();
 builder.Services.AddHttpClient(ServerProbe.HttpClientName)
     .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler

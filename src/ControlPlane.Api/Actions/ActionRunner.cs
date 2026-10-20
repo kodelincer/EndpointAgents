@@ -39,7 +39,7 @@ public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
 
     public async Task<ActionRunOutcome> RunAsync(ActionRunContext context, string actionId,
         IReadOnlyDictionary<string, string?>? arguments, bool userConfirmed,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, string? reason = null)
     {
         var definition = EndpointActionCatalog.Find(actionId);
         if (definition is null)
@@ -79,6 +79,19 @@ public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
                 cancellationToken) >= limit)
             return ActionRunOutcome.Rejected(actionId,
                 $"This action already ran {limit} times on this PC in the last hour. Try another step or escalate.");
+
+        if (NeedsApproval(definition, setting) && context.Source == ActionRunSources.Agent)
+        {
+            var approval = await store.CreateApprovalAsync(ApprovalKinds.Action, actionId,
+                definition.Name + Describe(normalized, resolved), context.AgentId,
+                context.UserSid, context.ConversationId, JsonSerializer.Serialize(normalized),
+                reason ?? string.Empty, cancellationToken);
+            await TraceAsync(context, actionId, ApprovalStatus.Pending,
+                "Waiting for a helpdesk member's approval.", cancellationToken);
+            return new ActionRunOutcome(true, null, null, actionId, ActionStatus.AwaitingApproval,
+                AwaitingApprovalSummary, new JsonObject { ["approvalId"] = approval.ApprovalId },
+                null, false);
+        }
 
         var environment = await store.GetSettingsAsync(cancellationToken);
         var masker = new TargetMasker(targets, environment);
@@ -135,6 +148,19 @@ public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
             masker.Mask(result.Summary), masker.Mask(data), masker.Mask(verification),
             undoJson is not null);
     }
+
+    public const string AwaitingApprovalSummary =
+        "Sent to the helpdesk for approval. It runs as soon as a helpdesk member approves it, and the user sees the result in this chat.";
+
+    /// <summary>ItApproval actions, and any fix an administrator switched to "needs approval".</summary>
+    public static bool NeedsApproval(EndpointActionDefinition definition, ActionSetting? setting) =>
+        definition.Tier == ActionTier.ItApproval
+        || setting is { RequiresApproval: true } && definition.Tier is ActionTier.SafeFix or ActionTier.Disruptive;
+
+    private static string Describe(IReadOnlyDictionary<string, string> arguments,
+        IReadOnlyDictionary<string, ResolvedTarget> targets) =>
+        targets.Count > 0 ? ": " + string.Join(", ", targets.Values.Select(target => target.Label))
+        : arguments.Count > 0 ? ": " + string.Join(", ", arguments.Values) : string.Empty;
 
     /// <summary>Helpdesk undo of a fix that saved its previous values.</summary>
     public async Task<ActionRunOutcome> UndoAsync(string runId, string? requestedBy,
@@ -263,6 +289,44 @@ public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
                         && target.DriveLetter is not null
                         && !mapped.Any(item => item.Target == target.Id && item.Connected))
                     .Select(target => (JsonNode)JsonValue.Create(target.Id)!).ToArray());
+                break;
+            case "printer.status":
+                root["matchesTarget"] = TargetMasker.Match(targets,
+                    root["name"]?.GetValue<string>())?.Id;
+                break;
+            case "software.inventory" when root["apps"] is JsonArray apps:
+                var removable = targets.Where(target => target.Kind == EnvironmentTargetKinds.App).ToArray();
+                foreach (var app in apps.OfType<JsonObject>())
+                {
+                    var name = app["name"]?.GetValue<string>();
+                    var publisher = app["publisher"]?.GetValue<string>();
+                    var match = removable.FirstOrDefault(target =>
+                        EndpointActionValidator.MatchesAppPattern(target.Address, name)
+                        && (target.Detail(EnvironmentTargetDetails.Publisher) is not { } wanted
+                            || EndpointActionValidator.MatchesAppPattern(wanted, publisher)));
+                    app["removable"] = match?.Id;
+                    app["uninstallPackageId"] = match?.Detail(EnvironmentTargetDetails.PackageId);
+                }
+                break;
+            case "drivers.inventory" when root["devices"] is JsonArray devices:
+                var catalog = targets.Where(target => target.Kind == EnvironmentTargetKinds.Device)
+                    .Select(target => (Target: target,
+                        Ids: EndpointActionValidator.SplitHardwareIds(target.Address)))
+                    .ToArray();
+                foreach (var device in devices.OfType<JsonObject>())
+                {
+                    var ids = (device["hardwareIds"] as JsonArray ?? [])
+                        .Select(item => item?.GetValue<string>()).OfType<string>().ToArray();
+                    var match = catalog.FirstOrDefault(entry => entry.Ids.Any(id =>
+                        ids.Any(reported => reported.Equals(id, StringComparison.OrdinalIgnoreCase)
+                            || reported.StartsWith(id + "&", StringComparison.OrdinalIgnoreCase))));
+                    device["catalogMatch"] = match.Target is null ? null : new JsonObject
+                    {
+                        ["target"] = match.Target.Id,
+                        ["model"] = match.Target.Label,
+                        ["packageId"] = match.Target.Detail(EnvironmentTargetDetails.PackageId)
+                    };
+                }
                 break;
             case "credman.list" when root["credentials"] is JsonArray credentials:
                 foreach (var credential in credentials.OfType<JsonObject>())

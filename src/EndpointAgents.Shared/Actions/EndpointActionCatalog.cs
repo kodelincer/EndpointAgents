@@ -16,10 +16,12 @@ public static class ActionSettings
     public const string RootCaThumbprints = "trust.rootThumbprints";
     /// <summary>Comma-separated internal DNS suffixes; names under them are masked for the cloud model.</summary>
     public const string InternalDnsSuffixes = "network.internalSuffixes";
+    /// <summary>"true" when DHCP hands out the right DNS servers, so hand-set DNS servers are a fault.</summary>
+    public const string DnsFromDhcp = "network.dnsFromDhcp";
 
     public static IReadOnlyList<string> All { get; } =
         [ProxyMode, ProxyPacUrl, ProxyServer, ProxyBypass, StandardTimeZone,
-         RootCaThumbprints, InternalDnsSuffixes];
+         RootCaThumbprints, InternalDnsSuffixes, DnsFromDhcp];
 }
 
 public static class ActionAreas
@@ -32,9 +34,11 @@ public static class ActionAreas
     public const string Office = "office";
     public const string Health = "health";
     public const string Desktop = "desktop";
+    public const string Software = "software";
+    public const string Devices = "devices";
 
     public static IReadOnlyList<string> All { get; } =
-        [Network, Domain, Printers, Drives, Browsers, Office, Health, Desktop];
+        [Network, Domain, Printers, Drives, Browsers, Office, Health, Desktop, Software, Devices];
 }
 
 /// <summary>
@@ -83,7 +87,8 @@ public static class EndpointActionCatalog
         new("Audiosrv", "Windows Audio"),
         new("AudioEndpointBuilder", "Windows Audio Endpoint Builder"),
         new("stisvc", "Windows Image Acquisition (scanners)"),
-        new("bthserv", "Bluetooth Support")
+        new("bthserv", "Bluetooth Support"),
+        new("RasMan", "Remote Access Connection Manager (VPN)")
     ];
 
     public static IReadOnlyList<ActionChoice> AppChoices { get; } =
@@ -474,6 +479,130 @@ public static class EndpointActionCatalog
             "Cancels a restart scheduled by reboot.schedule.",
             "Done or NotNeeded.", [], MaxPerHour: 5),
 
+        // ---------- Network adapters, system proxy and VPN ----------
+        new("network.adapters", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Network adapters", "کارت‌های شبکه",
+            "Lists the physical network adapters, including disabled and unplugged ones: wired or Wi-Fi, enabled, cable or radio connected, link speed, and driver version and date.",
+            "Adapters with Name, Description, Kind (Wired, WiFi, Other), Enabled, Connected, Status, SpeedMbps, DriverVersion, DriverDate; Summary with Disabled and Unplugged counts.",
+            [], TimeoutSeconds: 30),
+        new("network.adapter_enable", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Turn a network adapter on", "روشن کردن کارت شبکه",
+            "Enables one physical network adapter that network.adapters reported as disabled.",
+            "Done or NotNeeded; the verification shows the network status before and after.",
+            [new("adapter", ActionParameterKind.LocalItem, "Adapter Name from network.adapters.")],
+            TimeoutSeconds: 45, Verify: new("network.status")),
+        new("network.adapter_restart", ActionAreas.Network, ActionTier.Disruptive, ActionRunAs.System,
+            "Restart a network adapter", "راه‌اندازی دوباره کارت شبکه",
+            "Turns one physical network adapter off and on again. The connection drops for a few seconds.",
+            "Done; the verification shows the network status before and after.",
+            [new("adapter", ActionParameterKind.LocalItem, "Adapter Name from network.adapters.")],
+            TimeoutSeconds: 60, Verify: new("network.status")),
+        new("dns.reset_to_dhcp", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Use the DNS servers from DHCP", "استفاده از DNS خودکار",
+            "On adapters that get their address from DHCP but have DNS servers typed in by hand, removes the hand-typed servers so DHCP's are used. Runs only when the environment standards say DHCP gives the right DNS servers. The old servers are saved so the helpdesk can undo it.",
+            "Done with the adapters changed, NotNeeded, or Blocked when the standard is not set.",
+            [], TimeoutSeconds: 45, Verify: new("network.status"), UndoActionId: "dns.restore",
+            UsesSettings: [ActionSettings.DnsFromDhcp]),
+        new("proxy.system_get", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Read the system (WinHTTP) proxy", "پروکسی سیستمی",
+            "Reads the machine-wide WinHTTP proxy that Windows Update, Teams, Office sign-in and services use (separate from the browser proxy), and compares it with the organisation standard.",
+            "Direct, Server, Bypass, MatchesStandard.",
+            [], UsesSettings: [ActionSettings.ProxyMode, ActionSettings.ProxyServer,
+                ActionSettings.ProxyBypass]),
+        new("proxy.system_reset_to_standard", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Reset the system (WinHTTP) proxy", "اصلاح پروکسی سیستمی",
+            "Sets the WinHTTP proxy to the organisation standard: direct when the standard is no proxy or a PAC file, otherwise the standard server and bypass list. The old value is saved so the helpdesk can undo it.",
+            "Done or NotNeeded.",
+            [], Verify: new("proxy.system_get"), UndoActionId: "proxy.system_restore",
+            UsesSettings: [ActionSettings.ProxyMode, ActionSettings.ProxyServer,
+                ActionSettings.ProxyBypass]),
+        new("vpn.status", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "VPN status", "وضعیت VPN",
+            "For one company VPN from the environment map: is the Windows VPN connection defined or the client's service running, is it connected, can the VPN server be reached on its port, and the DNS servers and suffix on the VPN adapter while connected.",
+            "Type, ProfilePresent or ServiceState, Connected, ServerReachable, VpnAdapters (name, DnsSuffix, DnsServerCount), RasManState, RecentErrors.",
+            [Target("VPN target id.", EnvironmentTargetKinds.Vpn)], TimeoutSeconds: 30),
+        new("vpn.client_restart", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Restart the VPN client service", "راه‌اندازی دوباره سرویس VPN",
+            "Restarts the service of a company VPN client (FortiClient, Cisco Secure Client, GlobalProtect, OpenVPN, WireGuard and similar) as named in the environment map. The user connects again afterwards.",
+            "Done with the new service state.",
+            [Target("VPN target id of type client.", EnvironmentTargetKinds.Vpn)], TimeoutSeconds: 60,
+            Verify: new("vpn.status", PassSameArguments: true)),
+
+        // ---------- Software ----------
+        new("software.inventory", ActionAreas.Software, ActionTier.Look, ActionRunAs.System,
+            "Installed software", "نرم‌افزارهای نصب‌شده",
+            "Lists the installed applications (for all users and for the signed-in user) as Apps & features shows them. The control plane marks the ones the helpdesk allows to be removed.",
+            "Apps with Name, Version, Publisher, InstalledOn, Scope (Machine or User), Msi, Removable (environment-map app id or null), UninstallPackageId; Count.",
+            [new("name", ActionParameterKind.SearchText, "Optional part of the name to filter by.", Required: false)],
+            TimeoutSeconds: 45),
+        new("software.uninstall", ActionAreas.Software, ActionTier.ItApproval, ActionRunAs.System,
+            "Remove software", "حذف نرم‌افزار",
+            "Removes an application the helpdesk listed as removable, silently, when Windows Installer installed it. Waits until a helpdesk member approves it. Applications installed another way need the uninstall package named in the environment map.",
+            "Done with the removed entries and RestartRequired, NotNeeded (not installed), or Blocked (needs an uninstall package).",
+            [Target("Removable application id (environment map, kind app).", EnvironmentTargetKinds.App)],
+            TimeoutSeconds: 600, MaxPerHour: 3, Verify: new("software.inventory")),
+
+        // ---------- Devices and drivers ----------
+        new("drivers.inventory", ActionAreas.Devices, ActionTier.Look, ActionRunAs.System,
+            "Devices and drivers", "دستگاه‌ها و درایورها",
+            "Lists devices with a problem (or all printers, scanners, cameras, audio, Bluetooth, network, smart-card and USB devices) with their hardware IDs and current driver. The control plane marks devices whose model is in the driver catalog.",
+            "Devices with Name, Class, InstanceId, HardwareIds, ProblemCode, Problem, DriverProvider, DriverVersion, DriverDate, CatalogMatch (target id, model label, packageId) or null.",
+            [new("scope", ActionParameterKind.Choice, "Which devices.", Required: false,
+                Choices: [new("problems", "Only devices with a problem"), new("all", "Common peripheral classes")])],
+            TimeoutSeconds: 45),
+        new("device.enable", ActionAreas.Devices, ActionTier.SafeFix, ActionRunAs.System,
+            "Turn a device on", "فعال کردن دستگاه",
+            "Enables one device that drivers.inventory reported as disabled. Disks, display adapters, keyboards, mice, USB controllers and system devices are never touched.",
+            "Done or NotNeeded.",
+            [new("device", ActionParameterKind.LocalItem, "InstanceId from drivers.inventory.")],
+            TimeoutSeconds: 30, Verify: new("drivers.inventory")),
+        new("device.restart", ActionAreas.Devices, ActionTier.Disruptive, ActionRunAs.System,
+            "Restart a device", "راه‌اندازی دوباره دستگاه",
+            "Turns one device off and on again (a webcam, card reader, Bluetooth radio or dock device that stopped answering). Disks, display adapters, keyboards, mice, USB controllers and system devices are never touched.",
+            "Done, or Blocked when Windows needs a restart to do it.",
+            [new("device", ActionParameterKind.LocalItem, "InstanceId from drivers.inventory.")],
+            TimeoutSeconds: 60, Verify: new("drivers.inventory")),
+
+        // ---------- Sound, printers, disk, restarts, groups ----------
+        new("audio.status", ActionAreas.Desktop, ActionTier.Look, ActionRunAs.User,
+            "Sound devices", "دستگاه‌های صدا",
+            "The user's speakers/headsets and microphones: which is the default, whether it is muted, and its volume.",
+            "Playback and Recording lists with Id, Name, IsDefault, Muted, VolumePercent; Summary.",
+            [], TimeoutSeconds: 20),
+        new("audio.unmute", ActionAreas.Desktop, ActionTier.SafeFix, ActionRunAs.User,
+            "Unmute sound", "قطع حالت بی‌صدا",
+            "Unmutes the default speaker and microphone and raises a volume under 10% to 50%.",
+            "Done with what changed, or NotNeeded.",
+            [new("device", ActionParameterKind.Choice, "Which side.", Required: false,
+                Choices: [new("both", "Speaker and microphone"), new("playback", "Speaker"), new("recording", "Microphone")])],
+            Verify: new("audio.status")),
+        new("audio.set_default", ActionAreas.Desktop, ActionTier.SafeFix, ActionRunAs.User,
+            "Choose the default sound device", "انتخاب دستگاه صدای پیش‌فرض",
+            "Makes one of the user's sound devices (for example the headset) the default for calls and media. The previous default is saved so the helpdesk can undo it.",
+            "Done or NotNeeded.",
+            [new("device", ActionParameterKind.LocalItem, "Device Id from audio.status.")],
+            Verify: new("audio.status"), UndoActionId: "audio.restore_default"),
+        new("printer.status", ActionAreas.Printers, ActionTier.Look, ActionRunAs.User,
+            "Printer details", "جزئیات چاپگر",
+            "One printer's driver, port, offline flag and the error the printer reports (paper jam, out of paper, toner low, door open, offline), and its stuck jobs.",
+            "Name, DriverName, PortKind, Offline, ErrorState, Jobs, ErrorJobs, IsNetwork, MatchesTarget.",
+            [new("printer", ActionParameterKind.LocalItem, "Printer Name from printer.list.")]),
+        new("disk.usage", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Disk space", "فضای دیسک",
+            "Free space on each fixed drive and the size of the places that usually fill it: temporary files, the recycle bin, the Windows Update download cache, and the user's Downloads folder (size only, never file names).",
+            "Drives with Letter, SizeGb, FreeGb, FreePercent; Places with Name and SizeMb; LowSpace.",
+            [], TimeoutSeconds: 60),
+        new("restart.pending", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Restart pending?", "نیاز به راه‌اندازی دوباره",
+            "Whether Windows is waiting for a restart (updates, installs, file renames) and how long the PC has been running.",
+            "Pending, Reasons, UptimeHours, LastBootUtc.",
+            []),
+        new("whoami.groups", ActionAreas.Domain, ActionTier.Look, ActionRunAs.User,
+            "User's groups", "گروه‌های کاربر",
+            "The groups in the user's current Windows sign-in token, so access problems after a group change can be explained (a new group needs a fresh sign-in).",
+            "User, Groups (names), GroupCount.",
+            []),
+
         // ---------- Helpdesk-only undo actions (never offered to the agent) ----------
         new("proxy.restore", ActionAreas.Network, ActionTier.OperatorOnly, ActionRunAs.User,
             "Undo proxy reset", "بازگرداندن پروکسی قبلی",
@@ -492,6 +621,22 @@ public static class EndpointActionCatalog
             "Undo time zone change", "بازگرداندن منطقه زمانی قبلی",
             "Sets the previous time zone again.",
             "Done.",
-            [new("zone", ActionParameterKind.LocalItem, "Previous Windows time zone id.")])
+            [new("zone", ActionParameterKind.LocalItem, "Previous Windows time zone id.")]),
+        new("dns.restore", ActionAreas.Network, ActionTier.OperatorOnly, ActionRunAs.System,
+            "Undo DNS reset", "بازگرداندن DNS قبلی",
+            "Puts back the DNS servers dns.reset_to_dhcp removed.",
+            "Done.",
+            [new("servers", ActionParameterKind.LocalItem, "Previous servers per adapter: {setting-id}=ip,ip;...")]),
+        new("audio.restore_default", ActionAreas.Desktop, ActionTier.OperatorOnly, ActionRunAs.User,
+            "Undo default sound device change", "بازگرداندن دستگاه صدای قبلی",
+            "Makes the previous default sound device the default again.",
+            "Done.",
+            [new("device", ActionParameterKind.LocalItem, "Previous default device id.")]),
+        new("proxy.system_restore", ActionAreas.Network, ActionTier.OperatorOnly, ActionRunAs.System,
+            "Undo system proxy reset", "بازگرداندن پروکسی سیستمی قبلی",
+            "Restores the WinHTTP proxy saved by proxy.system_reset_to_standard.",
+            "Done.",
+            [new("server", ActionParameterKind.LocalItem, "Previous server, empty for direct.", Required: false),
+             new("bypass", ActionParameterKind.LocalItem, "Previous bypass list.", Required: false)])
     ];
 }

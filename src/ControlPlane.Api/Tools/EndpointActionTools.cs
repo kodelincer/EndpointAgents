@@ -21,20 +21,22 @@ public sealed class EndpointActionTools
 
     [McpServerTool(Name = "list_endpoint_actions"), Description(
         "List the catalogued actions the agent can run on the user's PC with run_endpoint_action: id, area, tier (Look = read-only; " +
-        "SafeFix = small reversible fix that runs without asking; Disruptive = interrupts the user and needs their go-ahead), " +
+        "SafeFix = small reversible fix that runs without asking; Disruptive = interrupts the user and needs their go-ahead; " +
+        "ItApproval = waits until a helpdesk member approves it; needsApproval=true marks any action that will wait for approval), " +
         "what it returns and its parameters. Call it once per conversation, filtered by area when you know it.")]
     public static async Task<string> ListEndpointActions(
         ChatStore chat,
         ActionStore store,
         [Description("The random capability supplied in this run's instructions.")]
         string runCapability,
-        [Description("Optional area: network, domain, printers, drives, browsers, office, health, desktop.")]
+        [Description("Optional area: network, domain, printers, drives, browsers, office, health, desktop, software, devices.")]
         string? area = null,
         CancellationToken cancellationToken = default)
     {
         if (await chat.ResolveCapabilityAsync(runCapability, cancellationToken) is null)
             return InvalidCapability;
-        var switchedOff = (await store.GetActionSettingsAsync(cancellationToken)).Values
+        var settings = await store.GetActionSettingsAsync(cancellationToken);
+        var switchedOff = settings.Values
             .Where(item => !item.Enabled).Select(item => item.ActionId)
             .ToHashSet(StringComparer.Ordinal);
         var actions = EndpointActionCatalog.All
@@ -46,6 +48,7 @@ public sealed class EndpointActionTools
                 id = item.Id,
                 area = item.Area,
                 tier = item.Tier.ToString(),
+                needsApproval = ActionRunner.NeedsApproval(item, settings.GetValueOrDefault(item.Id)),
                 name = item.Name,
                 description = item.Description,
                 returns = item.Returns,
@@ -98,7 +101,8 @@ public sealed class EndpointActionTools
     [McpServerTool(Name = "run_endpoint_action"), Description(
         "Run one catalogued action from list_endpoint_actions on the user's PC. Look actions only read. SafeFix actions run " +
         "without asking, are rate-limited and verified with a before/after check. Disruptive actions need userConfirmed=true, " +
-        "which you may set only after the user agreed in this chat (offer now or later). Arguments are strings keyed by parameter name.")]
+        "which you may set only after the user agreed in this chat (offer now or later). Actions that need approval return status " +
+        "AwaitingApproval: tell the user the helpdesk was asked and the result will appear in this chat. Arguments are strings keyed by parameter name.")]
     public static async Task<string> RunEndpointAction(
         ChatStore chat,
         ActionRunner runner,
@@ -110,25 +114,27 @@ public sealed class EndpointActionTools
         Dictionary<string, string?>? arguments = null,
         [Description("true only after the user agreed to a Disruptive action in this chat.")]
         bool userConfirmed = false,
+        [Description("For actions that need approval: one short English line for the helpdesk on why (what the user asked for and what you found).")]
+        string? reason = null,
         CancellationToken cancellationToken = default)
     {
         var scope = await chat.ResolveCapabilityAsync(runCapability, cancellationToken);
         if (scope is null) return InvalidCapability;
         var definition = EndpointActionCatalog.Find(actionId);
-        var isFix = definition is { Tier: ActionTier.SafeFix or ActionTier.Disruptive };
+        var isFix = definition is { Tier: ActionTier.SafeFix or ActionTier.Disruptive or ActionTier.ItApproval };
 
         await chat.WriteProgressAsync(scope.RunId,
             isFix ? ChatProgressStage.ActionStarted : ChatProgressStage.EndpointCheckStarted,
             ChatProgressActivity.EndpointCheck, ChatProgressOutcome.None, cancellationToken);
         var outcome = await runner.RunAsync(new ActionRunContext(scope.AgentId, scope.UserSid,
                 scope.ConversationId, ActionRunSources.Agent), actionId, arguments, userConfirmed,
-            cancellationToken);
+            cancellationToken, reason);
         var succeeded = outcome.Accepted && outcome.Status is not ActionStatus.Failed;
 
         await chat.WriteToolAuditAsync(scope, $"run_endpoint_action:{actionId}",
             !outcome.Accepted ? "rejected" : outcome.Status?.ToString() ?? "error",
             outcome.Error, cancellationToken);
-        if (isFix && outcome.Accepted)
+        if (isFix && outcome.Accepted && outcome.Status != ActionStatus.AwaitingApproval)
             await chat.RecordRepairAttemptAsync(scope, "run_endpoint_action", actionId,
                 outcome.Status is ActionStatus.Done or ActionStatus.NotNeeded,
                 outcome.Status is ActionStatus.Done or ActionStatus.NotNeeded ? null : outcome.Summary,

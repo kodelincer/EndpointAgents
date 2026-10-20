@@ -1,3 +1,4 @@
+using EndpointAgents.Shared.Actions;
 using ControlPlane.Api.Chat;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
@@ -107,7 +108,39 @@ public sealed class ActionStore(IOptions<ChatOptions> options)
                 used_at_utc TEXT NOT NULL,
                 UNIQUE(skill_name, conversation_id)
             );
+            CREATE TABLE IF NOT EXISTS action_approvals (
+                approval_id TEXT PRIMARY KEY,
+                kind TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                title TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                user_sid TEXT NULL,
+                conversation_id TEXT NULL,
+                arguments_json TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at_utc TEXT NOT NULL,
+                decided_at_utc TEXT NULL,
+                decided_by TEXT NULL,
+                note TEXT NULL,
+                result_summary TEXT NULL
+            );
+            CREATE INDEX IF NOT EXISTS ix_action_approvals_status
+                ON action_approvals(status, created_at_utc);
             """, [], cancellationToken);
+        await AddColumnAsync("env_targets", "details", "TEXT NULL", cancellationToken);
+        await AddColumnAsync("action_settings", "requires_approval", "INTEGER NOT NULL DEFAULT 0",
+            cancellationToken);
+    }
+
+    private async Task AddColumnAsync(string table, string column, string definition,
+        CancellationToken cancellationToken)
+    {
+        var columns = await QueryAsync($"PRAGMA table_info({table});", [],
+            reader => reader.GetString(1), cancellationToken);
+        if (!columns.Contains(column, StringComparer.OrdinalIgnoreCase))
+            await ExecAsync($"ALTER TABLE {table} ADD COLUMN {column} {definition};", [],
+                cancellationToken);
     }
 
     // ---------------- Environment map ----------------
@@ -127,12 +160,12 @@ public sealed class ActionStore(IOptions<ChatOptions> options)
         ExecAsync(
             """
             INSERT INTO env_targets(target_id, kind, label, address, ports, expected_addresses,
-                drive_letter, location, notes, updated_at_utc)
-            VALUES($id, $kind, $label, $address, $ports, $expected, $drive, $location, $notes, $now)
+                drive_letter, location, notes, updated_at_utc, details)
+            VALUES($id, $kind, $label, $address, $ports, $expected, $drive, $location, $notes, $now, $details)
             ON CONFLICT(target_id) DO UPDATE SET kind = $kind, label = $label,
                 address = $address, ports = $ports, expected_addresses = $expected,
                 drive_letter = $drive, location = $location, notes = $notes,
-                updated_at_utc = $now;
+                updated_at_utc = $now, details = $details;
             """,
             [("$id", input.Id), ("$kind", input.Kind), ("$label", input.Label.Trim()),
                 ("$address", input.Address.Trim()),
@@ -140,8 +173,17 @@ public sealed class ActionStore(IOptions<ChatOptions> options)
                 ("$expected", string.Join(',', input.ExpectedAddresses ?? [])),
                 ("$drive", input.DriveLetter?.ToUpperInvariant()),
                 ("$location", Empty(input.Location)), ("$notes", Empty(input.Notes)),
-                ("$now", Now())],
+                ("$now", Now()), ("$details", DetailsJson(input))],
             cancellationToken);
+
+    private static string? DetailsJson(EnvironmentTargetInput input)
+    {
+        var details = (input.Details ?? new Dictionary<string, string>())
+            .Where(item => EnvironmentTargetDetails.For(input.Kind).Contains(item.Key)
+                && !string.IsNullOrWhiteSpace(item.Value))
+            .ToDictionary(item => item.Key, item => item.Value.Trim(), StringComparer.Ordinal);
+        return details.Count == 0 ? null : JsonSerializer.Serialize(details);
+    }
 
     public Task<int> DeleteTargetAsync(string id, CancellationToken cancellationToken) =>
         ExecAsync("DELETE FROM env_targets WHERE target_id = $id;", [("$id", id)],
@@ -175,23 +217,94 @@ public sealed class ActionStore(IOptions<ChatOptions> options)
 
     public async Task<IReadOnlyDictionary<string, ActionSetting>> GetActionSettingsAsync(
         CancellationToken cancellationToken) =>
-        (await QueryAsync("SELECT * FROM action_settings;", [], reader => new ActionSetting(
+        (await QueryAsync(
+            "SELECT action_id, enabled, max_per_hour, updated_at_utc, updated_by, requires_approval FROM action_settings;",
+            [], reader => new ActionSetting(
             reader.GetString(0), reader.GetInt64(1) == 1,
             reader.IsDBNull(2) ? null : reader.GetInt32(2), Parse(reader.GetString(3)),
-            reader.IsDBNull(4) ? null : reader.GetString(4)), cancellationToken))
+            reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetInt64(5) == 1),
+            cancellationToken))
         .ToDictionary(item => item.ActionId, StringComparer.Ordinal);
 
     public Task SaveActionSettingAsync(string actionId, ActionSettingInput input,
         string? updatedBy, CancellationToken cancellationToken) =>
         ExecAsync(
             """
-            INSERT INTO action_settings(action_id, enabled, max_per_hour, updated_at_utc, updated_by)
-            VALUES($id, $enabled, $max, $now, $by)
+            INSERT INTO action_settings(action_id, enabled, max_per_hour, updated_at_utc, updated_by,
+                requires_approval)
+            VALUES($id, $enabled, $max, $now, $by, $approval)
             ON CONFLICT(action_id) DO UPDATE SET enabled = $enabled, max_per_hour = $max,
-                updated_at_utc = $now, updated_by = $by;
+                updated_at_utc = $now, updated_by = $by, requires_approval = $approval;
             """,
             [("$id", actionId), ("$enabled", input.Enabled ? 1 : 0),
-                ("$max", input.MaxPerHour), ("$now", Now()), ("$by", updatedBy)],
+                ("$max", input.MaxPerHour), ("$now", Now()), ("$by", updatedBy),
+                ("$approval", input.RequiresApproval ? 1 : 0)],
+            cancellationToken);
+
+    // ---------------- Approvals ----------------
+
+    /// <summary>Stores a request, or returns the pending one for the same PC, item and arguments.</summary>
+    public async Task<ApprovalRequest> CreateApprovalAsync(string kind, string itemId,
+        string title, string agentId, string? userSid, string? conversationId,
+        string argumentsJson, string reason, CancellationToken cancellationToken)
+    {
+        var existing = (await QueryAsync(
+            """
+            SELECT * FROM action_approvals WHERE status = 'Pending' AND kind = $kind
+                AND item_id = $item AND agent_id = $agent AND arguments_json = $arguments;
+            """,
+            [("$kind", kind), ("$item", itemId), ("$agent", agentId), ("$arguments", argumentsJson)],
+            ReadApproval, cancellationToken)).FirstOrDefault();
+        if (existing is not null) return existing;
+        var approval = new ApprovalRequest(Guid.NewGuid().ToString("N"), kind, itemId,
+            Limit(title, 200), agentId, userSid, conversationId, argumentsJson,
+            Limit(reason, 500), ApprovalStatus.Pending, DateTimeOffset.UtcNow, null, null, null, null);
+        await ExecAsync(
+            """
+            INSERT INTO action_approvals(approval_id, kind, item_id, title, agent_id, user_sid,
+                conversation_id, arguments_json, reason, status, created_at_utc)
+            VALUES($id, $kind, $item, $title, $agent, $sid, $conversation, $arguments, $reason,
+                'Pending', $now);
+            """,
+            [("$id", approval.ApprovalId), ("$kind", kind), ("$item", itemId),
+                ("$title", approval.Title), ("$agent", agentId), ("$sid", userSid),
+                ("$conversation", conversationId), ("$arguments", argumentsJson),
+                ("$reason", approval.Reason), ("$now", Format(approval.CreatedAtUtc))],
+            cancellationToken);
+        return approval;
+    }
+
+    public Task<IReadOnlyList<ApprovalRequest>> GetApprovalsAsync(bool pendingOnly, int limit,
+        CancellationToken cancellationToken) =>
+        QueryAsync(pendingOnly
+                ? "SELECT * FROM action_approvals WHERE status = 'Pending' ORDER BY created_at_utc LIMIT $limit;"
+                : "SELECT * FROM action_approvals ORDER BY created_at_utc DESC LIMIT $limit;",
+            [("$limit", Math.Clamp(limit, 1, 500))], ReadApproval, cancellationToken);
+
+    public async Task<ApprovalRequest?> GetApprovalAsync(string approvalId,
+        CancellationToken cancellationToken) =>
+        (await QueryAsync("SELECT * FROM action_approvals WHERE approval_id = $id;",
+            [("$id", approvalId)], ReadApproval, cancellationToken)).FirstOrDefault();
+
+    /// <summary>Moves a pending request to <paramref name="status"/>; false when someone else decided first.</summary>
+    public async Task<bool> DecideApprovalAsync(string approvalId, string status,
+        string decidedBy, string? note, CancellationToken cancellationToken) =>
+        await ExecAsync(
+            """
+            UPDATE action_approvals SET status = $status, decided_at_utc = $now,
+                decided_by = $by, note = $note
+            WHERE approval_id = $id AND status = 'Pending';
+            """,
+            [("$id", approvalId), ("$status", status), ("$now", Now()), ("$by", decidedBy),
+                ("$note", Empty(note) is { } text ? Limit(text, 500) : null)],
+            cancellationToken) == 1;
+
+    public Task CompleteApprovalAsync(string approvalId, string status, string? summary,
+        CancellationToken cancellationToken) =>
+        ExecAsync(
+            "UPDATE action_approvals SET status = $status, result_summary = $summary WHERE approval_id = $id;",
+            [("$id", approvalId), ("$status", status),
+                ("$summary", summary is null ? null : Limit(summary, 1000))],
             cancellationToken);
 
     // ---------------- Run log ----------------
@@ -495,7 +608,20 @@ public sealed class ActionStore(IOptions<ChatOptions> options)
         reader.GetString(5).Split(',', StringSplitOptions.RemoveEmptyEntries),
         reader.IsDBNull(6) ? null : reader.GetString(6),
         reader.IsDBNull(7) ? null : reader.GetString(7),
-        reader.IsDBNull(8) ? null : reader.GetString(8), Parse(reader.GetString(9)));
+        reader.IsDBNull(8) ? null : reader.GetString(8), Parse(reader.GetString(9)),
+        reader.FieldCount > 10 && !reader.IsDBNull(10)
+            ? JsonSerializer.Deserialize<Dictionary<string, string>>(reader.GetString(10))
+            : null);
+
+    private static ApprovalRequest ReadApproval(SqliteDataReader reader) => new(
+        reader.GetString(0), reader.GetString(1), reader.GetString(2), reader.GetString(3),
+        reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
+        reader.IsDBNull(6) ? null : reader.GetString(6), reader.GetString(7),
+        reader.GetString(8), reader.GetString(9), Parse(reader.GetString(10)),
+        reader.IsDBNull(11) ? null : Parse(reader.GetString(11)),
+        reader.IsDBNull(12) ? null : reader.GetString(12),
+        reader.IsDBNull(13) ? null : reader.GetString(13),
+        reader.IsDBNull(14) ? null : reader.GetString(14));
 
     private static ActionRunRecord ReadRun(SqliteDataReader reader) => new(
         reader.GetString(0), reader.GetString(1), reader.GetString(2),
