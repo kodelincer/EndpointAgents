@@ -58,6 +58,27 @@ public static class ApprovalKinds
     public const string Action = "action";
     /// <summary>A signed package that needs approval (removal packages, or flagged by its manifest).</summary>
     public const string Package = "package";
+    /// <summary>Work only a person can do (unlock an account, hand out a key); nothing runs on the PC.</summary>
+    public const string Person = "person";
+}
+
+/// <summary>The fixed kinds of people-only work the agent may ask the helpdesk for.</summary>
+public static class PersonRequestKinds
+{
+    public sealed record Kind(string Id, string Title, string TitleFa);
+
+    public static readonly IReadOnlyList<Kind> All =
+    [
+        new("unlock-account", "Unlock the user's account", "باز کردن قفل حساب"),
+        new("password-reset", "Reset the user's password", "بازنشانی رمز عبور"),
+        new("local-admin", "Temporary administrator rights", "دسترسی موقت مدیر سیستم"),
+        new("bitlocker-key", "BitLocker recovery key", "کلید بازیابی BitLocker"),
+        new("site-access", "Open a blocked website", "باز کردن دسترسی یک سایت"),
+        new("trust-repair", "Rejoin the PC to the domain", "اتصال دوبارهٔ کامپیوتر به دامنه")
+    ];
+
+    public static Kind? Find(string? id) =>
+        All.FirstOrDefault(kind => string.Equals(kind.Id, id?.Trim(), StringComparison.OrdinalIgnoreCase));
 }
 
 public static class ApprovalStatus

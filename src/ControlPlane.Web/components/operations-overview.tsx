@@ -119,7 +119,7 @@ export function OperationsOverview() {
     <section className="system-ledger" aria-label="Control plane measurements">
       <dl><div><dt>API uptime</dt><dd>{duration(status?.uptimeSeconds)}</dd></div>
         <div><dt>API version</dt><dd><code>{status?.version ?? "—"}</code></dd></div>
-        <div><dt>Connected agents</dt><dd>{status?.connectedAgents ?? agents.length}</dd></div>
+        <div><dt>Connected endpoints</dt><dd>{status?.connectedAgents ?? agents.length}</dd></div>
         <div><dt>Retained events</dt><dd>{status?.retainedActivity ?? activity.length} / 500</dd></div>
         <div><dt>Recent failures</dt><dd className={recentFailures.length ? "danger-text" : "success-text"}>{recentFailures.length}</dd></div>
         <div><dt>Recent disconnects</dt><dd>{recentDisconnects.length}</dd></div></dl>

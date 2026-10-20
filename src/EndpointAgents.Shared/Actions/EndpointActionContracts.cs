@@ -54,8 +54,13 @@ public static class EnvironmentTargetKinds
     public const string Device = "device";
     /// <summary>A company VPN. Address: the VPN server host name.</summary>
     public const string Vpn = "vpn";
+    /// <summary>A company Wi-Fi network. Address: its SSID; the profile is deployed by policy.</summary>
+    public const string Wifi = "wifi";
+    /// <summary>An internet site users need for work. Address: a host name, optionally *.domain.</summary>
+    public const string Site = "site";
 
-    public static IReadOnlyList<string> All { get; } = [Host, WebApp, Printer, Share, App, Device, Vpn];
+    public static IReadOnlyList<string> All { get; } =
+        [Host, WebApp, Printer, Share, App, Device, Vpn, Wifi, Site];
 }
 
 /// <summary>Extra fields some environment-map kinds carry in <see cref="ResolvedTarget.Details"/>.</summary>
@@ -71,6 +76,10 @@ public static class EnvironmentTargetDetails
     public const string Connection = "connection";
     /// <summary>vpn client: the Windows service name of the client.</summary>
     public const string Service = "service";
+    /// <summary>wifi: the Windows Wi-Fi profile name when it differs from the SSID.</summary>
+    public const string Profile = "profile";
+    /// <summary>site: a short category such as banking, government or video meetings.</summary>
+    public const string Category = "category";
 
     public const string VpnBuiltin = "builtin";
     public const string VpnClient = "client";
@@ -80,6 +89,8 @@ public static class EnvironmentTargetDetails
         EnvironmentTargetKinds.App => [Publisher, PackageId],
         EnvironmentTargetKinds.Device => [PackageId],
         EnvironmentTargetKinds.Vpn => [VpnType, Connection, Service],
+        EnvironmentTargetKinds.Wifi => [Profile],
+        EnvironmentTargetKinds.Site => [Category],
         _ => []
     };
 }

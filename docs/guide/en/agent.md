@@ -28,6 +28,7 @@ Tools are served by the control plane over a loopback-only MCP endpoint and are 
 | Dedicated repairs | `run_windows_activation_repair`, `run_office_activation_repair` | Pinned repairs for activation problems. |
 | Propose a change | `propose_endpoint_action` | Creates a card the user must approve in the Tray. |
 | Know the situation | `check_known_incidents`, `recent_reports_from_others`, `probe_from_server`, `check_user_account`, `get_site_knowledge` | Outages, other reports, a server-side check, read-only domain account state, and the organisation notes. |
+| Ask a person | `request_helpdesk_action` | Work only a helpdesk member may do: unlock an account, reset a password, temporary admin rights, a BitLocker key, open a blocked site, rejoin the domain. It waits on **Approvals**; nothing runs on the PC. |
 | Finish | `mark_problem_resolved`, `escalate_to_helpdesk`, `record_feature_request`, `note_skill_used` | Closing, handing over, saving requests and statistics. |
 
 Hermes' own built-in toolsets (terminal, files, browser, web, memory, code execution and others) are switched off in the profile.

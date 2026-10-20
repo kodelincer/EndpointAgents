@@ -32,7 +32,15 @@ public static class EndpointActionSet
         new VpnStatusAction(), new VpnClientRestartAction(),
         new SoftwareInventoryAction(), new SoftwareUninstallAction(),
         new DriversInventoryAction(), new DeviceEnableAction(), new DeviceRestartAction(),
-        new DiskUsageAction(), new RestartPendingAction()
+        new DiskUsageAction(), new RestartPendingAction(),
+        new NetworkCategoryAction(), new NetworkSetPrivateAction(), new NetworkSetPublicAction(),
+        new IpResetToDhcpAction(), new IpRestoreAction(), new NetworkStackResetAction(),
+        new WifiStatusAction(), new WifiConnectCompanyAction(),
+        new WindowsUpdateResetAction(), new WindowsUpdateScanNowAction(),
+        new DefenderUpdateSignaturesAction(), new DefenderThreatsAction(), new BitLockerStatusAction(),
+        new DiskHealthAction(), new SystemFileCheckAction(), new SystemImageRepairAction(),
+        new SystemRepairStatusAction(), new BatteryReportAction(), new PowerSetPlanStandardAction(),
+        new PowerRestorePlanAction(), new OfficeQuickRepairAction()
     ];
 
     /// <summary>Actions the Tray runs with the signed-in user's own token.</summary>
@@ -50,7 +58,11 @@ public static class EndpointActionSet
         new RegionStatusAction(), new DisplayStatusAction(), new MediaStatusAction(),
         new AllowCameraMicAction(), new AppCloseAction(),
         new AudioStatusAction(), new AudioUnmuteAction(), new AudioSetDefaultAction(),
-        new AudioRestoreDefaultAction(), new PrinterStatusAction(), new WhoAmIGroupsAction()
+        new AudioRestoreDefaultAction(), new PrinterStatusAction(), new WhoAmIGroupsAction(),
+        new SiteCheckAccessAction(), new ZonesStatusAction(), new ZonesAddCompanySiteAction(),
+        new ZonesRemoveCompanySiteAction(), new StartupListAction(), new StartupDisableAction(),
+        new StartupEnableAction(), new RecycleBinEmptyAction(), new OfficeAddinsListAction(),
+        new OfficeAddinDisableAction(), new OfficeAddinEnableAction(), new OutlookRebuildOstAction()
     ];
 }
 

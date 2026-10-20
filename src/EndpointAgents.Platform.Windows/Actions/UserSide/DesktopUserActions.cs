@@ -179,7 +179,7 @@ public sealed class OutlookStatusAction : IEndpointAction
 {
     public string Id => "outlook.status";
 
-    private sealed record DataFile(string Kind, double SizeGb, bool NearLimit);
+    private sealed record DataFile(string Name, string Kind, double SizeGb, bool NearLimit);
 
     public Task<EndpointActionResult> RunAsync(ActionInvocation invocation,
         CancellationToken cancellationToken)
@@ -200,7 +200,7 @@ public sealed class OutlookStatusAction : IEndpointAction
                 foreach (var file in Directory.EnumerateFiles(folder, pattern))
                 {
                     var sizeGb = Math.Round(new FileInfo(file).Length / 1024d / 1024 / 1024, 1);
-                    dataFiles.Add(new DataFile(kind, sizeGb, sizeGb >= 45));
+                    dataFiles.Add(new DataFile(Path.GetFileName(file), kind, sizeGb, sizeGb >= 45));
                 }
 
         var addins = new List<object>();

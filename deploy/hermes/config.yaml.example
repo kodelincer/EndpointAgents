@@ -60,6 +60,7 @@ mcp_servers:
         - propose_endpoint_action
         - mark_problem_resolved
         - escalate_to_helpdesk
+        - request_helpdesk_action
         - record_feature_request
         - list_endpoint_actions
         - list_environment_targets

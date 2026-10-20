@@ -91,6 +91,13 @@ public sealed class EndpointActionCatalogTests
     [InlineData("device", @"USB\VID_04F9&PID_0042;PCI\VEN_8086&DEV_15B8", true)]
     [InlineData("device", @"..\..\windows", false)]
     [InlineData("device", "", false)]
+    [InlineData("wifi", "CORP-STAFF", true)]
+    [InlineData("wifi", "Guest \"x\"", false)]
+    [InlineData("wifi", "a-very-long-network-name-over-32-chars", false)]
+    [InlineData("site", "*.tax.gov.ir", true)]
+    [InlineData("site", "bank.example.com", true)]
+    [InlineData("site", "https://bank.example.com", false)]
+    [InlineData("site", "*", false)]
     public void TargetAddressesAreChecked(string kind, string address, bool valid) =>
         Assert.Equal(valid, EndpointActionValidator.IsValidTarget(
             new ResolvedTarget("t1", kind, "Label", address)));
@@ -148,6 +155,43 @@ public sealed class EndpointActionCatalogTests
         Assert.Equal("driver-brother-l2350", devices[0]!["catalogMatch"]!["packageId"]!.GetValue<string>());
         Assert.Null(devices[1]!["catalogMatch"]);
     }
+
+    [Fact]
+    public void WifiAndZonesAreMatchedWithTheMap()
+    {
+        EnvironmentTarget Entry(string id, string kind, string address, Dictionary<string, string>? details = null) =>
+            new(id, kind, id, address, [], [], null, null, null, DateTimeOffset.UtcNow, details);
+        var targets = new[]
+        {
+            Entry("staff-wifi", "wifi", "CORP-STAFF"),
+            Entry("lab-wifi", "wifi", "CORP-LAB", new() { ["profile"] = "Lab profile" }),
+            Entry("hr", "webapp", "https://hr.corp.local/login"),
+            Entry("erp", "webapp", "https://erp.corp.local")
+        };
+        var wifi = ActionRunner.Annotate("wifi.status",
+            JsonNode.Parse("""{"ssid":"CORP-STAFF","profiles":["CORP-STAFF","Home"]}"""), targets)!;
+        var company = wifi["companyProfiles"]!.AsArray();
+        Assert.True(company[0]!["saved"]!.GetValue<bool>());
+        Assert.True(company[0]!["connected"]!.GetValue<bool>());
+        Assert.False(company[1]!["saved"]!.GetValue<bool>());
+
+        var zones = ActionRunner.Annotate("zones.status",
+            JsonNode.Parse("""{"entries":[{"host":"*.hr.corp.local","zone":"Intranet","setByPolicy":true},{"host":"secret.corp.local","zone":"Trusted","setByPolicy":false}],"policyManaged":true}"""),
+            targets)!;
+        Assert.Null(zones["entries"]);
+        Assert.Equal(2, zones["entryCount"]!.GetValue<int>());
+        var sites = zones["sites"]!.AsArray();
+        Assert.Equal("Intranet", sites[0]!["zone"]!.GetValue<string>());
+        Assert.Equal("Internet", sites[1]!["zone"]!.GetValue<string>());
+    }
+
+    [Theory]
+    [InlineData("Unlocked in AD, please sign in again.", false)]
+    [InlineData("123456-123456-123456-123456-123456-123456-123456-123456", true)]
+    [InlineData("password: Spring2026", true)]
+    [InlineData("رمز: abc123", true)]
+    public void PersonNotesNeverCarrySecrets(string note, bool secret) =>
+        Assert.Equal(secret, ApprovalService.LooksSecret(note));
 }
 
 public sealed class TargetMaskerTests
@@ -285,6 +329,10 @@ public sealed class EnvironmentValidationTests
     [InlineData("network.internalSuffixes", "corp.local, .shirazmetro.local", true)]
     [InlineData("unknown.key", "x", false)]
     [InlineData("proxy.pacUrl", "", true)]
+    [InlineData("network.ipFromDhcp", "true", true)]
+    [InlineData("network.ipFromDhcp", "yes", false)]
+    [InlineData("power.standardPlan", "balanced", true)]
+    [InlineData("power.standardPlan", "ultimate", false)]
     public void SettingsAreValidated(string key, string value, bool valid) =>
         Assert.Equal(valid, ActionEndpoints.ValidateSetting(key, value) is null);
 }
@@ -371,6 +419,26 @@ public sealed class ActionRunnerTests : IClassFixture<ControlPlaneApiFactory>
         Assert.Single(await _store.GetRecentRunsAsync(agent, null, 10, TestCancellation));
         Assert.Equal(HttpStatusCode.Conflict, (await member.PostAsJsonAsync(
             $"/api/approvals/{pending.ApprovalId}/decline", new { note = "late" }, TestCancellation)).StatusCode);
+    }
+
+    [Fact]
+    public async Task PersonRequestIsMarkedDoneWithoutRunningAnything()
+    {
+        var agent = Guid.NewGuid().ToString("D");
+        var request = await _store.CreateApprovalAsync(ApprovalKinds.Person, "unlock-account",
+            "Unlock the user's account", agent, null, null, "{}", "Account locked after a password change.",
+            TestCancellation);
+        var member = await _factory.CreateOperatorClientAsync(OperatorRoles.Member, TestCancellation);
+        Assert.Equal(HttpStatusCode.Conflict, (await member.PostAsJsonAsync(
+            $"/api/approvals/{request.ApprovalId}/approve", new { note = "password: Temp-1234" },
+            TestCancellation)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await member.PostAsJsonAsync(
+            $"/api/approvals/{request.ApprovalId}/approve", new { note = "Unlocked, sign in again." },
+            TestCancellation)).StatusCode);
+        var decided = await _store.GetApprovalAsync(request.ApprovalId, TestCancellation);
+        Assert.Equal(ApprovalStatus.Done, decided!.Status);
+        Assert.Empty(await _store.GetRecentRunsAsync(agent, null, 10, TestCancellation));
+        Assert.Contains(PersonRequestKinds.All, kind => kind.Id == "bitlocker-key");
     }
 
     [Fact]

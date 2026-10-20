@@ -129,6 +129,11 @@ public static partial class EndpointActionValidator
                     || IsValidAppPattern(publisher)),
             EnvironmentTargetKinds.Device => SplitHardwareIds(target.Address) is { Count: > 0 },
             EnvironmentTargetKinds.Vpn => IsValidHost(target.Address) && IsValidVpnDetails(target),
+            EnvironmentTargetKinds.Wifi => IsValidSsid(target.Address)
+                && (target.Detail(EnvironmentTargetDetails.Profile) is not { } profile || IsValidSsid(profile)),
+            EnvironmentTargetKinds.Site => IsValidSitePattern(target.Address)
+                && (target.Detail(EnvironmentTargetDetails.Category) is not { } category
+                    || category.Length <= 40 && !category.Any(char.IsControl)),
             _ => false
         }
         && (target.Detail(EnvironmentTargetDetails.PackageId) is not { } package
@@ -136,6 +141,20 @@ public static partial class EndpointActionValidator
         && (target.Ports ?? []).All(port => port is > 0 and <= 65535)
         && (target.ExpectedAddresses ?? []).All(address =>
             System.Net.IPAddress.TryParse(address, out _));
+
+    /// <summary>A Wi-Fi network name: 1-32 printable characters, no quotes.</summary>
+    public static bool IsValidSsid(string? value) =>
+        value is { Length: >= 1 and <= 32 } && !value.Any(character => char.IsControl(character)
+            || character is '"' or '\\');
+
+    /// <summary>A host name, or *. followed by a domain (every name under it).</summary>
+    public static bool IsValidSitePattern(string? value) =>
+        value is not null && IsValidHost(value.StartsWith("*.", StringComparison.Ordinal) ? value[2..] : value)
+        && !System.Net.IPAddress.TryParse(value, out _);
+
+    /// <summary>The host a site entry is probed on (the domain itself for a *. entry).</summary>
+    public static string SiteHost(string pattern) =>
+        pattern.StartsWith("*.", StringComparison.Ordinal) ? pattern[2..] : pattern;
 
     /// <summary>An Apps &amp; features name or publisher, optionally with * wildcards.</summary>
     public static bool IsValidAppPattern(string? value) =>

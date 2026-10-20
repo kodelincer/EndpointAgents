@@ -276,6 +276,7 @@ Only these tools are visible to Hermes:
 - `propose_endpoint_action`
 - `mark_problem_resolved`
 - `escalate_to_helpdesk`
+- `request_helpdesk_action` (people-only work: unlock, password, temporary admin, BitLocker key, site access, domain rejoin; waits on the Approvals page, nothing runs on the PC)
 - `record_feature_request`
 - `list_endpoint_actions`, `list_environment_targets`, `run_endpoint_action`,
   `check_known_incidents`, `recent_reports_from_others`, `probe_from_server`,

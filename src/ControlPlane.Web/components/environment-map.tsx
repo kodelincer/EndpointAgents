@@ -18,11 +18,13 @@ const kinds = [
     address: "Name in Apps & features (* allowed)" },
   { value: "device", label: "Driver catalog (device model)", example: "USB\\VID_04F9&PID_0042",
     address: "Hardware IDs (Device Manager > Details), separated by ;" },
-  { value: "vpn", label: "VPN", example: "vpn.corp.example", address: "VPN server host name" }
+  { value: "vpn", label: "VPN", example: "vpn.corp.example", address: "VPN server host name" },
+  { value: "wifi", label: "Company Wi-Fi", example: "CORP-STAFF", address: "Network name (SSID)" },
+  { value: "site", label: "Allowed work site", example: "*.tax.gov.ir", address: "Host name, or *.domain for all its sites" }
 ];
 
 /** Kinds that are network places the agent can test; the others are helpdesk lists. */
-const networkKinds = ["webapp", "share", "printer", "host", "vpn"];
+const networkKinds = ["webapp", "share", "printer", "host", "vpn", "wifi", "site"];
 
 const standards = [
   { key: "network.internalSuffixes", label: "Internal DNS suffixes", hint: "Comma-separated, e.g. corp.local. Names under them are hidden from the cloud model." },
@@ -32,7 +34,9 @@ const standards = [
   { key: "proxy.bypass", label: "Proxy bypass list", hint: "Semicolon list, e.g. *.corp.local;<local>" },
   { key: "time.standardZone", label: "Standard time zone", hint: "Windows id, e.g. Iran Standard Time." },
   { key: "network.dnsFromDhcp", label: "DNS servers come from DHCP", hint: "true when DHCP hands out the right DNS servers, so hand-typed ones are a fault the agent may remove." },
-  { key: "trust.rootThumbprints", label: "Organisation root CA thumbprints", hint: "Comma-separated SHA-1 thumbprints." }
+  { key: "trust.rootThumbprints", label: "Organisation root CA thumbprints", hint: "Comma-separated SHA-1 thumbprints." },
+  { key: "network.ipFromDhcp", label: "PCs get their IP address from DHCP", hint: "true when every PC should use DHCP, so a hand-set IPv4 address is a fault the agent may reset (undoable)." },
+  { key: "power.standardPlan", label: "Standard power plan", hint: "balanced, high or saver. Used by the power plan fix." }
 ];
 
 const empty: EnvironmentTarget = { id: "", kind: "webapp", label: "", address: "", ports: [], expectedAddresses: [] };

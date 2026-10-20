@@ -328,6 +328,48 @@ public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
                     };
                 }
                 break;
+            case "wifi.status" when root["profiles"] is JsonArray profiles:
+                var company = targets.Where(target => target.Kind == EnvironmentTargetKinds.Wifi)
+                    .Select(target => (Target: target,
+                        Profile: target.Detail(EnvironmentTargetDetails.Profile) ?? target.Address))
+                    .ToArray();
+                var saved = profiles.Select(item => item?.GetValue<string>()).OfType<string>().ToArray();
+                root["companyProfiles"] = new JsonArray(company
+                    .Select(entry => (JsonNode)new JsonObject
+                    {
+                        ["target"] = entry.Target.Id,
+                        ["label"] = entry.Target.Label,
+                        ["saved"] = saved.Contains(entry.Profile, StringComparer.OrdinalIgnoreCase),
+                        ["connected"] = string.Equals(root["ssid"]?.GetValue<string>(),
+                            entry.Target.Address, StringComparison.Ordinal)
+                    }).ToArray());
+                break;
+            case "zones.status" when root["entries"] is JsonArray entries:
+                // Only environment-map ids leave the control plane; the PC's own host list stays here.
+                var zoneHosts = entries.OfType<JsonObject>()
+                    .Select(entry => (Host: ZoneHost(entry["host"]?.GetValue<string>()),
+                        Zone: entry["zone"]?.GetValue<string>() ?? "Unknown",
+                        Policy: entry["setByPolicy"]?.GetValue<bool>() == true))
+                    .Where(entry => entry.Host.Length > 0)
+                    .ToArray();
+                root["sites"] = new JsonArray(targets
+                    .Where(target => target.Kind == EnvironmentTargetKinds.WebApp)
+                    .Select(target =>
+                    {
+                        var host = EndpointActionValidator.HostOf(target.ToResolved()) ?? "";
+                        var match = zoneHosts.FirstOrDefault(entry =>
+                            host.Equals(entry.Host, StringComparison.OrdinalIgnoreCase)
+                            || host.EndsWith("." + entry.Host, StringComparison.OrdinalIgnoreCase));
+                        return (JsonNode)new JsonObject
+                        {
+                            ["target"] = target.Id,
+                            ["zone"] = match.Host is null ? "Internet" : match.Zone,
+                            ["setByPolicy"] = match.Policy
+                        };
+                    }).ToArray());
+                root["entryCount"] = entries.Count;
+                root.Remove("entries");
+                break;
             case "credman.list" when root["credentials"] is JsonArray credentials:
                 foreach (var credential in credentials.OfType<JsonObject>())
                 {
@@ -339,5 +381,15 @@ public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
                 break;
         }
         return root;
+    }
+
+    /// <summary>A zone-map entry as a bare host: no scheme, no leading "*.".</summary>
+    private static string ZoneHost(string? value)
+    {
+        var host = (value ?? "").Trim();
+        var scheme = host.IndexOf("://", StringComparison.Ordinal);
+        if (scheme >= 0) host = host[(scheme + 3)..];
+        host = host.Split('/', ':')[0];
+        return host.StartsWith("*.", StringComparison.Ordinal) ? host[2..] : host;
     }
 }

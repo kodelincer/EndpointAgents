@@ -28,7 +28,7 @@ export function Approvals() {
   }, [refresh]);
 
   const decide = async (item: ApprovalRequest, approve: boolean) => {
-    if (approve && !window.confirm(`Run "${item.title}" on the user's PC now?`)) return;
+    if (approve && !window.confirm(item.kind === "person" ? `Mark "${item.title}" as done? The user is told in their chat.` : `Run "${item.title}" on the user's PC now?`)) return;
     setBusy(item.approvalId);
     try {
       await (approve ? approveRequest : declineRequest)(item.approvalId, notes[item.approvalId] ?? "");
@@ -59,23 +59,24 @@ export function Approvals() {
       && <span className="muted"> · oldest {summary.oldestMinutes} min</span>}</h2>
     {loading && items.length === 0 ? <div className="file-list" aria-label="Loading approvals"><div className="file-skeleton" /></div>
       : pending.length === 0 ? <section className="file-empty"><span className="empty-icon"><ClipboardCheck size={23} /></span>
-        <h2>Nothing to approve</h2><p>When the agent asks to remove software or run another step that needs approval, it appears here.</p></section>
+        <h2>Nothing to approve</h2><p>When the agent asks to remove software, run another step that needs approval, or needs a person (unlock an account, a BitLocker key), it appears here.</p></section>
       : <section className="file-list" aria-label="Waiting for approval">{pending.map(item =>
         <article key={item.approvalId} className="file-row">
           <div className="file-row-main">
             <div className="file-row-title"><strong dir="auto">{item.title}</strong>
-              <span className="ticket-status">{item.kind === "package" ? "Package" : "Action"}</span><code>{item.itemId}</code></div>
+              <span className="ticket-status">{item.kind === "person" ? "Helpdesk task" : item.kind === "package" ? "Package" : "Action"}</span><code>{item.itemId}</code></div>
+            {item.kind === "person" && <p className="file-compatibility">Do this yourself (for example in Active Directory), then mark it done. Nothing runs on the PC. Never write a key or password in the note: the note appears in the user&apos;s chat.</p>}
             {item.reason && <p className="file-description" dir="auto">{item.reason}</p>}
             <p className="file-compatibility">PC {item.agentId.slice(0, 8)} · {new Date(item.createdAtUtc).toLocaleString()}
               {item.conversationId && <>{" "}·{" "}
                 <Link href={`/support/?conversation=${encodeURIComponent(item.conversationId)}`}>Conversation</Link></>}</p>
             <input className="approval-note" value={notes[item.approvalId] ?? ""} dir="auto" aria-label="Note to the user"
-              placeholder="Optional note (shown to the user when declined)"
+              placeholder={item.kind === "person" ? "Optional note for the user (no keys or passwords)" : "Optional note (shown to the user when declined)"}
               onChange={event => setNotes({ ...notes, [item.approvalId]: event.target.value })} />
           </div>
           <div className="file-row-actions">
             <button className="primary-button" disabled={busy === item.approvalId} onClick={() => void decide(item, true)}>
-              <Check size={14} />{busy === item.approvalId ? "Running…" : "Approve and run"}</button>
+              <Check size={14} />{busy === item.approvalId ? "Saving…" : item.kind === "person" ? "Mark done" : "Approve and run"}</button>
             <button className="secondary-button" disabled={busy === item.approvalId} onClick={() => void decide(item, false)}>
               <X size={14} />Decline</button>
           </div>

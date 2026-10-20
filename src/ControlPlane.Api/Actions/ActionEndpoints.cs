@@ -304,6 +304,8 @@ public static partial class ActionEndpoints
             EnvironmentTargetKinds.App => "Name must be the Apps & features name (or a pattern with *, e.g. \"Foxit PDF Reader*\"); publisher the same; package id lowercase.",
             EnvironmentTargetKinds.Device => "Hardware IDs must look like USB\\VID_04F9&PID_0042, separated by semicolons (up to 20); package id lowercase.",
             EnvironmentTargetKinds.Vpn => "Address must be the VPN server host name; type builtin needs the Windows connection name, type client the client's service name.",
+            EnvironmentTargetKinds.Wifi => "Address must be the Wi-Fi network name (SSID), up to 32 characters without quotes.",
+            EnvironmentTargetKinds.Site => "Address must be a site host name such as bank.example.com, or *.example.com for every name under it.",
             _ => @"Address must be a UNC path, e.g. \\server\share."
         };
     }
@@ -332,6 +334,10 @@ public static partial class ActionEndpoints
                 "time.standardZone must be a Windows time zone id.",
             ActionSettings.DnsFromDhcp when value is not ("true" or "false") =>
                 "network.dnsFromDhcp must be true or false.",
+            ActionSettings.IpFromDhcp when value is not ("true" or "false") =>
+                "network.ipFromDhcp must be true or false.",
+            ActionSettings.PowerPlan when value is not ("balanced" or "high" or "saver") =>
+                "power.standardPlan must be balanced, high or saver.",
             _ => null
         };
     }

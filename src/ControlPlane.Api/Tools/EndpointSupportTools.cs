@@ -274,6 +274,39 @@ public sealed class EndpointSupportTools
             : """{"ok":false,"error":"The conversation is not available."}""";
     }
 
+    [McpServerTool(Name = "request_helpdesk_action"), Description(
+        "Ask a helpdesk member for work only a person may do. Nothing runs on the PC. kind is one of: unlock-account (locked account), password-reset (forgotten or expired password), local-admin (temporary administrator rights for an approved install), bitlocker-key (BitLocker recovery screen), site-access (a work website the company blocks), trust-repair (\"trust relationship\" error the PC cannot fix). The request waits on the Approvals page; the user sees the member's answer in this chat. Never ask the user for a password or key.")]
+    public static async Task<string> RequestHelpdeskAction(
+        ChatStore store,
+        Actions.ActionStore actions,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        [Description("unlock-account, password-reset, local-admin, bitlocker-key, site-access or trust-repair.")]
+        string kind,
+        [Description("One short English line for the helpdesk: what the user needs and why. For site-access, the site's name as the user gave it.")]
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+        if (scope is null)
+            return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+        if (Actions.PersonRequestKinds.Find(kind) is not { } request)
+            return """{"ok":false,"error":"Unknown kind. Use unlock-account, password-reset, local-admin, bitlocker-key, site-access or trust-repair."}""";
+        if (string.IsNullOrWhiteSpace(reason))
+            return """{"ok":false,"error":"A reason is required."}""";
+        await actions.CreateApprovalAsync(Actions.ApprovalKinds.Person, request.Id, request.Title,
+            scope.AgentId, scope.UserSid, scope.ConversationId, "{}",
+            PromptRedactor.RedactSecrets(reason.Trim()), cancellationToken);
+        await store.WriteToolAuditAsync(scope, "request_helpdesk_action", "awaiting-person",
+            null, cancellationToken);
+        return ToolResultSanitizer.Sanitize(new
+        {
+            ok = true,
+            status = "AwaitingHelpdesk",
+            summary = "A helpdesk member was asked. Tell the user in one sentence; their answer will appear in this chat. Do not ask the user to wait or retry."
+        });
+    }
+
     [McpServerTool(Name = "run_repair_package"), Description(
         "Run one administrator-approved repair package on the user's PC by the exact packageId from find_repair_packages. It runs unattended with the administrator's fixed arguments and answers; nothing else can be passed. A package with requiresApproval=true is sent to the helpdesk for approval instead (status AwaitingApproval) and runs once a helpdesk member approves it.")]
     public static async Task<string> RunRepairPackage(

@@ -20,7 +20,8 @@ public static class FixedTool
     private static readonly HashSet<string> AllowedPrograms = new(StringComparer.OrdinalIgnoreCase)
     {
         "ipconfig.exe", "w32tm.exe", "gpupdate.exe", "klist.exe", "netsh.exe",
-        "tzutil.exe", "shutdown.exe", "powercfg.exe", "msiexec.exe"
+        "tzutil.exe", "shutdown.exe", "powercfg.exe", "msiexec.exe", "sfc.exe", "dism.exe",
+        "usoclient.exe"
     };
 
     private const int MaxOutputCharacters = 8 * 1024;
@@ -33,6 +34,38 @@ public static class FixedTool
         var path = Path.Combine(Environment.SystemDirectory, program);
         return RunPathAsync(path, arguments, timeout, cancellationToken, standardInput);
     }
+
+    /// <summary>Starts an allowed System32 program with fixed arguments and does not wait for it.</summary>
+    public static bool StartDetached(string program, IReadOnlyList<string> arguments)
+    {
+        if (!AllowedPrograms.Contains(program))
+            throw new InvalidOperationException($"{program} is not an allowed program.");
+        var path = Path.Combine(Environment.SystemDirectory, program);
+        if (!File.Exists(path)) return false;
+        var start = new ProcessStartInfo { FileName = path, UseShellExecute = false, CreateNoWindow = true };
+        foreach (var argument in arguments) start.ArgumentList.Add(argument);
+        using var process = Process.Start(start);
+        return process is not null;
+    }
+
+    /// <summary>Microsoft Defender's command-line tool, at its fixed install path.</summary>
+    public static string DefenderTool => Path.Combine(Environment.GetFolderPath(
+        Environment.SpecialFolder.ProgramFiles), "Windows Defender", "MpCmdRun.exe");
+
+    /// <summary>Runs Defender's command-line tool with fixed arguments.</summary>
+    public static Task<FixedToolResult> RunDefenderAsync(IReadOnlyList<string> arguments,
+        TimeSpan timeout, CancellationToken cancellationToken) =>
+        RunPathAsync(DefenderTool, arguments, timeout, cancellationToken, null);
+
+    /// <summary>Office Click-to-Run's own client, at its fixed install path.</summary>
+    public static string OfficeClickToRun => Path.Combine(Environment.GetFolderPath(
+            Environment.SpecialFolder.CommonProgramFiles), "microsoft shared", "ClickToRun",
+        "OfficeClickToRun.exe");
+
+    /// <summary>Runs the Office Click-to-Run client with fixed arguments.</summary>
+    public static Task<FixedToolResult> RunOfficeClickToRunAsync(IReadOnlyList<string> arguments,
+        TimeSpan timeout, CancellationToken cancellationToken) =>
+        RunPathAsync(OfficeClickToRun, arguments, timeout, cancellationToken, null);
 
     /// <summary>Starts a Defender quick scan and returns without waiting for it to finish.</summary>
     public static bool StartDefenderQuickScan()

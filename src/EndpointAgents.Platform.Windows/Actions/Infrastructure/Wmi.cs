@@ -52,6 +52,24 @@ public static class Wmi
         return null;
     }
 
+    /// <summary>Sets one property on each instance matched by a query and saves it; returns how many changed.</summary>
+    public static int Update(string scope, string query, string property, object value)
+    {
+        using var searcher = new ManagementObjectSearcher(new ManagementScope(scope),
+            new ObjectQuery(query));
+        var changed = 0;
+        foreach (ManagementObject item in searcher.Get())
+        {
+            using (item)
+            {
+                item[property] = value;
+                item.Put();
+                changed++;
+            }
+        }
+        return changed;
+    }
+
     /// <summary>Escapes a value for a WQL string literal in single quotes.</summary>
     public static string Literal(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal)

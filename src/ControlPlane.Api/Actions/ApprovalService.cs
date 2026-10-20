@@ -2,9 +2,11 @@ using ControlPlane.Api.Agents;
 using ControlPlane.Api.Chat;
 using ControlPlane.Api.Commands;
 using ControlPlane.Api.Files;
+using ControlPlane.Api.Hermes;
 using ControlPlane.Api.Tools;
 using EndpointAgents.Shared.Actions;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace ControlPlane.Api.Actions;
 
@@ -25,12 +27,28 @@ public sealed class ApprovalService(ActionStore store, ActionRunner runner, Chat
     {
         var approval = await store.GetApprovalAsync(approvalId, cancellationToken);
         if (approval is null) return new(false, "Request not found.", null);
+        if (LooksSecret(note))
+            return new(false, NoSecretsMessage, approval);
         if (!await store.DecideApprovalAsync(approvalId, ApprovalStatus.Running, decidedBy, note,
                 cancellationToken))
             return new(false, "Someone already decided this request.", approval);
 
         bool ok;
         string summary;
+        if (approval.Kind == ApprovalKinds.Person)
+        {
+            // A person did the work outside the system; only their note reaches the user.
+            var cleanNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+            await store.CompleteApprovalAsync(approvalId, ApprovalStatus.Done,
+                cleanNote ?? "Done by the helpdesk.", cancellationToken);
+            await NotifyAsync(approval,
+                $"کارشناس پشتیبانی درخواست «{UserTitle(approval)}» را انجام داد."
+                + (cleanNote is null ? string.Empty : $" توضیح: {cleanNote}"),
+                cancellationToken);
+            logger.LogInformation("Person request {ApprovalId} ({Item}) marked done by {Operator}",
+                approvalId, approval.ItemId, decidedBy);
+            return new(true, null, await store.GetApprovalAsync(approvalId, cancellationToken));
+        }
         if (approval.Kind == ApprovalKinds.Package)
         {
             (ok, summary) = await EndpointSupportTools.RunApprovedPackageAsync(registry, catalog,
@@ -64,6 +82,8 @@ public sealed class ApprovalService(ActionStore store, ActionRunner runner, Chat
     {
         var approval = await store.GetApprovalAsync(approvalId, cancellationToken);
         if (approval is null) return new(false, "Request not found.", null);
+        if (LooksSecret(note))
+            return new(false, NoSecretsMessage, approval);
         if (!await store.DecideApprovalAsync(approvalId, ApprovalStatus.Declined, decidedBy, note,
                 cancellationToken))
             return new(false, "Someone already decided this request.", approval);
@@ -74,9 +94,22 @@ public sealed class ApprovalService(ActionStore store, ActionRunner runner, Chat
         return new(true, null, await store.GetApprovalAsync(approvalId, cancellationToken));
     }
 
+    private const string NoSecretsMessage =
+        "The note is shown in the user's chat, which the AI model also reads. Give keys and passwords to the user in person or by phone, never in the note.";
+
+    /// <summary>Notes reach the chat (and so the model): refuse recovery keys and passwords.</summary>
+    internal static bool LooksSecret(string? note) =>
+        !string.IsNullOrWhiteSpace(note)
+        && (Regex.IsMatch(note, @"\d{6}(?:[-\s]\d{6}){7}")
+            || PromptRedactor.RedactSecrets(note) != note
+            || Regex.IsMatch(note,
+                @"(password|passwd|رمز|کلمه\s*عبور)\s*[:=]", RegexOptions.IgnoreCase));
+
     /// <summary>The Persian action name, plus the target label the helpdesk listed.</summary>
     private static string UserTitle(ApprovalRequest approval)
     {
+        if (approval.Kind == ApprovalKinds.Person)
+            return PersonRequestKinds.Find(approval.ItemId)?.TitleFa ?? approval.Title;
         if (approval.Kind != ApprovalKinds.Action
             || EndpointActionCatalog.Find(approval.ItemId) is not { } definition)
             return approval.Title;

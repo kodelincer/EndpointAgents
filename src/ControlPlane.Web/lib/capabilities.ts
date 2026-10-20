@@ -32,7 +32,7 @@ export type ApprovalStatus = "Pending" | "Declined" | "Running" | "Done" | "Fail
 
 /** A step the agent asked for that waits for a helpdesk member. */
 export interface ApprovalRequest {
-  approvalId: string; kind: "action" | "package"; itemId: string; title: string; agentId: string;
+  approvalId: string; kind: "action" | "package" | "person"; itemId: string; title: string; agentId: string;
   userSid?: string | null; conversationId?: string | null; argumentsJson: string; reason: string;
   status: ApprovalStatus; createdAtUtc: string; decidedAtUtc?: string | null; decidedBy?: string | null;
   note?: string | null; resultSummary?: string | null;
@@ -164,7 +164,9 @@ export const targetDetailFields: Record<string, { key: string; label: string; hi
     { key: "type", label: "VPN type", hint: "builtin = Windows VPN connection; client = a vendor client (FortiClient, Cisco, GlobalProtect…)", choices: ["builtin", "client"] },
     { key: "connection", label: "Windows VPN connection name", hint: "For type builtin, exactly as in Settings > VPN" },
     { key: "service", label: "Client service name", hint: "For type client, e.g. FA_Scheduler, vpnagent, PanGPS, OpenVPNService" }
-  ]
+  ],
+  wifi: [{ key: "profile", label: "Windows Wi-Fi profile (optional)", hint: "Only when the profile your policy deploys has a different name than the SSID" }],
+  site: [{ key: "category", label: "Category (optional)", hint: "A short word for the agent, e.g. banking, government, video meetings" }]
 };
 
 /** Counts pending approvals and the oldest one's age in minutes. */
