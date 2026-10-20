@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { filterActions, groupByArea, issueCounts, parseNumberList, parseTextList, successRate, suggestId,
-  type ActionInfo } from "./capabilities";
+import { filterActions, groupByArea, issueCounts, parseNumberList, parseTextList, pendingSummary, successRate, suggestId,
+  type ActionInfo, type ApprovalRequest } from "./capabilities";
 
 const action = (id: string, area: string, tier: ActionInfo["tier"], name = id): ActionInfo => ({
   id, area, tier, runAs: "System", name, nameFa: "نام", description: `does ${name}`, returns: "",
@@ -37,5 +37,15 @@ describe("capabilities", () => {
   it("counts lint issues", () => {
     expect(issueCounts([{ severity: "error", message: "x" }, { severity: "warning", message: "y" },
       { severity: "warning", message: "z" }])).toEqual({ errors: 1, warnings: 2 });
+  });
+
+  it("summarises pending approvals", () => {
+    const request = (status: ApprovalRequest["status"], createdAtUtc: string): ApprovalRequest => ({
+      approvalId: createdAtUtc, kind: "action", itemId: "software.uninstall", title: "Remove software: AnyDesk",
+      agentId: "a", argumentsJson: "{}", reason: "", status, createdAtUtc });
+    const now = Date.parse("2026-10-20T10:00:00Z");
+    expect(pendingSummary([request("Pending", "2026-10-20T09:30:00Z"), request("Pending", "2026-10-20T09:50:00Z"),
+      request("Done", "2026-10-20T08:00:00Z")], now)).toEqual({ count: 2, oldestMinutes: 30 });
+    expect(pendingSummary([], now)).toEqual({ count: 0, oldestMinutes: null });
   });
 });

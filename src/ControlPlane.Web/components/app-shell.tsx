@@ -1,6 +1,6 @@
 "use client";
 
-import { BookMarked, BookOpen, ChevronDown, CircleAlert, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Package, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints } from "lucide-react";
+import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Package, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { roleName } from "@/lib/auth";
@@ -30,6 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Link className={path.startsWith("/agents") ? "active" : ""} href="/agents/"><Waypoints size={15} />Agents</Link>
         <Link className={path.startsWith("/files") ? "active" : ""} href="/files/"><Package size={15} />Packages</Link>
         <Link className={path.startsWith("/support") ? "active" : ""} href="/support/"><LifeBuoy size={15} />Helpdesk{supportRequests.length > 0 && <span className="nav-count">{supportRequests.length}</span>}</Link>
+        <Link className={path.startsWith("/approvals") ? "active" : ""} href="/approvals/"><ClipboardCheck size={15} />Approvals</Link>
         <Link className={path.startsWith("/feature-requests") ? "active" : ""} href="/feature-requests/"><Lightbulb size={15} />Feature requests</Link>
         <Link className={path.startsWith("/capabilities") ? "active" : ""} href="/capabilities/"><BookOpen size={15} />Capabilities</Link>
         <Link className={path.startsWith("/skills") ? "active" : ""} href="/skills/"><Sparkles size={15} />Skills</Link>

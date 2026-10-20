@@ -1,6 +1,6 @@
 import { apiFetch, CONTROL_PLANE_URL } from "./control-plane";
 
-export type ActionTier = "Look" | "SafeFix" | "Disruptive" | "OperatorOnly";
+export type ActionTier = "Look" | "SafeFix" | "Disruptive" | "ItApproval" | "OperatorOnly";
 export type Language = "en" | "fa";
 
 export interface ActionParameterInfo {
@@ -13,7 +13,7 @@ export interface ActionStats { actionId: string; runs: number; succeeded: number
 export interface ActionInfo {
   id: string; area: string; tier: ActionTier; runAs: "System" | "User"; name: string; nameFa: string;
   description: string; returns: string; timeoutSeconds: number; defaultMaxPerHour: number; maxPerHour: number;
-  enabled: boolean; verifiedBy?: string | null; undoActionId?: string | null; exampleResult?: string | null;
+  enabled: boolean; requiresApproval?: boolean; approvalConfigurable?: boolean; verifiedBy?: string | null; undoActionId?: string | null; exampleResult?: string | null;
   usesSettings?: string[] | null; parameters: ActionParameterInfo[]; stats?: ActionStats | null;
 }
 
@@ -25,6 +25,17 @@ export interface Capabilities {
 export interface EnvironmentTarget {
   id: string; kind: string; label: string; address: string; ports: number[]; expectedAddresses: string[];
   driveLetter?: string | null; location?: string | null; notes?: string | null; updatedAtUtc?: string;
+  details?: Record<string, string> | null;
+}
+
+export type ApprovalStatus = "Pending" | "Declined" | "Running" | "Done" | "Failed";
+
+/** A step the agent asked for that waits for a helpdesk member. */
+export interface ApprovalRequest {
+  approvalId: string; kind: "action" | "package"; itemId: string; title: string; agentId: string;
+  userSid?: string | null; conversationId?: string | null; argumentsJson: string; reason: string;
+  status: ApprovalStatus; createdAtUtc: string; decidedAtUtc?: string | null; decidedBy?: string | null;
+  note?: string | null; resultSummary?: string | null;
 }
 
 export interface Incident {
@@ -73,8 +84,16 @@ async function request<T>(path: string, method = "GET", body?: unknown): Promise
 const encode = encodeURIComponent;
 
 export const getCapabilities = () => request<Capabilities>("/api/capabilities");
-export const saveActionSetting = (id: string, enabled: boolean, maxPerHour: number | null) =>
-  request<void>(`/api/actions/${encode(id)}/settings`, "PUT", { enabled, maxPerHour });
+export const saveActionSetting = (id: string, enabled: boolean, maxPerHour: number | null,
+  requiresApproval = false) =>
+  request<void>(`/api/actions/${encode(id)}/settings`, "PUT", { enabled, maxPerHour, requiresApproval });
+
+export const getApprovals = (pendingOnly = false) =>
+  request<ApprovalRequest[]>(`/api/approvals?pendingOnly=${pendingOnly}&limit=200`);
+export const approveRequest = (id: string, note: string) =>
+  request<ApprovalRequest>(`/api/approvals/${encode(id)}/approve`, "POST", { note });
+export const declineRequest = (id: string, note: string) =>
+  request<ApprovalRequest>(`/api/approvals/${encode(id)}/decline`, "POST", { note });
 export const requestMissingAction = (summary: string, details: string) =>
   request<void>("/api/actions/requests", "POST", { summary, details });
 export const getActionRuns = (limit = 100) => request<ActionRun[]>(`/api/actions/runs?limit=${limit}`);
@@ -117,6 +136,7 @@ export const tierText: Record<ActionTier, Record<Language, string>> = {
   Look: { en: "Look (read-only)", fa: "فقط خواندنی" },
   SafeFix: { en: "Safe fix (no prompt)", fa: "اصلاح ایمن (بدون پرسش)" },
   Disruptive: { en: "Disruptive (user agrees first)", fa: "مزاحم (با موافقت کاربر)" },
+  ItApproval: { en: "IT approval (helpdesk approves first)", fa: "با تأیید پشتیبانی" },
   OperatorOnly: { en: "Helpdesk only", fa: "فقط پشتیبانی" }
 };
 
@@ -128,8 +148,34 @@ export const areaText: Record<string, Record<Language, string>> = {
   browsers: { en: "Browsers and certificates", fa: "مرورگر و گواهی" },
   office: { en: "Outlook and Teams", fa: "اوت‌لوک و تیمز" },
   health: { en: "PC health", fa: "سلامت سیستم" },
-  desktop: { en: "Desktop and devices", fa: "دسکتاپ و دستگاه‌ها" }
+  desktop: { en: "Desktop and devices", fa: "دسکتاپ و دستگاه‌ها" },
+  software: { en: "Software", fa: "نرم‌افزار" },
+  devices: { en: "Devices and drivers", fa: "دستگاه‌ها و درایورها" }
 };
+
+/** Extra fields an environment entry of each kind carries (mirrors EnvironmentTargetDetails). */
+export const targetDetailFields: Record<string, { key: string; label: string; hint: string; choices?: string[] }[]> = {
+  app: [
+    { key: "publisher", label: "Publisher (optional)", hint: "As Apps & features shows it; * allowed, e.g. Foxit*" },
+    { key: "packageId", label: "Uninstall package (optional)", hint: "For apps not installed with Windows Installer, e.g. uninstall-anydesk" }
+  ],
+  device: [{ key: "packageId", label: "Driver package", hint: "The signed package that installs this model's driver, e.g. driver-brother-l2350" }],
+  vpn: [
+    { key: "type", label: "VPN type", hint: "builtin = Windows VPN connection; client = a vendor client (FortiClient, Cisco, GlobalProtect…)", choices: ["builtin", "client"] },
+    { key: "connection", label: "Windows VPN connection name", hint: "For type builtin, exactly as in Settings > VPN" },
+    { key: "service", label: "Client service name", hint: "For type client, e.g. FA_Scheduler, vpnagent, PanGPS, OpenVPNService" }
+  ]
+};
+
+/** Counts pending approvals and the oldest one's age in minutes. */
+export function pendingSummary(approvals: ApprovalRequest[], now = Date.now()) {
+  const pending = approvals.filter(item => item.status === "Pending");
+  const oldest = pending.reduce<number | null>((min, item) => {
+    const time = Date.parse(item.createdAtUtc);
+    return min === null || time < min ? time : min;
+  }, null);
+  return { count: pending.length, oldestMinutes: oldest === null ? null : Math.max(0, Math.round((now - oldest) / 60000)) };
+}
 
 /** Actions matching the search text, area and tier, in catalogue order. */
 export function filterActions(actions: ActionInfo[], query: string, area: string, tier: string) {

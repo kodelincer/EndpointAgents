@@ -589,6 +589,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visibl
 .tier-badge.safefix { color: var(--action); background: color-mix(in oklch, var(--action) 10%, white); }
 .tier-badge.disruptive { color: oklch(0.43 0.1 75); background: color-mix(in oklch, var(--warning) 18%, white); }
 .tier-badge.operatoronly { color: var(--muted); }
+.tier-badge.itapproval { color: oklch(0.45 0.13 300); background: color-mix(in oklch, oklch(0.6 0.15 300) 12%, white); }
 .environment-editor { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }
 .environment-editor label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; font-weight: 600; }
 .environment-editor label small { color: var(--muted); font-weight: 400; }
@@ -671,3 +672,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visibl
 .docs-link:hover { color: var(--ink); }
 .docs-link.active { color: var(--action); background: color-mix(in oklch, var(--action) 8%, white); }
 .docs-link:focus-visible { outline: 3px solid color-mix(in oklch, var(--focus) 48%, transparent); outline-offset: 2px; }
+
+.section-title { margin: 18px 0 8px; font-size: 13px; font-weight: 650; }
+.approval-note { margin-top: 8px; width: 100%; max-width: 520px; }

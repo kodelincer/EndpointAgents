@@ -4,17 +4,25 @@ import { CircleAlert, Map as MapIcon, Plus, RefreshCw, Save, Siren, Trash2 } fro
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { createIncident, deleteTarget, getEnvironmentSettings, getIncidents, getTargets, parseNumberList,
-  parseTextList, saveEnvironmentSettings, saveTarget, setIncidentStatus, suggestId, type EnvironmentTarget,
-  type Incident } from "@/lib/capabilities";
+  parseTextList, saveEnvironmentSettings, saveTarget, setIncidentStatus, suggestId, targetDetailFields,
+  type EnvironmentTarget, type Incident } from "@/lib/capabilities";
 
 type Tab = "targets" | "standards" | "incidents";
 
 const kinds = [
-  { value: "webapp", label: "Web app", example: "https://hr.corp.local" },
-  { value: "share", label: "Shared folder", example: "\\\\fs01\\finance" },
-  { value: "printer", label: "Printer", example: "\\\\print01\\HP-2F" },
-  { value: "host", label: "Server", example: "dc01.corp.local" }
+  { value: "webapp", label: "Web app", example: "https://hr.corp.local", address: "Address" },
+  { value: "share", label: "Shared folder", example: "\\\\fs01\\finance", address: "Address" },
+  { value: "printer", label: "Printer", example: "\\\\print01\\HP-2F", address: "Address" },
+  { value: "host", label: "Server", example: "dc01.corp.local", address: "Address" },
+  { value: "app", label: "Removable software", example: "Foxit PDF Reader*",
+    address: "Name in Apps & features (* allowed)" },
+  { value: "device", label: "Driver catalog (device model)", example: "USB\\VID_04F9&PID_0042",
+    address: "Hardware IDs (Device Manager > Details), separated by ;" },
+  { value: "vpn", label: "VPN", example: "vpn.corp.example", address: "VPN server host name" }
 ];
+
+/** Kinds that are network places the agent can test; the others are helpdesk lists. */
+const networkKinds = ["webapp", "share", "printer", "host", "vpn"];
 
 const standards = [
   { key: "network.internalSuffixes", label: "Internal DNS suffixes", hint: "Comma-separated, e.g. corp.local. Names under them are hidden from the cloud model." },
@@ -23,6 +31,7 @@ const standards = [
   { key: "proxy.server", label: "Proxy server", hint: "host:port, when proxy.mode is server." },
   { key: "proxy.bypass", label: "Proxy bypass list", hint: "Semicolon list, e.g. *.corp.local;<local>" },
   { key: "time.standardZone", label: "Standard time zone", hint: "Windows id, e.g. Iran Standard Time." },
+  { key: "network.dnsFromDhcp", label: "DNS servers come from DHCP", hint: "true when DHCP hands out the right DNS servers, so hand-typed ones are a fault the agent may remove." },
   { key: "trust.rootThumbprints", label: "Organisation root CA thumbprints", hint: "Comma-separated SHA-1 thumbprints." }
 ];
 
@@ -60,7 +69,9 @@ export function EnvironmentMap() {
     await saveTarget({ ...editing, id: editing.id || suggestId(editing.label),
       ports: parseNumberList(editing.ports_ ?? editing.ports.join(", ")),
       expectedAddresses: parseTextList(editing.expected_ ?? editing.expectedAddresses.join(", ")),
-      driveLetter: editing.kind === "share" && editing.driveLetter ? editing.driveLetter : null });
+      driveLetter: editing.kind === "share" && editing.driveLetter ? editing.driveLetter : null,
+      details: Object.fromEntries(Object.entries(editing.details ?? {})
+        .filter(([key, value]) => value.trim() && (targetDetailFields[editing.kind] ?? []).some(field => field.key === key))) });
     setEditing(undefined);
   }, "Target saved.");
 
@@ -68,7 +79,8 @@ export function EnvironmentMap() {
     <section className="file-heading" aria-labelledby="environment-title">
       <div><div className="file-heading-mark"><MapIcon size={17} /></div><div>
         <h1 id="environment-title">Environment</h1>
-        <p>Internal web apps, shares, printers and servers the agent may test or connect to, the organisation&apos;s standards, and known outages.
+        <p>Internal web apps, shares, printers, servers and VPNs the agent may test or connect to; the software that may be removed and the
+          device models with approved drivers; the organisation&apos;s standards; and known outages.
           The agent sees only ids and labels; addresses stay on this server.</p></div></div>
       <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>
         <RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
@@ -95,13 +107,20 @@ export function EnvironmentMap() {
           onChange={event => setEditing({ ...editing, label: event.target.value })} /></label>
         <label>Id<input value={editing.id} disabled={!editing.isNew} placeholder={suggestId(editing.label) || "hr-portal"}
           onChange={event => setEditing({ ...editing, id: event.target.value })} /></label>
-        <label>Address<input value={editing.address} dir="ltr" placeholder={kinds.find(kind => kind.value === editing.kind)?.example}
+        <label>{kinds.find(kind => kind.value === editing.kind)?.address ?? "Address"}<input value={editing.address} dir="ltr" placeholder={kinds.find(kind => kind.value === editing.kind)?.example}
           onChange={event => setEditing({ ...editing, address: event.target.value })} /></label>
-        {(editing.kind === "host" || editing.kind === "webapp") && <label>Ports the agent may test
+        {(targetDetailFields[editing.kind] ?? []).map(field => <label key={field.key}>{field.label}
+          {field.choices ? <select value={editing.details?.[field.key] ?? ""}
+            onChange={event => setEditing({ ...editing, details: { ...editing.details, [field.key]: event.target.value } })}>
+            <option value="">Choose…</option>{field.choices.map(choice => <option key={choice} value={choice}>{choice}</option>)}</select>
+            : <input value={editing.details?.[field.key] ?? ""} dir="ltr"
+              onChange={event => setEditing({ ...editing, details: { ...editing.details, [field.key]: event.target.value } })} />}
+          <small>{field.hint}</small></label>)}
+        {(editing.kind === "host" || editing.kind === "webapp" || editing.kind === "vpn") && <label>Ports the agent may test
           <input value={editing.ports_ ?? editing.ports.join(", ")} placeholder="443, 8080"
             onChange={event => setEditing({ ...editing, ports_: event.target.value })} /></label>}
-        <label>Expected IP addresses (optional)<input value={editing.expected_ ?? editing.expectedAddresses.join(", ")}
-          placeholder="10.0.0.10" onChange={event => setEditing({ ...editing, expected_: event.target.value })} /></label>
+        {networkKinds.includes(editing.kind) && <label>Expected IP addresses (optional)<input value={editing.expected_ ?? editing.expectedAddresses.join(", ")}
+          placeholder="10.0.0.10" onChange={event => setEditing({ ...editing, expected_: event.target.value })} /></label>}
         {editing.kind === "share" && <label>Standard drive letter (optional)<input value={editing.driveLetter ?? ""}
           placeholder="F:" onChange={event => setEditing({ ...editing, driveLetter: event.target.value.toUpperCase() })} /></label>}
         <label>Location<input value={editing.location ?? ""} dir="auto" onChange={event => setEditing({ ...editing, location: event.target.value })} /></label>
@@ -117,7 +136,8 @@ export function EnvironmentMap() {
             <span className="ticket-status">{kinds.find(kind => kind.value === target.kind)?.label ?? target.kind}</span>
             {target.driveLetter && <span className="ticket-status">{target.driveLetter}</span>}</div>
           <p className="file-description" dir="ltr">{target.address}{target.ports.length > 0 && ` · ports ${target.ports.join(", ")}`}
-            {target.expectedAddresses.length > 0 && ` · expects ${target.expectedAddresses.join(", ")}`}</p>
+            {target.expectedAddresses.length > 0 && ` · expects ${target.expectedAddresses.join(", ")}`}
+            {Object.entries(target.details ?? {}).map(([key, value]) => ` · ${key} ${value}`).join("")}</p>
           {(target.location || target.notes) && <p className="file-compatibility" dir="auto">{[target.location, target.notes].filter(Boolean).join(" · ")}</p>}
         </div>
         {manage && <div className="file-row-actions">
@@ -153,7 +173,7 @@ function IncidentPanel({ incidents, targets, onRun }: { incidents: Incident[]; t
       <label className="wide">Title<input value={title} dir="auto" onChange={event => setTitle(event.target.value)} placeholder="Finance app is down" /></label>
       <label className="wide">What users should hear<input value={description} dir="auto" onChange={event => setDescription(event.target.value)} /></label>
       <fieldset className="wide incident-targets"><legend>Affected targets</legend>
-        {targets.map(target => <label key={target.id}><input type="checkbox" checked={affected.includes(target.id)}
+        {targets.filter(target => networkKinds.includes(target.kind)).map(target => <label key={target.id}><input type="checkbox" checked={affected.includes(target.id)}
           onChange={event => setAffected(event.target.checked ? [...affected, target.id] : affected.filter(id => id !== target.id))} />
           <span dir="auto">{target.label}</span></label>)}</fieldset>
       <div className="wide"><button className="primary-button" disabled={!title.trim()}

@@ -60,12 +60,14 @@ export function CapabilitiesPage() {
     [data, query, area, tier]);
   const fa = language === "fa";
 
-  const update = async (action: ActionInfo, enabled: boolean, maxPerHour: number | null) => {
+  const update = async (action: ActionInfo, enabled: boolean, maxPerHour: number | null,
+    requiresApproval = action.tier === "ItApproval" ? false : !!action.requiresApproval) => {
     setBusy(action.id);
     try {
-      await saveActionSetting(action.id, enabled, maxPerHour);
+      await saveActionSetting(action.id, enabled, maxPerHour, requiresApproval);
       setData(current => current && { ...current, actions: current.actions.map(item => item.id === action.id
-        ? { ...item, enabled, maxPerHour: maxPerHour ?? item.defaultMaxPerHour } : item) });
+        ? { ...item, enabled, maxPerHour: maxPerHour ?? item.defaultMaxPerHour,
+          requiresApproval: item.tier === "ItApproval" || requiresApproval } : item) });
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The setting could not be saved."); }
     finally { setBusy(undefined); }
   };
@@ -112,7 +114,7 @@ export function CapabilitiesPage() {
             {data.areas.map(item => <option key={item} value={item}>{areaText[item]?.[language] ?? item}</option>)}</select>
           <select value={tier} onChange={event => setTier(event.target.value)} aria-label="Tier">
             <option value="all">{fa ? "همه سطح‌ها" : "All tiers"}</option>
-            {(["Look", "SafeFix", "Disruptive", "OperatorOnly"] as const).map(item =>
+            {(["Look", "SafeFix", "Disruptive", "ItApproval", "OperatorOnly"] as const).map(item =>
               <option key={item} value={item}>{tierText[item][language]}</option>)}</select>
         </div>
         <p className="capability-count">{data.actions.length} {fa ? "کار" : "actions"} ·
@@ -120,7 +122,7 @@ export function CapabilitiesPage() {
         {groups.map(group => <section key={group.area} className="capability-group" aria-label={group.area}>
           <h2>{areaText[group.area]?.[language] ?? group.area}</h2>
           {group.actions.map(action => <ActionCard key={action.id} action={action} language={language}
-            busy={busy === action.id} canManage={can("environment.manage")} onChange={(enabled, max) => void update(action, enabled, max)} />)}
+            busy={busy === action.id} canManage={can("environment.manage")} onChange={(enabled, max, approval) => void update(action, enabled, max, approval)} />)}
         </section>)}
         <MissingActionForm language={language} />
       </>}
@@ -159,7 +161,7 @@ export function CapabilitiesPage() {
 }
 
 function ActionCard({ action, language, busy, canManage, onChange }: { action: ActionInfo; language: Language; busy: boolean;
-  canManage: boolean; onChange: (enabled: boolean, maxPerHour: number | null) => void }) {
+  canManage: boolean; onChange: (enabled: boolean, maxPerHour: number | null, requiresApproval?: boolean) => void }) {
   const fa = language === "fa";
   const rate = successRate(action.stats);
   const [limit, setLimit] = useState(String(action.maxPerHour));
@@ -168,6 +170,7 @@ function ActionCard({ action, language, busy, canManage, onChange }: { action: A
       <div className="file-row-title">
         <strong>{fa ? action.nameFa : action.name}</strong><code dir="ltr">{action.id}</code>
         <span className={`tier-badge ${action.tier.toLowerCase()}`}>{tierText[action.tier][language]}</span>
+        {action.requiresApproval && action.tier !== "ItApproval" && <span className="tier-badge itapproval">{fa ? "نیاز به تأیید" : "Needs approval"}</span>}
         <span className="muted">{action.runAs === "User" ? (fa ? "در نشست کاربر" : "runs as the user") : (fa ? "در سرویس" : "runs as the service")}</span>
       </div>
       <p className="file-description" dir="ltr">{action.description}</p>
@@ -191,6 +194,9 @@ function ActionCard({ action, language, busy, canManage, onChange }: { action: A
       <label className="capability-limit">Max/hour per PC
         <input type="number" min={0} max={1000} value={limit} disabled={busy || !canManage} onChange={event => setLimit(event.target.value)}
           onBlur={() => Number(limit) !== action.maxPerHour && onChange(action.enabled, Number(limit) || null)} /></label>
+      {action.approvalConfigurable && <label className="package-toggle" title="The agent asks the helpdesk on the Approvals page before running it">
+        <input type="checkbox" checked={!!action.requiresApproval} disabled={busy || !canManage}
+          onChange={event => onChange(action.enabled, Number(limit) || null, event.target.checked)} />Needs IT approval</label>}
     </div>}
   </article>;
 }
