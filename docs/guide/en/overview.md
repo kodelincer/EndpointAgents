@@ -52,7 +52,7 @@ Three rules hold at every step:
 
 | Page | Use it to |
 | --- | --- |
-| **Overview** and **Agents** | See which PCs are online. Admins can send catalogued commands. |
+| **Overview** and **Endpoints** | See which PCs are online. Admins can send catalogued commands. |
 | **Packages** | See repair packages, their status and exactly what to fix. |
 | **Helpdesk** | Read live conversations, take over, see escalated cases. |
 | **Approvals** | Approve or decline the requests that wait for a helpdesk member, such as removing software. |

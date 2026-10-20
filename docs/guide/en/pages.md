@@ -11,7 +11,7 @@ order: 10
 | Page | What you do there | Who |
 | --- | --- | --- |
 | **Overview** | See the state of the control plane, agents online and recent activity. Admins can switch maintenance mode on or off. | Everyone reads, admins change |
-| **Agents** | The PCs that are connected. Admins can send a catalogued command; the user still sees a consent card for commands that change the PC. | Everyone reads, admins send |
+| **Endpoints** | The PCs that are connected. Admins can send a catalogued command; the user still sees a consent card for commands that change the PC. | Everyone reads, admins send |
 | **Packages** | Every repair package with its status, symptoms, hashes, signer and exactly what to fix when it is not Ready. | Everyone reads |
 | **Helpdesk** | Live conversations, escalated cases, take over, read-only diagnostics. See [Daily helpdesk work](/docs/helpdesk/). | Members and above |
 | **Approvals** | Requests that wait for a helpdesk member: removing software, uninstall packages, and fixes an admin marked "Needs IT approval". **Approve and run** runs it at once; **Decline** takes a note the user sees. | Members and above |

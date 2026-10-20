@@ -129,7 +129,7 @@ export function OperationsOverview() {
       <section className="operations-panel"><header><div><Activity size={16} /><h2>Latest activity</h2></div><a href="/agents/">Open agent registry</a></header>
         {loading ? <div className="skeleton-list compact"><div className="skeleton-row" /><div className="skeleton-row" /></div> :
         recentActivity.length ? <div className="operations-list">{recentActivity.map(item => <ActivityLine key={item.eventId} item={item} />)}</div> :
-        <div className="panel-empty"><Waypoints size={19} /><span>Agent connections and command results will appear here.</span></div>}
+        <div className="panel-empty"><Waypoints size={19} /><span>Endpoint connections and command results will appear here.</span></div>}
       </section>
       <section className="operations-panel incident-panel"><header><div><Server size={16} /><h2>Attention queue</h2></div><span>{recentFailures.length + recentDisconnects.length} recent</span></header>
         {recentFailures.length + recentDisconnects.length ? <div className="operations-list">

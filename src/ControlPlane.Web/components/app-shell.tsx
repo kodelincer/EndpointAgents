@@ -27,7 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </Link>
       <nav className="primary-nav" aria-label="Control plane">
         <Link className={path === "/" ? "active" : ""} href="/"><LayoutDashboard size={15} />Overview</Link>
-        <Link className={path.startsWith("/agents") ? "active" : ""} href="/agents/"><Waypoints size={15} />Agents</Link>
+        <Link className={path.startsWith("/agents") ? "active" : ""} href="/agents/"><Waypoints size={15} />Endpoints</Link>
         <Link className={path.startsWith("/files") ? "active" : ""} href="/files/"><Package size={15} />Packages</Link>
         <Link className={path.startsWith("/support") ? "active" : ""} href="/support/"><LifeBuoy size={15} />Helpdesk{supportRequests.length > 0 && <span className="nav-count">{supportRequests.length}</span>}</Link>
         <Link className={path.startsWith("/approvals") ? "active" : ""} href="/approvals/"><ClipboardCheck size={15} />Approvals</Link>

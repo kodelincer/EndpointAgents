@@ -20,7 +20,7 @@ function relative(value: string) {
   return `${Math.floor(seconds / 3600)}h ago`;
 }
 
-/** Agent registry, live activity rail, command review, and RPC trace inspection. */
+/** Endpoint registry, live activity rail, command review, and RPC trace inspection. */
 export function ControlPlaneDashboard() {
   const { agents, activity, commands, loading, loadError, refresh } = useControlPlane();
   const canRun = useAuth().can("commands.run");
@@ -95,7 +95,7 @@ export function ControlPlaneDashboard() {
   return <div className="agent-workspace">
     <div className={`workspace ${railOpen ? "with-rail" : ""}`}>
       <section className="registry" aria-labelledby="registry-title">
-        <div className="section-heading"><div><h1 id="registry-title">Agent registry</h1><p>Live Windows endpoints currently registered with this control plane.</p></div>
+        <div className="section-heading"><div><h1 id="registry-title">Endpoints</h1><p>Live Windows endpoints currently registered with this control plane.</p></div>
           {!railOpen && <button className="secondary-button" onClick={() => setRailOpen(true)}><ActivityIcon size={15} /> Show activity</button>}
         </div>
         <div className="registry-tools">
@@ -107,10 +107,10 @@ export function ControlPlaneDashboard() {
         {loadError && <div className="inline-error" role="alert"><CircleAlert size={17} /><div><strong>Dashboard data is unavailable</strong><span>{loadError}</span></div><button onClick={() => void refresh()}>Retry</button></div>}
         {loading ? <div className="skeleton-list" aria-label="Loading agents">{[1,2,3].map(i => <div className="skeleton-row" key={i} />)}</div> :
         visibleAgents.length === 0 ? <div className="empty-state"><span className="empty-icon"><Server size={23} /></span><h2>{query ? "No matching agents" : "Waiting for endpoint agents"}</h2><p>{query ? "Try a different hostname, user, or agent ID." : "Start an endpoint service configured for this control plane. It will appear here as soon as it registers."}</p></div> :
-        <div className="agent-table-wrap"><table className="agent-table"><thead><tr><th>Agent</th><th>Host</th><th>User</th><th>Version</th><th>Connected</th><th>Last activity</th><th><span className="sr-only">Actions</span></th></tr></thead>
+        <div className="agent-table-wrap"><table className="agent-table"><thead><tr><th>Endpoint</th><th>Host</th><th>User</th><th>Version</th><th>Connected</th><th>Last activity</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{visibleAgents.map(agent => { const last = lastByAgent.get(agent.agentId); return <tr key={agent.agentId} tabIndex={0}
             onContextMenu={e => { e.preventDefault(); setOpenCommandGroup(undefined); setMenu({ x: e.clientX, y: e.clientY, agent }); }} onKeyDown={e => { if (e.key === "Enter") openReview(agent); }}>
-            <td data-label="Agent"><span className="agent-identity"><span className="online-indicator" aria-label="Online" /><span><strong>{agent.agentId}</strong><small>{agent.machineName}</small></span></span></td>
+            <td data-label="Endpoint"><span className="agent-identity"><span className="online-indicator" aria-label="Online" /><span><strong>{agent.agentId}</strong><small>{agent.machineName}</small></span></span></td>
             <td data-label="Host">{agent.hostname}</td><td data-label="User">{agent.userName}</td><td data-label="Version"><code>{agent.version}</code></td>
             <td data-label="Connected" title={new Date(agent.connectedAtUtc).toLocaleString()}>{relative(agent.connectedAtUtc)}</td>
             <td data-label="Last activity">{last ? <span className={`table-status ${last.status}`}>{last.status} · {relative(last.timestampUtc)}</span> : <span className="muted">No commands</span>}</td>
