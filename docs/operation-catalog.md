@@ -335,7 +335,9 @@ with playbooks and fallbacks; install packages and a software-install skill on t
 branch `claude/chrome-install-package` (not yet merged anywhere); escalation, feature
 requests, incidents, server probe, AD account check, masking, kill switches and limits.
 
-Missing, in order of how often companies hit them:
+Missing, in order of how often companies hit them. **Items 1 to 6 are now built (batch 1,
+branch `claude/ops-catalog`); the text below keeps the original reasoning.** Items 7 to 9
+are the next batch:
 
 1. **IT approval tier and Approvals page.** Needed before anything that removes or rolls
    back. Nothing in the code today lets a helpdesk member approve a step that then runs on
