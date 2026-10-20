@@ -146,7 +146,7 @@ export const areaText: Record<string, Record<Language, string>> = {
   printers: { en: "Printers", fa: "چاپگرها" },
   drives: { en: "Shared drives and profile", fa: "درایوهای اشتراکی و پروفایل" },
   browsers: { en: "Browsers and certificates", fa: "مرورگر و گواهی" },
-  office: { en: "Outlook and Teams", fa: "اوت‌لوک و تیمز" },
+  office: { en: "Outlook and Office", fa: "اوت‌لوک و آفیس" },
   health: { en: "PC health", fa: "سلامت سیستم" },
   desktop: { en: "Desktop and devices", fa: "دسکتاپ و دستگاه‌ها" },
   software: { en: "Software", fa: "نرم‌افزار" },

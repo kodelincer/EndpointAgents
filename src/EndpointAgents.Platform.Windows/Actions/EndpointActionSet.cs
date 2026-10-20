@@ -45,10 +45,10 @@ public static class EndpointActionSet
         new PrinterAddAction(), new PrinterRemoveAction(), new PrinterTestPageAction(),
         new DrivesListAction(), new ShareTestAction(), new DriveRemapAction(),
         new ProfileStatusAction(), new BrowserInventoryAction(), new BrowserClearCacheAction(),
-        new OutlookStatusAction(), new TeamsClearCacheAction(), new ExplorerStatusAction(),
+        new OutlookStatusAction(), new ExplorerStatusAction(),
         new ExplorerRestartAction(), new InputLanguagesAction(), new InputAddLayoutAction(),
         new RegionStatusAction(), new DisplayStatusAction(), new MediaStatusAction(),
-        new AllowCameraMicAction(), new OneDriveStatusAction(), new AppCloseAction(),
+        new AllowCameraMicAction(), new AppCloseAction(),
         new AudioStatusAction(), new AudioUnmuteAction(), new AudioSetDefaultAction(),
         new AudioRestoreDefaultAction(), new PrinterStatusAction(), new WhoAmIGroupsAction()
     ];

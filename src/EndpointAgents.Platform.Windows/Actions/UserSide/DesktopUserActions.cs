@@ -239,36 +239,6 @@ public sealed class OutlookStatusAction : IEndpointAction
 }
 
 [SupportedOSPlatform("windows")]
-public sealed class TeamsClearCacheAction : IEndpointAction
-{
-    public string Id => "teams.clear_cache";
-
-    public Task<EndpointActionResult> RunAsync(ActionInvocation invocation,
-        CancellationToken cancellationToken)
-    {
-        var running = SessionProcesses.Named("ms-teams", "Teams");
-        var open = running.Length > 0;
-        SessionProcesses.DisposeAll(running);
-        if (open)
-            return Task.FromResult(EndpointActionResult.Blocked(
-                "Teams is open; it must be closed before its cache can be cleared."));
-        var classic = Path.Combine(AppFolders.Roaming, "Microsoft", "Teams");
-        var folders = new[] { "Cache", "blob_storage", "databases", "GPUCache", "IndexedDB",
-                "Local Storage", "tmp", "Code Cache", Path.Combine("Service Worker", "CacheStorage") }
-            .Select(name => Path.Combine(classic, name))
-            .Append(Path.Combine(AppFolders.Local, "Packages", "MSTeams_8wekyb3d8bbwe",
-                "LocalCache", "Microsoft", "MSTeams"))
-            .ToArray();
-        if (!folders.Any(Directory.Exists))
-            return Task.FromResult(EndpointActionResult.NotNeeded("Teams has no cache on this PC."));
-        var freed = AppFolders.Empty(folders, cancellationToken);
-        return Task.FromResult(EndpointActionResult.Done(
-            $"The Teams cache was cleared ({freed / 1024d / 1024:0} MB); the user may need to sign in again.",
-            new { FreedMb = Math.Round(freed / 1024d / 1024, 0) }));
-    }
-}
-
-[SupportedOSPlatform("windows")]
 public sealed class ExplorerStatusAction : IEndpointAction
 {
     public string Id => "explorer.status";
@@ -536,31 +506,6 @@ public sealed class AllowCameraMicAction : IEndpointAction
 }
 
 [SupportedOSPlatform("windows")]
-public sealed class OneDriveStatusAction : IEndpointAction
-{
-    public string Id => "onedrive.status";
-
-    public Task<EndpointActionResult> RunAsync(ActionInvocation invocation,
-        CancellationToken cancellationToken)
-    {
-        var installed = File.Exists(Path.Combine(AppFolders.Local, "Microsoft", "OneDrive", "OneDrive.exe"))
-            || File.Exists(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                "Microsoft OneDrive", "OneDrive.exe"));
-        var running = SessionProcesses.Named("OneDrive");
-        var isRunning = running.Length > 0;
-        SessionProcesses.DisposeAll(running);
-        using var business = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\OneDrive\Accounts\Business1");
-        var signedIn = business?.GetValue("UserFolder") is string;
-        return Task.FromResult(EndpointActionResult.Ok(
-            !installed ? "OneDrive is not installed."
-            : !signedIn ? "OneDrive is not signed in with a work account."
-            : !isRunning ? "OneDrive is signed in but not running."
-            : "OneDrive is running and signed in.",
-            new { Installed = installed, Running = isRunning, BusinessAccount = signedIn }));
-    }
-}
-
-[SupportedOSPlatform("windows")]
 public sealed class AppCloseAction : IEndpointAction
 {
     public string Id => "app.close";
@@ -571,7 +516,6 @@ public sealed class AppCloseAction : IEndpointAction
         ["word"] = ["WINWORD"],
         ["excel"] = ["EXCEL"],
         ["powerpoint"] = ["POWERPNT"],
-        ["teams"] = ["ms-teams", "Teams"],
         ["chrome"] = ["chrome"],
         ["edge"] = ["msedge"],
         ["firefox"] = ["firefox"]

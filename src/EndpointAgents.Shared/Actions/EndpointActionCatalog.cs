@@ -97,7 +97,6 @@ public static class EndpointActionCatalog
         new("word", "Word"),
         new("excel", "Excel"),
         new("powerpoint", "PowerPoint"),
-        new("teams", "Teams"),
         new("chrome", "Google Chrome"),
         new("edge", "Microsoft Edge"),
         new("firefox", "Firefox")
@@ -333,10 +332,6 @@ public static class EndpointActionCatalog
             "Outlook profiles, data file sizes (OST/PST), cached mode and add-ins that are disabled or slow.",
             "Running, ProfileCount, DataFiles (Kind, SizeGb, NearLimit), Addins (Name, LoadBehavior, Active).",
             []),
-        new("teams.clear_cache", ActionAreas.Office, ActionTier.SafeFix, ActionRunAs.User,
-            "Clear Teams cache", "پاک کردن کش Teams",
-            "Clears the cache of classic and new Teams. Teams must be closed; the user may need to sign in again.",
-            "Done with FreedMb, or Blocked when Teams is open.", [], TimeoutSeconds: 60),
 
         // ---------- Health and Windows ----------
         new("system.recent_changes", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
@@ -455,11 +450,6 @@ public static class EndpointActionCatalog
             "Power and battery", "برق و باتری",
             "Active power plan, battery charge and health (laptops).",
             "PowerPlan, Battery (ChargePercent, Status, HealthPercent).",
-            []),
-        new("onedrive.status", ActionAreas.Desktop, ActionTier.Look, ActionRunAs.User,
-            "OneDrive status", "وضعیت OneDrive",
-            "Whether OneDrive is installed, running and signed in for work.",
-            "Installed, Running, BusinessAccount.",
             []),
         new("app.close", ActionAreas.Desktop, ActionTier.Disruptive, ActionRunAs.User,
             "Close an app", "بستن برنامه",

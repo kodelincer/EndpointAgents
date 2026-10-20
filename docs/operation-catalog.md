@@ -218,9 +218,8 @@ signed package that is from the **Driver catalog** and the device's hardware ID.
 | Outlook profile broken | `outlook.new_profile` (creates a fresh profile with autodiscover, keeps the old one) | A | Disrupt | Batch 3 |
 | Shared mailbox / calendar missing | escalate (Exchange permission, not a PC fault) | S | — | — |
 
-Teams, OneDrive and Microsoft 365 sign-in are not part of this system. `teams.clear_cache`
-and `onedrive.status` were built earlier; the skills no longer use them, and an admin can
-switch them off on the Capabilities page.
+Teams, OneDrive and Microsoft 365 sign-in are not part of this system (the earlier
+`teams.clear_cache` and `onedrive.status` actions were removed).
 
 ## 9. Accounts, sign-in and passwords
 
