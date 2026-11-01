@@ -1,6 +1,6 @@
 "use client";
 
-import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, Package, PanelRightClose, PanelRightOpen, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
+import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, Package, PanelLeftClose, PanelLeftOpen, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { roleName } from "@/lib/auth";
@@ -30,7 +30,7 @@ function isActive(path: string, item: NavItem) {
   return item.exact ? path === item.href : path.startsWith(item.href.replace(/\/$/, ""));
 }
 
-/** Provides the right-hand sidebar, the slim top bar and connection feedback across pages. */
+/** Provides the left-hand sidebar, the slim top bar and connection feedback across pages. */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const path = usePathname();
   const { agents, supportRequests, connection, refresh } = useControlPlane();
@@ -90,7 +90,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Link>
         <button className="sidebar-toggle rail-toggle" onClick={toggleCollapsed} aria-expanded={!collapsed} aria-controls="sidebar"
           aria-label={collapsed ? "Expand menu" : "Collapse menu"} title={collapsed ? "Expand menu" : "Collapse menu"}>
-          {collapsed ? <PanelRightOpen size={17} /> : <PanelRightClose size={17} />}
+          {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
         </button>
         <button className="sidebar-toggle drawer-close" onClick={() => { setDrawerOpen(false); menuButton.current?.focus(); }} aria-label="Close menu"><X size={17} /></button>
       </div>
@@ -115,6 +115,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <main className="app-main">
       <header className="topbar">
         <div className="topbar-title">
+          <button ref={menuButton} className="menu-button" onClick={() => setDrawerOpen(true)} aria-label="Open menu"
+            aria-expanded={drawerOpen} aria-controls="sidebar"><Menu size={18} /></button>
           <span className="brand-mark"><Server size={15} /></span>
           <span>{current?.label ?? "Control plane"}</span>
         </div>
@@ -122,8 +124,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className={`connection-state ${connection}`}><span className="state-dot" />{statusLabel(connection)}</span>
           <span className="topbar-divider" /><span>{agents.length} endpoint{agents.length === 1 ? "" : "s"} online</span>
           <button className="icon-button" onClick={() => void refresh()} aria-label="Refresh control-plane data" title="Refresh"><RefreshCw size={16} /></button>
-          <button ref={menuButton} className="menu-button" onClick={() => setDrawerOpen(true)} aria-label="Open menu"
-            aria-expanded={drawerOpen} aria-controls="sidebar"><Menu size={18} /></button>
         </div>
       </header>
 

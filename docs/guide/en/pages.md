@@ -24,7 +24,7 @@ order: 11
 
 ## Finding your way
 
-All pages are in the sidebar on the right, grouped as **Monitor**, **Support**, **Agent setup**, **Administration** (admins only) and **Help**. The current page is highlighted, and red numbers show items waiting (for example open helpdesk cases).
+All pages are in the sidebar on the left, grouped as **Monitor**, **Support**, **Agent setup**, **Administration** (admins only) and **Help**. The current page is highlighted, and red numbers show items waiting (for example open helpdesk cases).
 
 - The button at the top of the sidebar shrinks it to icons only; hover an icon to see its name. The dashboard remembers your choice on this computer.
 - On a narrow window the sidebar is hidden. Open it with the menu button in the top bar, and close it with **Esc**, the close button or a click outside.

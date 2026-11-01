@@ -408,7 +408,7 @@ original reasoning.**
   and their note reaches the user's chat. Notes that look like a password or recovery key
   are refused, because the chat is also read by the model.
 - Skills: `network-support`, `slow-pc-health`, `desktop-apps`, `signin-domain`, and SOUL.md.
-- Dashboard: right-hand sidebar navigation.
+- Dashboard: sidebar navigation (moved to the left side on 1 November).
 
 Moved from batch 2 to batch 3 because they need more than one small fixed step, or are
 rare: firewall profile reset, Wi-Fi profile forget, built-in VPN profile and connect, org
