@@ -749,3 +749,36 @@ button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visibl
 .sidebar-foot .account-copy { display: flex; min-width: 0; }
 .app-shell.collapsed .sidebar-foot .account-copy { display: none; }
 @media (max-width: 1024px) { .app-shell.collapsed .sidebar-foot .account-copy { display: flex; } }
+
+/* Sidebar as a metro route, in the sign-in page's ink: each section group is a line,
+   each page a station, the current page the white "you are here" stop. */
+.sidebar { --route-ink: oklch(0.23 0.03 258); --route-ink-2: oklch(0.29 0.035 258); --route-line: oklch(0.7 0.13 252); --route-text: oklch(0.76 0.025 255);
+  background: var(--route-ink); border-right-color: oklch(0.3 0.03 258); color: var(--route-text); }
+.sidebar-head { border-bottom-color: oklch(0.31 0.03 258); }
+.sidebar .brand { color: white; }
+.sidebar .brand-mark { background: var(--route-ink-2); box-shadow: inset 0 0 0 1px oklch(0.38 0.04 258); }
+.sidebar .brand-copy > span { color: var(--route-text); }
+.sidebar .sidebar-toggle { color: var(--route-text); }
+.sidebar .sidebar-toggle:hover { color: white; background: var(--route-ink-2); }
+.sidebar .nav-group-title { color: oklch(0.63 0.03 255); }
+.sidebar .nav-group ul { position: relative; gap: 2px; }
+.sidebar .nav-group ul::before { content: ""; position: absolute; left: 18px; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: color-mix(in oklch, var(--route-line) 70%, var(--route-ink)); animation: route-draw 700ms cubic-bezier(.16,1,.3,1) both; }
+.sidebar .nav-link { padding: 0 8px 0 6px; color: var(--route-text); }
+.sidebar .nav-link svg { position: relative; box-sizing: content-box; padding: 5px; border-radius: 50%; background: var(--route-ink); box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--route-line) 70%, var(--route-ink)); transition: background .18s ease-out, color .18s ease-out, box-shadow .18s ease-out; }
+.sidebar .nav-link:hover { color: white; background: var(--route-ink-2); }
+.sidebar .nav-link:hover svg { background: var(--route-ink-2); }
+.sidebar .nav-link[aria-current="page"] { color: white; background: var(--route-ink-2); }
+.sidebar .nav-link[aria-current="page"]::after { display: none; }
+.sidebar .nav-link[aria-current="page"] svg { color: var(--action); background: white; box-shadow: 0 0 0 4px color-mix(in oklch, var(--route-line) 35%, transparent); }
+.sidebar .nav-link:focus-visible { outline-color: color-mix(in oklch, var(--route-line) 70%, transparent); }
+.sidebar-foot { border-top-color: oklch(0.31 0.03 258); }
+.sidebar .account-button { color: var(--route-text); }
+.sidebar .account-button:hover, .sidebar .account-button[aria-expanded="true"] { background: var(--route-ink-2); }
+.sidebar .account-avatar { color: white; background: color-mix(in oklch, var(--route-line) 45%, var(--route-ink)); }
+.sidebar .account-copy strong { color: white; }
+.sidebar .account-copy span { color: var(--route-text); }
+.app-shell.collapsed .sidebar .nav-group ul::before { left: 20.5px; }
+.app-shell.collapsed .sidebar .nav-group + .nav-group { border-top-color: oklch(0.31 0.03 258); }
+.app-shell.collapsed .sidebar .nav-link { padding: 0; }
+@media (max-width: 1024px) { .app-shell.collapsed .sidebar .nav-group ul::before { left: 18px; } .app-shell.collapsed .sidebar .nav-link { padding: 0 8px 0 6px; } }
+@media (prefers-reduced-motion: reduce) { .sidebar .nav-group ul::before { animation: none; } .sidebar .nav-link svg { transition: none; } }
