@@ -201,9 +201,10 @@ public static partial class ActionEndpoints
         app.MapPost("/api/settings/kms/test", async (KmsSettingsInput input,
             CancellationToken cancellationToken) =>
         {
-            if (ValidateSetting(ActionSettings.KmsHost, input.Host) is { } hostError
-                || string.IsNullOrWhiteSpace(input.Host))
-                return Results.BadRequest(new { message = hostError ?? "Enter the KMS server first." });
+            if (string.IsNullOrWhiteSpace(input.Host))
+                return Results.BadRequest(new { message = "Enter the KMS server first." });
+            if (ValidateSetting(ActionSettings.KmsHost, input.Host) is { } hostError)
+                return Results.BadRequest(new { message = hostError });
             if (ValidateSetting(ActionSettings.KmsPort, input.Port) is { } portError)
                 return Results.BadRequest(new { message = portError });
             var port = KmsSettings.TryParsePort(input.Port, out var parsed) ? parsed : KmsSettings.DefaultPort;
