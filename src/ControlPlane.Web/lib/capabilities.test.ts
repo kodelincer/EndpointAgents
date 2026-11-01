@@ -49,3 +49,20 @@ describe("capabilities", () => {
     expect(pendingSummary([], now)).toEqual({ count: 0, oldestMinutes: null });
   });
 });
+
+describe("kms settings input", () => {
+  it("accepts a host name or IPv4 address and an optional port", async () => {
+    const { kmsInputError } = await import("./capabilities");
+    expect(kmsInputError("172.16.0.2", "")).toBeUndefined();
+    expect(kmsInputError("kms.corp.local", "1688")).toBeUndefined();
+    expect(kmsInputError("", "")).toBeUndefined();
+  });
+  it("rejects ports in the host, commands and bad ports", async () => {
+    const { kmsInputError } = await import("./capabilities");
+    expect(kmsInputError("172.16.0.2:1688", "")).toMatch(/host name/);
+    expect(kmsInputError("kms & calc", "")).toMatch(/host name/);
+    expect(kmsInputError("300.1.1.1", "")).toMatch(/host name/);
+    expect(kmsInputError("kms.corp.local", "70000")).toMatch(/port/);
+    expect(kmsInputError("", "1688")).toMatch(/before its port/);
+  });
+});

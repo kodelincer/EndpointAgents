@@ -19,6 +19,7 @@ order: 11
 | **Capabilities** | Four tabs: **Actions** (switches and limits, admins change them), **Agent tools**, **Writing a skill**, **Recent runs** (reviewers can undo a fix). | Everyone reads |
 | **Skills** | Draft, check, submit, publish, retire and roll back skills. | Members draft, reviewers publish |
 | **Environment** | Three tabs: **Targets** (servers, web apps, printers, shares, plus **Removable software**, the **Driver catalog** of device models, and **Company VPNs**), **Standards** (DNS suffixes, proxy, time zone, root CAs) and **Incidents**. | Everyone declares incidents, admins edit the rest |
+| **Settings** | The organisation **KMS server** (host name or IPv4, optional port, 1688 by default) used to activate volume Windows and Office. **Test from server** checks the server answers before you save. | Admins |
 | **Operators** | Create local accounts, add domain users, change roles, disable accounts, reset passwords. | Admins |
 | **User manual** | This guide. | Everyone |
 

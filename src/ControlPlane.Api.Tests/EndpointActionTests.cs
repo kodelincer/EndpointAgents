@@ -333,8 +333,55 @@ public sealed class EnvironmentValidationTests
     [InlineData("network.ipFromDhcp", "yes", false)]
     [InlineData("power.standardPlan", "balanced", true)]
     [InlineData("power.standardPlan", "ultimate", false)]
+    [InlineData("activation.kmsHost", "172.16.0.2", true)]
+    [InlineData("activation.kmsHost", "kms.corp.local", true)]
+    [InlineData("activation.kmsHost", "172.16.0.2:1688", false)]
+    [InlineData("activation.kmsHost", "kms & calc.exe", false)]
+    [InlineData("activation.kmsHost", "/skms evil", false)]
+    [InlineData("activation.kmsPort", "1688", true)]
+    [InlineData("activation.kmsPort", "0", false)]
+    [InlineData("activation.kmsPort", "70000", false)]
+    [InlineData("activation.kmsPort", "-1", false)]
     public void SettingsAreValidated(string key, string value, bool valid) =>
         Assert.Equal(valid, ActionEndpoints.ValidateSetting(key, value) is null);
+
+    [Fact]
+    public void KmsSettingIsReadTheSameWayOnBothSides()
+    {
+        Assert.False(KmsSettings.TryRead(new Dictionary<string, string>(), out _, out _));
+        Assert.True(KmsSettings.TryRead(new Dictionary<string, string>
+            { [ActionSettings.KmsHost] = " 172.16.0.2 " }, out var host, out var port));
+        Assert.Equal("172.16.0.2", host);
+        Assert.Equal(1688, port);
+        Assert.True(KmsSettings.TryRead(new Dictionary<string, string>
+        {
+            [ActionSettings.KmsHost] = "kms.corp.local", [ActionSettings.KmsPort] = "1700"
+        }, out _, out port));
+        Assert.Equal(1700, port);
+        Assert.False(KmsSettings.TryRead(new Dictionary<string, string>
+        {
+            [ActionSettings.KmsHost] = "kms.corp.local", [ActionSettings.KmsPort] = "abc"
+        }, out _, out _));
+        Assert.False(KmsSettings.TryRead(new Dictionary<string, string>
+            { [ActionSettings.KmsHost] = "kms & calc" }, out _, out _));
+    }
+
+    [Fact]
+    public void KmsActionsRunWithoutTheTrayAndUseOnlyTheSetting()
+    {
+        foreach (var id in new[] { "kms.check", "windows.kms_activate", "office.kms_activate" })
+        {
+            var definition = EndpointActionCatalog.Find(id)!;
+            Assert.Equal(ActionAreas.Activation, definition.Area);
+            Assert.Equal(ActionRunAs.System, definition.RunAs);
+            Assert.Empty(definition.Parameters);
+            Assert.Equal([ActionSettings.KmsHost, ActionSettings.KmsPort], definition.UsesSettings);
+        }
+        Assert.Equal(ActionTier.Look, EndpointActionCatalog.Find("kms.check")!.Tier);
+        Assert.Equal(ActionTier.SafeFix, EndpointActionCatalog.Find("windows.kms_activate")!.Tier);
+        Assert.Equal(ActionTier.SafeFix, EndpointActionCatalog.Find("office.kms_activate")!.Tier);
+        Assert.False(ActionRunner.NeedsApproval(EndpointActionCatalog.Find("office.kms_activate")!, null));
+    }
 }
 
 public sealed class ActionRunnerTests : IClassFixture<ControlPlaneApiFactory>

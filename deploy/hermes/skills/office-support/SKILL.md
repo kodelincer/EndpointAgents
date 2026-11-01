@@ -22,7 +22,16 @@ activation warning:
    product is not healthy for this environment. The user's explicit activation report
    remains valid evidence when the probe is unavailable.
 4. For an unhealthy result, or an explicit activation problem when the probe is
-   unavailable, call `mcp_controlplane_list_repair_attempts` once with exactly
+   unavailable, try the organisation KMS server first. Call
+   `mcp_controlplane_run_endpoint_action` with `actionId` `kms.check`. If `Configured`
+   and `Reachable` are both true and at least one `Office.Products` entry has
+   `VolumeClient` true, call `mcp_controlplane_run_endpoint_action` with `actionId`
+   `office.kms_activate` (no arguments; it runs without asking, and Office apps may stay
+   open). If it returns `Done`, call `mcp_controlplane_office_activation_status` again
+   and report with the healthy KMS rule from step 3. If the KMS server is not set, does
+   not answer, there is no volume Office, or `office.kms_activate` returns `Blocked` or
+   `Failed`, continue with the repair below. Never run `office.kms_activate` twice in one
+   conversation. Then call `mcp_controlplane_list_repair_attempts` once with exactly
    `{ "runCapability": "<the supplied run capability>" }`. Choose the next repair with
    "Try order" below: the first listed ID that is in `compatibleBugfixArtifactIds` and is
    not among the attempts' `artifactId` values. If no listed ID qualifies, use the first
@@ -51,7 +60,8 @@ activation warning:
 
 ## Try order
 
-Administrators keep this list. When one repair does not solve the activation problem,
+The organisation KMS server (step 4) always comes first when the helpdesk set it in the
+control plane Settings. Administrators keep this list. When one repair does not solve the activation problem,
 the next one in this list is tried. Add, remove, or reorder repair IDs here; no code
 change is needed. An ID that is not compatible with the user's PC is skipped.
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, Package, PanelLeftClose, PanelLeftOpen, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
+import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, Package, PanelLeftClose, PanelLeftOpen, RefreshCw, Server, Settings, ShieldCheck, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { roleName } from "@/lib/auth";
@@ -72,9 +72,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       { href: "/environment/", label: "Environment", icon: MapIcon },
       { href: "/files/", label: "Packages", icon: Package }
     ] },
-    ...(can("users.manage") ? [{ title: "Administration", items: [
-      { href: "/operators/", label: "Operators", icon: ShieldCheck }
-    ] }] : []),
+    { title: "Administration", items: [
+      { href: "/settings/", label: "Settings", icon: Settings },
+      ...(can("users.manage") ? [{ href: "/operators/", label: "Operators", icon: ShieldCheck }] : [])
+    ] },
     { title: "Help", items: [
       { href: "/docs/", label: "User manual", icon: BookMarked }
     ] }
