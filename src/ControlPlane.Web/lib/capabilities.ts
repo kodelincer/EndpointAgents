@@ -150,7 +150,8 @@ export const areaText: Record<string, Record<Language, string>> = {
   health: { en: "PC health", fa: "سلامت سیستم" },
   desktop: { en: "Desktop and devices", fa: "دسکتاپ و دستگاه‌ها" },
   software: { en: "Software", fa: "نرم‌افزار" },
-  devices: { en: "Devices and drivers", fa: "دستگاه‌ها و درایورها" }
+  devices: { en: "Devices and drivers", fa: "دستگاه‌ها و درایورها" },
+  activation: { en: "Windows and Office activation", fa: "فعال‌سازی ویندوز و آفیس" }
 };
 
 /** Extra fields an environment entry of each kind carries (mirrors EnvironmentTargetDetails). */
@@ -223,3 +224,25 @@ export function issueCounts(issues: SkillIssue[]) {
 export const skillStatusText: Record<SkillStatus, string> = {
   Draft: "Draft", InReview: "Waiting for review", Published: "Published", Retired: "Retired"
 };
+
+export interface KmsSettings { host: string; port: string; defaultPort: number; configured: boolean }
+export interface KmsTestResult { host: string; port: number; nameResolves: boolean; open: boolean; milliseconds: number | null }
+
+export const getKmsSettings = () => request<KmsSettings>("/api/settings/kms");
+export const saveKmsSettings = (host: string, port: string) =>
+  request<void>("/api/settings/kms", "PUT", { host: host.trim(), port: port.trim() });
+export const testKmsServer = (host: string, port: string) =>
+  request<KmsTestResult>("/api/settings/kms/test", "POST", { host: host.trim(), port: port.trim() });
+
+/** Same rule as the server: a DNS host name or IPv4 address, and an optional port 1-65535. */
+export function kmsInputError(host: string, port: string): string | undefined {
+  const name = host.trim(), portText = port.trim();
+  if (!name) return portText ? "Set the KMS server before its port." : undefined;
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(name);
+  const validHost = ipv4 ? ipv4.slice(1).every(part => Number(part) <= 255)
+    : name.length <= 253 && /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(name);
+  if (!validHost) return "The KMS server must be a host name or IPv4 address, without a port.";
+  if (portText && (!/^\d{1,5}$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535))
+    return "The KMS port must be a number from 1 to 65535.";
+  return undefined;
+}
