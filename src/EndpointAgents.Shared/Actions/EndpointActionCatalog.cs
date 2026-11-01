@@ -18,10 +18,41 @@ public static class ActionSettings
     public const string InternalDnsSuffixes = "network.internalSuffixes";
     /// <summary>"true" when DHCP hands out the right DNS servers, so hand-set DNS servers are a fault.</summary>
     public const string DnsFromDhcp = "network.dnsFromDhcp";
+    /// <summary>The organisation's KMS server: a host name or IPv4 address (no port).</summary>
+    public const string KmsHost = "activation.kmsHost";
+    /// <summary>The KMS server's TCP port; 1688 when empty.</summary>
+    public const string KmsPort = "activation.kmsPort";
 
     public static IReadOnlyList<string> All { get; } =
         [ProxyMode, ProxyPacUrl, ProxyServer, ProxyBypass, StandardTimeZone,
-         RootCaThumbprints, InternalDnsSuffixes, DnsFromDhcp];
+         RootCaThumbprints, InternalDnsSuffixes, DnsFromDhcp, KmsHost, KmsPort];
+}
+
+/// <summary>Reads the organisation KMS setting the same way on the server and the endpoint.</summary>
+public static class KmsSettings
+{
+    public const int DefaultPort = 1688;
+
+    /// <summary>True when a valid host (and a valid port, if one is set) is configured.</summary>
+    public static bool TryRead(IReadOnlyDictionary<string, string>? settings,
+        out string host, out int port)
+    {
+        host = "";
+        port = DefaultPort;
+        if (settings is null || !settings.TryGetValue(ActionSettings.KmsHost, out var value)
+            || !EndpointActionValidator.IsValidHost(value?.Trim()))
+            return false;
+        if (settings.TryGetValue(ActionSettings.KmsPort, out var portText)
+            && !string.IsNullOrWhiteSpace(portText) && !TryParsePort(portText, out port))
+            return false;
+        host = value!.Trim();
+        return true;
+    }
+
+    public static bool TryParsePort(string? value, out int port) =>
+        int.TryParse(value?.Trim(), System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out port)
+        && port is >= 1 and <= 65535;
 }
 
 public static class ActionAreas
@@ -36,9 +67,11 @@ public static class ActionAreas
     public const string Desktop = "desktop";
     public const string Software = "software";
     public const string Devices = "devices";
+    public const string Activation = "activation";
 
     public static IReadOnlyList<string> All { get; } =
-        [Network, Domain, Printers, Drives, Browsers, Office, Health, Desktop, Software, Devices];
+        [Network, Domain, Printers, Drives, Browsers, Office, Health, Desktop, Software, Devices,
+         Activation];
 }
 
 /// <summary>
@@ -552,6 +585,26 @@ public static class EndpointActionCatalog
             "Done, or Blocked when Windows needs a restart to do it.",
             [new("device", ActionParameterKind.LocalItem, "InstanceId from drivers.inventory.")],
             TimeoutSeconds: 60, Verify: new("drivers.inventory")),
+
+        // ---------- Windows and Office activation (organisation KMS) ----------
+        new("kms.check", ActionAreas.Activation, ActionTier.Look, ActionRunAs.System,
+            "Check the organisation KMS server", "بررسی سرور KMS سازمان",
+            "Checks that the helpdesk set the organisation KMS server and that this PC reaches it on its port, and reads whether Windows and Office are volume (KMS) editions, whether they are activated and whether they already point at the organisation server.",
+            "Configured, Reachable, ElapsedMs, Error; Windows (Found, VolumeClient, Licensed, LicenseStatus, UsesOrganisationKms, ErrorCode); Office (Found, Products with Name, VolumeClient, Licensed, LicenseStatus, UsesOrganisationKms, ErrorCode).",
+            [], TimeoutSeconds: 45, UsesSettings: [ActionSettings.KmsHost, ActionSettings.KmsPort],
+            ExampleResult: """{"Configured":true,"Reachable":true,"ElapsedMs":12,"Windows":{"Found":true,"VolumeClient":true,"Licensed":false,"LicenseStatus":5,"UsesOrganisationKms":false},"Office":{"Found":true,"Products":[{"Name":"Office 21, Office21ProPlus2021VL_KMS_Client_AE edition","VolumeClient":true,"Licensed":true,"LicenseStatus":1,"UsesOrganisationKms":true}]}}"""),
+        new("windows.kms_activate", ActionAreas.Activation, ActionTier.SafeFix, ActionRunAs.System,
+            "Activate Windows with the organisation KMS", "فعال‌سازی ویندوز با KMS سازمان",
+            "For a volume (KMS client) Windows: checks the organisation KMS server answers, points Windows at it and activates. Does nothing when Windows is already activated by that server; never installs or changes a product key.",
+            "Done when Windows is now activated, NotNeeded, Blocked (no KMS server set, server not reachable, or not a volume edition) or Failed with the activation error code.",
+            [], TimeoutSeconds: 120, Verify: new("kms.check"),
+            UsesSettings: [ActionSettings.KmsHost, ActionSettings.KmsPort]),
+        new("office.kms_activate", ActionAreas.Activation, ActionTier.SafeFix, ActionRunAs.System,
+            "Activate Office with the organisation KMS", "فعال‌سازی آفیس با KMS سازمان",
+            "For volume (KMS client) Office 2016 and later, including Click-to-Run volume installs: checks the organisation KMS server answers, points the Office licenses at it and activates them. Office apps can stay open. Never installs or changes a product key.",
+            "Done when every volume Office product is now activated, NotNeeded, Blocked (no KMS server set, server not reachable, or no volume Office) or Failed with the activation error codes.",
+            [], TimeoutSeconds: 180, Verify: new("kms.check"),
+            UsesSettings: [ActionSettings.KmsHost, ActionSettings.KmsPort]),
 
         // ---------- Sound, printers, disk, restarts, groups ----------
         new("audio.status", ActionAreas.Desktop, ActionTier.Look, ActionRunAs.User,

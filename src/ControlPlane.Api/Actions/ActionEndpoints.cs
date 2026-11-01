@@ -8,6 +8,7 @@ namespace ControlPlane.Api.Actions;
 public sealed record SkillReviewRequest(int? Version, string? Note);
 public sealed record SkillLintRequest(string Name, string Description, string Body);
 public sealed record MissingActionRequest(string Summary, string? Details);
+public sealed record KmsSettingsInput(string? Host, string? Port);
 
 /// <summary>
 /// Operator (loopback dashboard) routes for the capabilities page, the environment map,
@@ -166,6 +167,50 @@ public static partial class ActionEndpoints
             return Results.NoContent();
         })
             .RequireAuthorization(OperatorPolicies.Admin);
+
+        // ---------------- Settings: organisation KMS server ----------------
+        app.MapGet("/api/settings/kms", async (ActionStore store,
+            CancellationToken cancellationToken) =>
+        {
+            var values = await store.GetSettingsAsync(cancellationToken);
+            return Results.Ok(new
+            {
+                host = values.GetValueOrDefault(ActionSettings.KmsHost) ?? "",
+                port = values.GetValueOrDefault(ActionSettings.KmsPort) ?? "",
+                defaultPort = KmsSettings.DefaultPort,
+                configured = KmsSettings.TryRead(values, out _, out _)
+            });
+        });
+        app.MapPut("/api/settings/kms", async (KmsSettingsInput input, ActionStore store,
+            CancellationToken cancellationToken) =>
+        {
+            var values = new Dictionary<string, string?>
+            {
+                [ActionSettings.KmsHost] = input.Host?.Trim(),
+                [ActionSettings.KmsPort] = input.Port?.Trim()
+            };
+            if (string.IsNullOrWhiteSpace(input.Host) && !string.IsNullOrWhiteSpace(input.Port))
+                return Results.BadRequest(new { message = "Set the KMS server before its port." });
+            foreach (var (key, value) in values)
+                if (ValidateSetting(key, value) is { } error)
+                    return Results.BadRequest(new { message = error });
+            await store.SaveSettingsAsync(values, cancellationToken);
+            return Results.NoContent();
+        })
+            .RequireAuthorization(OperatorPolicies.Admin);
+        app.MapPost("/api/settings/kms/test", async (KmsSettingsInput input,
+            CancellationToken cancellationToken) =>
+        {
+            if (ValidateSetting(ActionSettings.KmsHost, input.Host) is { } hostError
+                || string.IsNullOrWhiteSpace(input.Host))
+                return Results.BadRequest(new { message = hostError ?? "Enter the KMS server first." });
+            if (ValidateSetting(ActionSettings.KmsPort, input.Port) is { } portError)
+                return Results.BadRequest(new { message = portError });
+            var port = KmsSettings.TryParsePort(input.Port, out var parsed) ? parsed : KmsSettings.DefaultPort;
+            return Results.Ok(await ServerProbe.TestTcpAsync(input.Host.Trim(), port, cancellationToken));
+        })
+            .RequireAuthorization(OperatorPolicies.Admin);
+
         // ---------------- Incidents ----------------
         app.MapGet("/api/incidents", async (bool? activeOnly, ActionStore store,
             CancellationToken cancellationToken) =>
@@ -332,6 +377,10 @@ public static partial class ActionEndpoints
                 "time.standardZone must be a Windows time zone id.",
             ActionSettings.DnsFromDhcp when value is not ("true" or "false") =>
                 "network.dnsFromDhcp must be true or false.",
+            ActionSettings.KmsHost when !EndpointActionValidator.IsValidHost(value) =>
+                "The KMS server must be a host name or IPv4 address, without a port.",
+            ActionSettings.KmsPort when !KmsSettings.TryParsePort(value, out _) =>
+                "The KMS port must be a number from 1 to 65535.",
             _ => null
         };
     }

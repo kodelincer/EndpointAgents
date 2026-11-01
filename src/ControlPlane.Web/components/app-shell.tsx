@@ -1,6 +1,6 @@
 "use client";
 
-import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Package, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints } from "lucide-react";
+import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Package, RefreshCw, Server, Settings, ShieldCheck, Sparkles, Waypoints } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { roleName } from "@/lib/auth";
@@ -35,6 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Link className={path.startsWith("/capabilities") ? "active" : ""} href="/capabilities/"><BookOpen size={15} />Capabilities</Link>
         <Link className={path.startsWith("/skills") ? "active" : ""} href="/skills/"><Sparkles size={15} />Skills</Link>
         <Link className={path.startsWith("/environment") ? "active" : ""} href="/environment/"><MapIcon size={15} />Environment</Link>
+        <Link className={path.startsWith("/settings") ? "active" : ""} href="/settings/"><Settings size={15} />Settings</Link>
         {can("users.manage") && <Link className={path.startsWith("/operators") ? "active" : ""} href="/operators/"><ShieldCheck size={15} />Operators</Link>}
       </nav>
       <div className="topbar-status">

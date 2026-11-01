@@ -32,7 +32,8 @@ public static class EndpointActionSet
         new VpnStatusAction(), new VpnClientRestartAction(),
         new SoftwareInventoryAction(), new SoftwareUninstallAction(),
         new DriversInventoryAction(), new DeviceEnableAction(), new DeviceRestartAction(),
-        new DiskUsageAction(), new RestartPendingAction()
+        new DiskUsageAction(), new RestartPendingAction(),
+        new KmsCheckAction(), new WindowsKmsActivateAction(), new OfficeKmsActivateAction()
     ];
 
     /// <summary>Actions the Tray runs with the signed-in user's own token.</summary>
