@@ -9,6 +9,10 @@ using System.Security.Cryptography;
 using ControlPlane.Api.Files;
 using ControlPlane.Api.Chat;
 using EndpointAgents.Shared.Office;
+using EndpointAgents.Shared.Agents;
+using EndpointAgents.Shared.Chat;
+using Microsoft.AspNetCore.Http.Connections;
+using Microsoft.AspNetCore.SignalR.Client;
 
 namespace ControlPlane.Api.Tests;
 
@@ -383,6 +387,36 @@ public sealed class ApiTests : IClassFixture<ControlPlaneApiFactory>, IAsyncLife
                 content: null, TestCancellation)).StatusCode);
         Assert.Null(await store.ValidateDeviceTokenAsync(
             credential.DeviceToken, TestCancellation));
+    }
+
+    [Fact]
+    public async Task EnrolledEndpointKeepsItsDeviceIdentityInTheAgentHub()
+    {
+        var issue = await (await _client.PostAsync("/api/agent-enrollments", content: null,
+            TestCancellation)).Content.ReadFromJsonAsync<EnrollmentIssue>(TestCancellation);
+        using var remote = _factory.CreateRemoteClient();
+        var agentId = Guid.NewGuid().ToString("D");
+        var credential = await (await remote.PostAsJsonAsync("/api/agent-enrollments/redeem",
+                new EnrollmentRequest(issue!.EnrollmentCode, agentId, "test-machine"), TestCancellation))
+            .Content.ReadFromJsonAsync<EnrollmentRedemption>(TestCancellation);
+
+        // The operator fallback policy must not wipe the device-token identity on the hub.
+        await using var connection = new HubConnectionBuilder()
+            .WithUrl(new Uri(_factory.Server.BaseAddress, "agent-hub"), options =>
+            {
+                options.Transports = HttpTransportType.LongPolling;
+                options.HttpMessageHandlerFactory = _ => _factory.Server.CreateHandler();
+                options.AccessTokenProvider = () => Task.FromResult<string?>(credential!.DeviceToken);
+            })
+            .Build();
+        await connection.StartAsync(TestCancellation);
+        await connection.InvokeAsync("RegisterAgent", new AgentRegistration(agentId, "test-host",
+            "test-machine", "tester", "1.0", DateTimeOffset.UtcNow), TestCancellation);
+
+        var chats = await connection.InvokeAsync<IReadOnlyList<ChatConversationSummary>>("ListChats",
+            new ChatConversationListRequest(new ChatIdentity("S-1-5-21-1-2-3-1001", "tester", 1)),
+            TestCancellation);
+        Assert.Empty(chats);
     }
 
     [Fact]

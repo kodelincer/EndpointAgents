@@ -45,12 +45,20 @@ public static class OperatorPolicies
     /// <summary>Signed in, but still allowed while a temporary password must be changed.</summary>
     public const string SignedIn = "operator-signed-in";
 
+    /// <summary>The agent hub: reads the device token but admits every connection; the hub
+    /// methods check the endpoint identity themselves.</summary>
+    public const string AgentConnection = "agent-connection";
+
     public static void Add(AuthorizationOptions options)
     {
         options.AddPolicy(SignedIn, Build());
         options.AddPolicy(Operator, Build(ready: true));
         options.AddPolicy(Reviewer, Build(ready: true, OperatorRoles.Reviewer, OperatorRoles.Admin));
         options.AddPolicy(Admin, Build(ready: true, OperatorRoles.Admin));
+        // AllowAnonymous would still run the fallback policy's cookie scheme and replace the
+        // device-token identity with an empty one, so the hub names its own scheme instead.
+        options.AddPolicy(AgentConnection, new AuthorizationPolicyBuilder(AgentAuthentication.Scheme)
+            .RequireAssertion(_ => true).Build());
         // Any route that does not say otherwise needs a signed-in operator, so a new
         // operator API can't ship unauthenticated by accident.
         options.FallbackPolicy = options.GetPolicy(Operator);
