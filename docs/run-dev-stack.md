@@ -42,6 +42,9 @@ first time:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev-stack.ps1
 ```
 
+Add `-Panes` to keep all four parts in one Windows Terminal window named `endpointagents`, split
+in four. Close the window to stop everything, or a pane to stop that part.
+
 Or by hand, each in its own PowerShell window, in this order:
 
 ```powershell
