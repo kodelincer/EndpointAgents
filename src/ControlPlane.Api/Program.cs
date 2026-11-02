@@ -217,7 +217,7 @@ app.UseAuthorization();
 // Every other route needs a signed-in operator (the fallback policy). Endpoint agents
 // authenticate inside the hub with their device token, and Hermes MCP is guarded by
 // its own key above, so neither uses the operator sign-in.
-app.MapHub<AgentHub>("/agent-hub").AllowAnonymous();
+app.MapHub<AgentHub>("/agent-hub").RequireAuthorization(OperatorPolicies.AgentConnection);
 app.MapHub<DashboardHub>("/dashboard-hub");
 app.MapMcp("/internal/mcp").AllowAnonymous();
 app.MapOperatorAuth();
