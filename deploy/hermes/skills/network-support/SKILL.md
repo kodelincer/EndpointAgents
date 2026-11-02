@@ -7,6 +7,9 @@ description: No network, no internet, an internal website or web app (portal, in
 
 Use with the endpoint-actions skill. Call `note_skill_used` with `network-support`.
 IBSng dial-up problems belong to the ibsng-support skill, and VPN problems to vpn-support.
+The checks below speak in gateway, DNS, port and proxy terms; those words stay here. Tell the
+user only what it means, in everyday Persian: «اینترنت از برنامه‌ای مثل فیلترشکن رد می‌شود»,
+not the proxy address or a program's internal name.
 
 ## 1. Is it shared?
 

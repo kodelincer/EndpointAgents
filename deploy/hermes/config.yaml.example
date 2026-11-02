@@ -95,6 +95,8 @@ curator:
 skills:
   write_approval: true
   guard_agent_created: true
+  # 0 turns off the background review after each run that proposes new skills.
+  creation_nudge_interval: 0
 
 plugins:
   enabled: []

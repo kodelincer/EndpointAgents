@@ -353,4 +353,8 @@ Production endpoint conversations never edit skills or memory. Edit proposed
 skill revisions under `deploy/hermes/skills`, review and test the Git diff, and
 then manually promote the approved folders to the dedicated Hermes profile.
 Keep skill-write approval enabled so any model-requested write is staged rather
-than applied automatically. Cross-user memory remains disabled.
+than applied automatically. Cross-user memory remains disabled. The profile also sets
+`skills.creation_nudge_interval: 0`, which turns off the Hermes background review that
+otherwise proposes skills from support conversations after a run. `-Provision` writes it
+from `config.yaml.example`; on an existing profile set it once with
+`hermes -p endpointagents config set skills.creation_nudge_interval 0` and restart the gateway.
