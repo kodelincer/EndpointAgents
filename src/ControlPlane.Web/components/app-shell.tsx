@@ -70,12 +70,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       { href: "/skills/", label: "Skills", icon: Sparkles },
       { href: "/capabilities/", label: "Capabilities", icon: BookOpen },
       { href: "/environment/", label: "Environment", icon: MapIcon },
-      { href: "/settings/", label: "Settings", icon: Settings },
       { href: "/files/", label: "Packages", icon: Package }
     ] },
-    ...(can("users.manage") ? [{ title: "Administration", items: [
-      { href: "/operators/", label: "Operators", icon: ShieldCheck }
-    ] }] : []),
+    { title: "Administration", items: [
+      { href: "/settings/", label: "Settings", icon: Settings },
+      ...(can("users.manage") ? [{ href: "/operators/", label: "Operators", icon: ShieldCheck }] : [])
+    ] },
     { title: "Help", items: [
       { href: "/docs/", label: "User manual", icon: BookMarked }
     ] }
