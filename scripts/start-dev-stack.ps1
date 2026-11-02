@@ -7,16 +7,35 @@ Opens, in order: the control plane API (5052), the Hermes gateway for the endpoi
 profile (8642), the dashboard (3000), and the endpoint service + Tray. The endpoint is
 enrolled with a one-time code the first time; its credential is kept in
 %LOCALAPPDATA%\EndpointAgents\dev-device-credential.bin. Close a window to stop that part.
+With -Panes the parts share one Windows Terminal window named "endpointagents", split in four.
 See docs\run-dev-stack.md.
 #>
 [CmdletBinding()]
-param([int]$StartupTimeoutSeconds = 180)
+param(
+    [int]$StartupTimeoutSeconds = 180,
+    [switch]$Panes
+)
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
+if ($Panes -and -not (Get-Command wt.exe -ErrorAction SilentlyContinue)) {
+    throw "-Panes needs Windows Terminal (wt.exe), which was not found."
+}
+# Each new part splits the pane before it, ending in a two-by-two grid.
+$paneLayouts = [Collections.Generic.Queue[string]]::new([string[]]@(
+    "new-tab", "split-pane -V", "split-pane -H", "move-focus left ; split-pane -H"))
+
 function Start-Part([string]$Title, [string]$Command) {
     $script = "`$host.UI.RawUI.WindowTitle = '$Title'; Set-Location '$repoRoot'; $Command"
+    if ($Panes) {
+        # Encoded because wt.exe treats a semicolon anywhere in its arguments as a new command.
+        $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+        Start-Process wt.exe -ArgumentList ("-w endpointagents $($paneLayouts.Dequeue()) --title `"$Title`" " +
+            "powershell -NoExit -ExecutionPolicy Bypass -EncodedCommand $encoded")
+        Start-Sleep -Seconds 2 # Let the window take this pane before the next call targets it.
+        return
+    }
     Start-Process powershell -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-Command", $script
 }
 
