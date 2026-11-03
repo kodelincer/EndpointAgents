@@ -19,6 +19,21 @@ The product lets software repair users' PCs, so the design assumes that the AI c
 | **Reviewed files only.** | Every package is hash-pinned and signed. See below. |
 | **Everything leaves a trail.** | Conversations, tool calls, action runs, consent decisions and operator changes are stored. |
 
+## No free scripts: how this differs from SCCM and Intune
+
+Tools such as SCCM ("Run Scripts") and Intune ("platform scripts") let an administrator paste **any** PowerShell script into the console and run it as SYSTEM on every PC they choose. That is powerful, but one mistake, or one stolen admin account, can break or harm every PC at once.
+
+This system has no such feature, on purpose. Nobody can type a new command and run it on a PC: not the AI agent, not a helpdesk member, not an admin. A PC runs only two kinds of work:
+
+- **Fixed operations from the catalogue.** Each one is written and tested in the product's code (for example "clear the DNS cache" or "restart the print spooler"), takes only typed parameters, and appears on the **Capabilities** page where an admin can switch it off.
+- **Packages the administrator signed.** A BAT or EXE file that a person reviewed, signed with the company's package key and pinned by its hash. If one byte changes, the PC refuses to run it.
+
+What this means in practice:
+
+- If the AI is wrong, or a user's message tries to trick it, the worst it can do is pick the wrong step **from the allowed list**. It cannot invent a new one.
+- A new kind of fix is added by a person, on purpose: a new catalogued operation in a release, or a new signed package. See [Packages](/docs/packages/) and [Endpoint actions](/docs/actions/).
+- Bulk or risky work still waits for a person: Disruptive steps need the user's yes, and IT-tier steps need approval on the **Approvals** page.
+
 ## Signing and hash pinning
 
 - A package folder is bound by SHA-256 hashes to its file, supporting files and playbook.
