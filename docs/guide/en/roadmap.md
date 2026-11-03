@@ -61,6 +61,8 @@ A batch is a group of operations that close the most of those tickets with the l
 
 **Batch 3** (from the catalog, not yet built): firewall profile reset, forgetting a Wi-Fi profile, built-in VPN profiles and connect, installing organisation root certificates, Edge reset, hosts file reset, USB, Bluetooth and smart card status, display detect, search index rebuild, region standard, driver rollback and removal, MSI repair, re-registering built-in Store apps, a group policy summary, Defender full scan, scheduled disk check, Offline Files, previous versions of a file, default apps, a new Outlook profile, Office updates, Windows Hello reset, crash summary, Remote Desktop status, starting the company remote-support tool, wake sources and fast startup.
 
+Longer-term ideas, kept so none are forgotten, are on [Ideas and future features](/docs/ideas/).
+
 **Before a pilot:**
 
 - Merge the open branches into one tested version and install it on 5 to 10 PCs.
