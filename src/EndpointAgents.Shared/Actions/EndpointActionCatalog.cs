@@ -148,7 +148,8 @@ public static class EndpointActionCatalog
         new("grouppolicy", "Group Policy errors"),
         new("printing", "Printing errors"),
         new("updates", "Windows Update failures"),
-        new("signin", "Sign-in and domain trust errors")
+        new("signin", "Sign-in and domain trust errors"),
+        new("drivers", "Driver and device warnings")
     ];
 
     public static IReadOnlyList<ActionChoice> LayoutChoices { get; } =
@@ -381,6 +382,19 @@ public static class EndpointActionCatalog
             "Groups with Source, EventId, Count, LastUtc, Sample.",
             [new("area", ActionParameterKind.Choice, "Kind of errors.", Choices: EventAreaChoices)],
             TimeoutSeconds: 45),
+        new("events.restart_reasons", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Why the PC restarted", "علت ری‌استارت شدن",
+            "Restarts and shutdowns from the System log, newest first: planned restarts with the program that asked and its reason (never the user), unexpected shutdowns, power loss and blue screens with their stop code. At most 20 events.",
+            "Events with WhenUtc, Kind (planned, unexpected, power-loss, bluescreen), Program, Reason; Unexpected count.",
+            [new("days", ActionParameterKind.Integer, "How many days back (1-30, default 14).", Required: false, Min: 1, Max: 30)],
+            TimeoutSeconds: 30),
+        new("events.app_errors", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Crashes of one program", "خطاهای یک برنامه",
+            "Crashes and hangs of one program the user names (for example outlook, winword, chrome) from the Application log, grouped by the module that failed. At most 50 events; no user names or paths.",
+            "Groups with Kind (crash or hang), Module, ExceptionCode, Count, LastUtc; Total.",
+            [new("app", ActionParameterKind.SearchText, "Program name such as outlook or winword."),
+             new("days", ActionParameterKind.Integer, "How many days back (1-7, default 1).", Required: false, Min: 1, Max: 7)],
+            TimeoutSeconds: 30),
         new("services.status", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
             "Service status", "وضعیت سرویس‌ها",
             "State and start type of one support-relevant Windows service, or all of them.",

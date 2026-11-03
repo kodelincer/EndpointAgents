@@ -21,6 +21,7 @@ public static class EndpointActionSet
         new ComputerPolicyRefreshAction(),
         new SpoolerRestartAndClearAction(), new CertificateTrustAction(),
         new RecentChangesAction(), new PerformanceSnapshotAction(), new EventsSummaryAction(),
+        new RestartReasonsAction(), new AppErrorsAction(),
         new ServicesStatusAction(), new ServiceRestartAction(), new WindowsUpdateStatusAction(),
         new SecurityStatusAction(), new DefenderQuickScanAction(), new DeviceProblemsAction(),
         new DevicesRescanAction(), new AppsFindAction(), new DiskCleanupSafeAction(),

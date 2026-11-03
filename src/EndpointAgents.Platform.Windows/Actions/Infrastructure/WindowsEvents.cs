@@ -33,7 +33,7 @@ public static class WindowsEvents
                         record.Id, record.Level ?? 0,
                         record.TimeCreated is { } time
                             ? new DateTimeOffset(time).ToUniversalTime() : DateTimeOffset.MinValue,
-                        FirstLine(message, 200)));
+                        FirstLine(EventText.Scrub(message), 200)));
                 }
             }
         }

@@ -12,6 +12,11 @@ Use with the endpoint-actions skill. Call `note_skill_used` with `slow-pc-health
 - Slow or frozen: `perf.snapshot` (CPU, memory, disk use, top processes, uptime).
 - "It worked yesterday": `system.recent_changes` with `days` 3 (updates, installs, drivers).
 - Crashes or blue screens: `events.summary` with `area` `crashes` or `bluescreen`.
+- One program keeps closing or freezing: `events.app_errors` with `app` set to its name
+  (for example `outlook`, `winword`, `excel`, `chrome`); `days` 1 by default, up to 7.
+- The PC restarted or turned off by itself: `events.restart_reasons` (planned or not,
+  power loss, blue screen stop code).
+- Driver or device warnings: `events.summary` with `area` `drivers`.
 - Disk full: `disk.usage` (free space and what fills it).
 - "Restart needed" messages or many days without a restart: `restart.pending`.
 - Updates: `windows_update.status`. Security worry: `security.status`.
@@ -38,6 +43,8 @@ Use with the endpoint-actions skill. Call `note_skill_used` with `slow-pc-health
 | Device has a problem code | Follow drivers-devices. |
 | Defender off or out of date, or virus worry | `defender.quick_scan` (starts in the background); escalate if `security.status` shows a threat. |
 | Blue screens or disk errors | Escalate with the summary; do not try repairs. |
+| `events.app_errors` shows the same module again and again | If it is an Office add-in, follow office-support; otherwise escalate with the module name. |
+| `events.restart_reasons` shows power loss many times | Tell the user to check the power cable or socket; escalate if it continues. |
 | Updates fail again and again after the service restart | `windows_update.reset_components`, then `windows_update.scan_now`. |
 | Updates simply not checked for days | `windows_update.scan_now`. |
 | Definitions out of date | `defender.update_signatures`. |

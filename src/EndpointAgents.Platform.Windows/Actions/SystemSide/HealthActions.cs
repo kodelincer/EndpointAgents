@@ -225,8 +225,12 @@ public sealed class EventsSummaryAction : IEndpointAction
                            ("Microsoft-Windows-GroupPolicy/Operational", "Level<=2")],
         ["printing"] = [("Microsoft-Windows-PrintService/Admin", "Level<=3")],
         ["updates"] = [("System", "Provider[@Name='Microsoft-Windows-WindowsUpdateClient'] and Level<=2")],
-        ["signin"] = [("System", "Provider[@Name='NETLOGON' or @Name='LsaSrv' or @Name='Microsoft-Windows-Security-Kerberos' or @Name='Microsoft-Windows-Time-Service'] and Level<=3")]
+        ["signin"] = [("System", "Provider[@Name='NETLOGON' or @Name='LsaSrv' or @Name='Microsoft-Windows-Security-Kerberos' or @Name='Microsoft-Windows-Time-Service'] and Level<=3")],
+        ["drivers"] = [("System", "Provider[@Name='Microsoft-Windows-Kernel-PnP' or @Name='Microsoft-Windows-UserPnp' or @Name='Microsoft-Windows-DriverFrameworks-UserMode'] and Level<=3")]
     };
+
+    /// <summary>At most this many events are read for one area (the idea O limit).</summary>
+    public const int MaxEvents = 50;
 
     public Task<EndpointActionResult> RunAsync(ActionInvocation invocation,
         CancellationToken cancellationToken)
@@ -234,8 +238,8 @@ public sealed class EventsSummaryAction : IEndpointAction
         var area = invocation.Argument("area")!;
         var events = Queries[area]
             .SelectMany(query => WindowsEvents.Read(query.Log,
-                $"*[System[{query.Filter} and {WindowsEvents.Since(7)}]]", 300))
-            .ToArray();
+                $"*[System[{query.Filter} and {WindowsEvents.Since(7)}]]", MaxEvents))
+            .Take(MaxEvents).ToArray();
         var groups = events
             .GroupBy(item => (item.Source, item.EventId))
             .Select(group => new

@@ -107,6 +107,7 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **What:** a few fixed, read-only tools that read the Windows event log for the agent: "errors of the last 24 hours for this app", "why did the PC restart", "last blue screen", "failed Windows updates", "disk and driver warnings". Each one reads only a small, fixed slice (one log, a few event IDs, a time limit, at most 50 events), runs only when the agent asks during a chat, and sends back a short summary instead of the raw log. Personal data (user names in messages, paths) is cut before it leaves the PC.
 - **Why:** many causes are written in the event log; today the agent cannot see it. Small, fixed queries keep the load on the PC and on the AI tiny.
 - **Idea from:** Reza, 2026-11-03.
+- **Built (2026-11-03):** "why did the PC restart", "crashes of one program" and a "driver warnings" area, next to the existing error summary. Every event text is cleaned of user names, folders, e-mail addresses and share paths on the PC.
 
 ### H. Fleet questions
 

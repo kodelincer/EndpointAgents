@@ -153,6 +153,14 @@ chat. Usage statistics come from `note_skill_used`.
 A skill only orders existing actions. It cannot add a tool, an action or a permission; the
 SOUL rules, tiers, limits and kill switches still apply.
 
+## Event log tools
+
+`events.summary` (by area, now also `drivers`), `events.restart_reasons` and `events.app_errors` read
+only a fixed slice of one log (fixed event ids, a time limit, at most 20 or 50 events), run only when the
+agent asks in a chat, and return short grouped summaries. `EventText.Scrub` removes user folders,
+account names, e-mail addresses, SIDs and share paths from every event text before it leaves the PC.
+The program name for `events.app_errors` is matched in code, never put into the event query.
+
 ## Health rules
 
 Scheduled health rules (dashboard **Health rules**, `ControlPlane.Api/Health`) run Look actions
