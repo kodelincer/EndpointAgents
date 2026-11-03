@@ -58,6 +58,7 @@ public static class EndpointActionSet
         new RegionStatusAction(), new DisplayStatusAction(), new MediaStatusAction(),
         new AllowCameraMicAction(), new AppCloseAction(),
         new AudioStatusAction(), new AudioUnmuteAction(), new AudioSetDefaultAction(),
+        new NoticeShowAction(),
         new AudioRestoreDefaultAction(), new PrinterStatusAction(), new WhoAmIGroupsAction(),
         new SiteCheckAccessAction(), new ZonesStatusAction(), new ZonesAddCompanySiteAction(),
         new ZonesRemoveCompanySiteAction(), new StartupListAction(), new StartupDisableAction(),

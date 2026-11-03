@@ -71,6 +71,7 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **First rules to consider:** KMS activation close to expiry, old Defender signatures, almost full disk, a restart pending for many days, clock out of sync, time zone or proxy different from the Environment map, Tray not running.
 - **Idea from:** Intune Remediations and SCCM configuration baselines.
 - **Keeping the choices small (Reza, 2026-11-03):** IT members decide *what* is checked, never write code. A rule has only five answers to pick: which check (from a fixed list), which fix (from the fixed list for that check, or none), how often (daily or weekly, at a random minute so PCs do not run at once), which PCs (all, pilot or a group), and what to do when it fails (only report, fix by itself, or tell the user in the Tray). Every new rule starts in **only report** mode for a week, so IT sees how many PCs would be touched before any fix runs. Start with 5 rules; the list grows only when a new fixed check is built.
+- **Built (2026-11-03):** seven fixed checks, the five answers, a random minute per PC, the report-only first week, Tray messages and the pass/fixed/fail counts. See [Health rules](/docs/health/). Proxy, KMS expiry and "Tray not running" checks are still to build. Device groups (idea E) will replace typing PC names.
 
 ### E. Device groups and pilot rings
 

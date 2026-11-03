@@ -19,7 +19,7 @@ describe("the guide in docs/guide", () => {
   it("has the same topics in Persian and English", () => {
     const names = (language: string) => readdirSync(path.join(guideDirectory(), language)).sort();
     expect(names("fa")).toEqual(names("en"));
-    expect(topics.map(topic => topic.slug)).toEqual(["overview", "roadmap", "agent", "skills", "catalog", "setup", "helpdesk", "actions", "packages", "updates", "security", "pages", "ideas"]);
+    expect(topics.map(topic => topic.slug)).toEqual(["overview", "roadmap", "agent", "skills", "catalog", "setup", "helpdesk", "actions", "packages", "updates", "health", "security", "pages", "ideas"]);
   });
 
   it("gives every topic a title, a summary and sections in both languages", () => {

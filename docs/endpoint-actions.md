@@ -153,6 +153,15 @@ chat. Usage statistics come from `note_skill_used`.
 A skill only orders existing actions. It cannot add a tool, an action or a permission; the
 SOUL rules, tiers, limits and kill switches still apply.
 
+## Health rules
+
+Scheduled health rules (dashboard **Health rules**, `ControlPlane.Api/Health`) run Look actions
+through `ActionRunner` with source `HealthRule`, judge the answer with fixed code in
+`HealthCheckCatalog`, and after the report-only week may run one of that check's SafeFix
+actions or `notice.show`. `notice.show` is OperatorOnly (never offered to the agent); only health
+rules may call it, and it shows one of the fixed Persian texts in `UserNoticeSink` on the PC.
+No LLM call is made. See `docs/guide/en/health.md`.
+
 ## Adding a new action
 
 1. Add the definition to `EndpointActionCatalog` (pick the lowest tier that fits; add

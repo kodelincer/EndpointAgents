@@ -95,6 +95,9 @@ builder.Services.AddSingleton<ControlPlane.Api.Updates.AgentUpdateStore>();
 builder.Services.Configure<ControlPlane.Api.Software.SoftwareInstallOptions>(
     builder.Configuration.GetSection("SoftwareInstall"));
 builder.Services.AddSingleton<ControlPlane.Api.Software.SoftwareApprovalStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Health.HealthRuleStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Health.HealthRuleRunner>();
+builder.Services.AddHostedService<ControlPlane.Api.Health.HealthRuleWorker>();
 builder.Services.AddSingleton<ControlPlane.Api.Updates.AgentUpdateRepository>();
 builder.Services.AddSingleton<ActionRunner>();
 builder.Services.AddSingleton<ApprovalService>();
@@ -163,6 +166,7 @@ await app.Services.GetRequiredService<ActionStore>()
 await app.Services.GetRequiredService<ControlPlane.Api.Updates.AgentUpdateStore>()
     .InitializeAsync(app.Lifetime.ApplicationStopping);
 await app.Services.GetRequiredService<ControlPlane.Api.Software.SoftwareApprovalStore>().InitializeAsync();
+await app.Services.GetRequiredService<ControlPlane.Api.Health.HealthRuleStore>().InitializeAsync();
 
 // Endpoint agents and health monitors can reach the explicitly public routes
 // below. The unauthenticated operator console and command surface remain local
@@ -519,6 +523,7 @@ app.MapGet("/api/files/office/{artifactId}", async (string artifactId, HttpConte
 app.MapActionEndpoints();
 ControlPlane.Api.Updates.AgentUpdateEndpoints.MapAgentUpdateEndpoints(app);
 ControlPlane.Api.Software.SoftwareEndpoints.MapSoftwareEndpoints(app);
+ControlPlane.Api.Health.HealthEndpoints.MapHealthEndpoints(app);
 app.MapGet("/api/activity", (int? limit, string? agentId, ActivityStore store) =>
     Results.Ok(store.Get(limit ?? 100, agentId)));
 // Requests for abilities the support agent does not have yet (loopback operator view).

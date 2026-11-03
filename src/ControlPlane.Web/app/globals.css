@@ -764,3 +764,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visibl
 .sidebar-foot .account-copy { display: flex; min-width: 0; }
 .app-shell.collapsed .sidebar-foot .account-copy { display: none; }
 @media (max-width: 1024px) { .app-shell.collapsed .sidebar-foot .account-copy { display: flex; } }
+
+.health-form { display: grid; gap: 10px; max-width: 640px; margin: 0 0 18px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.health-form label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--ink); }
+.health-form select, .health-form input { padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--ink); font: inherit; font-weight: 400; }
+.health-counts .passed { color: var(--success); } .health-counts .failed { color: var(--danger); }
+.health-results { margin-top: 8px; width: 100%; border-collapse: collapse; font-size: 12px; }
+.health-results th, .health-results td { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: left; }
+.health-results td.failed { color: var(--danger); } .health-results td.passed, .health-results td.fixed { color: var(--success); }

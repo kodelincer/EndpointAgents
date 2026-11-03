@@ -100,6 +100,14 @@ public sealed class TrayHost : IDisposable
                 task.Exception?.GetBaseException().Message),
             TaskContinuationOptions.OnlyOnFaulted);
 
+        EndpointAgents.Platform.Windows.Actions.UserSide.UserNoticeSink.Show = (title, text, warning) =>
+            dispatcher.BeginInvoke(() =>
+            {
+                if (_disposed) return;
+                _balloonConversation = null;
+                _notifyIcon.ShowBalloonTip(15_000, title, text,
+                    warning ? Forms.ToolTipIcon.Warning : Forms.ToolTipIcon.Info);
+            });
         _statusTimer.Start();
         _chatTimer.Start();
         TrayEventLogger.Information("برنامه ناحیه اعلان دستیار پشتیبانی برای نشست کاربر اجرا شد.");
@@ -247,6 +255,7 @@ public sealed class TrayHost : IDisposable
         _disposed = true;
         _statusTimer.Stop();
         _chatTimer.Stop();
+        EndpointAgents.Platform.Windows.Actions.UserSide.UserNoticeSink.Show = null;
         _showRequests.Unregister(null);
         _showRequested.Dispose();
         _shutdown.Cancel();

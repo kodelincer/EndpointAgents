@@ -50,6 +50,8 @@ public static class ActionRunSources
     public const string Operator = "Operator";
     /// <summary>An agent request a helpdesk member approved on the Approvals page.</summary>
     public const string Approval = "Approval";
+    /// <summary>A scheduled health rule an admin made on the Health rules page (no AI).</summary>
+    public const string HealthRule = "HealthRule";
 }
 
 public static class ApprovalKinds

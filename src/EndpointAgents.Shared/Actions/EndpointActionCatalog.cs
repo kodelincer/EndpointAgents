@@ -28,6 +28,21 @@ public static class ActionSettings
          RootCaThumbprints, InternalDnsSuffixes, DnsFromDhcp, IpFromDhcp, PowerPlan];
 }
 
+/// <summary>The fixed notices a health rule can show in the Tray. The Persian text lives on the PC.</summary>
+public static class UserNotices
+{
+    public const string RestartNeeded = "restart-needed";
+    public const string DiskFull = "disk-full";
+    public const string DiskFailing = "disk-failing";
+
+    public static IReadOnlyList<ActionChoice> Choices { get; } =
+    [
+        new(RestartNeeded, "Please restart the PC"),
+        new(DiskFull, "Drive C: is almost full"),
+        new(DiskFailing, "The disk may fail; call the helpdesk")
+    ];
+}
+
 public static class ActionAreas
 {
     public const string Network = "network";
@@ -758,6 +773,14 @@ public static class EndpointActionCatalog
             "Done with the file renamed, or Blocked while Outlook is open.",
             [new("file", ActionParameterKind.LocalItem, "Data file name from outlook.status (an .ost file).")],
             TimeoutSeconds: 30, MaxPerHour: 1),
+
+        // ---------- Health rules (never offered to the agent) ----------
+        new("notice.show", ActionAreas.Desktop, ActionTier.OperatorOnly, ActionRunAs.User,
+            "Show a notice to the user", "نمایش پیام به کاربر",
+            "Shows one fixed Persian notice next to the clock, such as \"please restart the PC\". The text is chosen from a fixed list on the PC; nothing else can be shown.",
+            "Done when the notice was shown.",
+            [new("notice", ActionParameterKind.Choice, "Which fixed notice.", Choices: UserNotices.Choices)],
+            TimeoutSeconds: 15, MaxPerHour: 2),
 
         // ---------- Helpdesk-only undo actions (never offered to the agent) ----------
         new("proxy.restore", ActionAreas.Network, ActionTier.OperatorOnly, ActionRunAs.User,

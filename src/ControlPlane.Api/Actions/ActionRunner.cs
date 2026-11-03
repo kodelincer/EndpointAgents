@@ -44,7 +44,8 @@ public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
         var definition = EndpointActionCatalog.Find(actionId);
         if (definition is null)
             return ActionRunOutcome.Rejected(actionId, "Unknown action. Use list_endpoint_actions.");
-        if (definition.Tier == ActionTier.OperatorOnly && context.Source != ActionRunSources.Operator)
+        if (definition.Tier == ActionTier.OperatorOnly && context.Source != ActionRunSources.Operator
+            && !(context.Source == ActionRunSources.HealthRule && actionId == "notice.show"))
             return ActionRunOutcome.Rejected(actionId, "This action is for the helpdesk only.");
 
         var settings = await store.GetActionSettingsAsync(cancellationToken);
