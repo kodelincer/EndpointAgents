@@ -33,6 +33,7 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | J | Peer sharing of large packages | Later | 4 | Idea | 2026-11-02 |
 | K | Software metering | Later | 4 | Idea | 2026-11-02 |
 | L | Remote help with the user's consent | Later | 4 | Idea | 2026-11-02 |
+| M | Safe software install requests: approval, system requirements, one generic installer | Software | 2 | Idea | 2026-11-03 |
 
 Ideas A to L come from studying what the SCCM client and the Intune agent do (from Microsoft's public documentation only, never from their code), and what our system is still missing.
 
@@ -78,6 +79,13 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **What:** choose a package from the Software catalog, a group, a deadline and a maintenance window. Each install package gets a detection rule from a fixed list (MSI product code, file version, uninstall entry), so the PC knows when the software is already there. The Tray warns before a restart.
 - **Why:** today software is installed only when a user asks for it in chat.
 - **Idea from:** SCCM and Intune application deployments with detection methods.
+
+### M. Safe software install requests
+
+- **What:** when a user asks for software, the PC first checks the software's system requirements (Windows build and edition, x64, memory, free disk, CPU, screen, required runtimes, conflicting apps). If they are not met, the user is told why and no approval is asked. If they are met, the request goes to the **Approvals** page by default, unless the admin put that software on a **No approval needed** list. Right before installing, the PC checks again. Instead of a BAT per app, each package describes its install in typed, signed fields (installer kind, silent switches, detection rule, return codes) and the endpoint runs it with compiled code. An installer that cannot run silently becomes a Helpdesk task for a person.
+- **Why:** vendors ship installers in many ways, and nobody should approve or install something the PC cannot run.
+- **Idea from:** Reza (2026-11-03), and Intune's Win32 apps (requirement rules, detection rules, return codes).
+- **Design:** `safe-software-install-design.md` in the project's design folder.
 
 ## Helpdesk tools
 
