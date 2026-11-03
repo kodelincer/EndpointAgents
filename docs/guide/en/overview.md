@@ -12,7 +12,7 @@ EndpointAgents lets a Windows user describe a problem in the Tray app, in Persia
 
 | Piece | Where it runs | What it does |
 | --- | --- | --- |
-| **Tray** | The user's PC, in their Windows session | Chat window, Status and Control, Reports, and the consent card. It reaches the PC only through a fixed list of catalogued operations. |
+| **Tray** | The user's PC, in their Windows session | Chat window, Status and Control, Reports, and the consent card. While the window is closed it shows a pop-up next to the clock for a new reply or a restart request. It reaches the PC only through a fixed list of catalogued operations. |
 | **Endpoint service** | The user's PC, as LocalSystem | Keeps one authenticated connection to the control plane, receives allow-listed commands and runs the matching handler. It owns the only named pipe the Tray talks to. |
 | **Control plane (API)** | The server, port 5052 | Owns identity, conversations, consent, the command allow-list and the audit trail. Stores everything in SQLite. |
 | **Hermes** | The server, loopback only (127.0.0.1:8642) | The AI agent. It reads the conversation, picks skills and calls control-plane tools. It has no direct line to any PC. |

@@ -223,6 +223,11 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
 
   useEffect(() => { if (selectedId) void syncChat(); }, [selectedId, syncChat]);
 
+  // A click on a pop-up opens the conversation it was about.
+  useEffect(() => host.on("navigate", (data: { conversationId?: string | null }) => {
+    if (data.conversationId && data.conversationId !== selectedRef.current) resetTimeline(data.conversationId);
+  }), [resetTimeline]);
+
   useEffect(() => {
     if (!selectedId) return;
     const s = summaries.find((x) => x.conversationId === selectedId);

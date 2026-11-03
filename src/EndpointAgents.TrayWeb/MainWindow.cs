@@ -103,6 +103,13 @@ public sealed class MainWindow : Window
         if (section is not null) _bridge.PostEvent("navigate", new { section });
     }
 
+    /// <summary>Opens the chat page on one conversation, for a click on a pop-up.</summary>
+    public void ShowConversation(string conversationId)
+    {
+        ShowSection("chat");
+        _bridge.PostEvent("navigate", new { section = "chat", conversationId });
+    }
+
     public void UpdateStatus(TrayStatus status)
     {
         LastStatus = status;
