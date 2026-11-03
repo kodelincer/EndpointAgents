@@ -657,6 +657,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visibl
 .guide-card small { margin-top: auto; padding-top: 6px; color: var(--action); font-size: 12px; font-weight: 650; }
 .guide-nav a:focus-visible, .guide-card:focus-visible, .guide-pager a:focus-visible, .guide-article a:focus-visible { outline: 3px solid color-mix(in oklch, var(--focus) 48%, transparent); outline-offset: 2px; }
 @media (max-width: 860px) { .guide-layout { grid-template-columns: minmax(0, 1fr); }.guide-nav { position: static; max-height: none; flex-direction: row; flex-wrap: wrap; gap: 4px; }.guide-sections { display: none; }.guide-article { padding: 20px 18px 24px; } }
+/* Farsi manual: Vazirmatn leads, so spaces, digits and punctuation match the letters. */
+.guide-page[lang="fa"] { font-family: var(--font-fa), var(--font-geist), system-ui, sans-serif; }
+.guide-page[lang="fa"] .guide-article { font-size: 15px; line-height: 1.95; }
+.guide-page[lang="fa"] .guide-article h2.guide-title { letter-spacing: 0; }
 .docs-link { width: auto; padding: 0 10px; gap: 6px; display: inline-flex; align-items: center; color: var(--muted); text-decoration: none; font-size: 12px; font-weight: 600; }
 .docs-link:hover { color: var(--ink); }
 .docs-link.active { color: var(--action); background: color-mix(in oklch, var(--action) 8%, white); }
