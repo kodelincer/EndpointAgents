@@ -13,6 +13,13 @@ using System.Text.Json.Nodes;
 // EXE and its playbook with the control plane's own rules, and with --execute runs it
 // through the real endpoint runner as the current user (the file really runs).
 
+// PlaybookLab --sign-agent-update <agent-update.json> [--key-name <name>]
+if (args.Length >= 2 && args[0] == "--sign-agent-update")
+{
+    var signKey = args.Length >= 4 && args[2] == "--key-name" ? args[3] : PackageSigningKey.DefaultName;
+    return await PackageSigningKey.SignAgentUpdateAsync(args[1], signKey) ? 0 : 1;
+}
+
 var options = ParseArguments(args);
 if (options is null)
 {
@@ -30,6 +37,7 @@ if (options is null)
           --key-name  name of the signing key (default EndpointAgents.PackageSigning)
                PlaybookLab --new-signing-key [--key-name <name>]
                PlaybookLab --show-signing-key [--key-name <name>]
+               PlaybookLab --sign-agent-update <agent-update.json> [--key-name <name>]
         """);
     return 2;
 }

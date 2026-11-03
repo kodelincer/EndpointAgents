@@ -169,6 +169,40 @@ public sealed class AgentWorker : BackgroundService
         connection.On<RpcRequest, RpcResponse>("RunRpc",
             request => ExecuteCommandAsync(request, stoppingToken));
         connection.On<string>(RpcInterruptPolicy.CancelMethod, InterruptCommand);
+        connection.On(EndpointAgents.Shared.Updates.AgentUpdateHubMethods.Available, () =>
+        {
+            UpdateCheckRequested?.Invoke();
+            return Task.CompletedTask;
+        });
+    }
+
+    /// <summary>The control plane asked this PC to check for an agent update now.</summary>
+    public event Action? UpdateCheckRequested;
+
+    /// <summary>Raised after every successful registration with the control plane.</summary>
+    public event Action? Registered;
+
+    /// <summary>The version this service reports.</summary>
+    public string Version => _options.Version;
+
+    /// <summary>True while a command (a check or a repair) runs on this PC.</summary>
+    public bool IsBusy => !_running.IsEmpty;
+
+    /// <summary>Calls a control-plane hub method when connected; null otherwise.</summary>
+    public async Task<T?> InvokeHubAsync<T>(string method, object argument, CancellationToken cancellationToken)
+    {
+        var connection = _connection;
+        if (connection is null || connection.State != HubConnectionState.Connected) return default;
+        return await connection.InvokeAsync<T?>(method, argument, cancellationToken);
+    }
+
+    /// <summary>Sends to a control-plane hub method when connected; false otherwise.</summary>
+    public async Task<bool> SendHubAsync(string method, object argument, CancellationToken cancellationToken)
+    {
+        var connection = _connection;
+        if (connection is null || connection.State != HubConnectionState.Connected) return false;
+        await connection.InvokeAsync(method, argument, cancellationToken);
+        return true;
     }
 
     /// <summary>
@@ -274,6 +308,8 @@ public sealed class AgentWorker : BackgroundService
         var registration = new AgentRegistration(_agentId, Environment.MachineName,
             Environment.MachineName, Environment.UserName, _options.Version, _startedAtUtc);
         await _connection.InvokeAsync("RegisterAgent", registration, cancellationToken);
+        try { Registered?.Invoke(); }
+        catch (Exception ex) { _logger.LogWarning(ex, "A registration listener failed."); }
     }
 
     public async Task<SupportRequestReceipt> SubmitSupportRequestAsync(

@@ -12,6 +12,7 @@ within strict allow-lists, repair the user's PC through the endpoint service.
 | `src/EndpointAgents.Core` | Endpoint engine: `IEndpointCommandHandler`, `CommandDispatcher`, execution context, result pattern, validation. |
 | `src/EndpointAgents.Platform.Windows` | Real Windows features (endpoint info, internet, IBSng, printers, services, registry, software, VPN, Office/Windows activation and repairs). Most feature work goes here. |
 | `src/EndpointAgents.Service` | Windows service (LocalSystem): owns the control-plane connection (SignalR + device token), reconnect, RPC -> `CommandDispatcher`, the only named pipe (Tray calls plus the attached Tray channel it pushes user-session tasks down). |
+| `src/EndpointAgents.Updater` | Small SYSTEM program the service starts to switch to a new signed agent version (`versions\<ver>\`), wait for it to connect and roll back if it does not or keeps crashing. Update code lives in `Shared/Updates`, `Platform.Windows/Updates`, `ControlPlane.Api/Updates`; versions are built with `scripts\new-agent-update.ps1 -Sign`. |
 | `src/EndpointAgents.TrayWeb` | The Tray (default): WPF host + WebView2 + React UI in `ui/` for the interactive user session: helpdesk chat, Status & Control, Reports, in-app consent. Page reaches the PC only through the allow-listed `TrayBridge`. |
 | `src/EndpointAgents.Tray.Runtime` | Shared Tray pieces: service channel (`tray.attach`), catalogued user-session task handlers, consent prompt, status, logging, tray icon. |
 | `src/EndpointAgents.Tray` | Previous WinUI 3 Tray, kept until the WebView2 Tray is accepted (`-LegacyTray`). |
@@ -65,6 +66,7 @@ Stop any installed `EndpointAgents.Service` and running Tray before the dev scri
 ## Docs
 
 - `docs/guide/` - the dashboard Documentation page (Markdown in `fa/` and `en/`; edit here, the page reads it at build time)
+- `docs/guide/en/updates.md` - agent self-update: rollout, rollback, first manual 0.2.0 install
 - `docs/operation-catalog.md` - master list of common Windows helpdesk tickets mapped to safe operations, gaps and build order
 - `docs/endpoint-actions.md` - general action catalogue, tiers, environment map, agent tools, helpdesk skills
 - `docs/control-plane-operations.md` - ports, routes, dev and production install, troubleshooting

@@ -91,6 +91,8 @@ builder.Services.AddMcpServer()
     .WithTools<EndpointActionTools>();
 // General endpoint actions: catalogue runner, environment map, incidents, helpdesk skills.
 builder.Services.AddSingleton<ActionStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Updates.AgentUpdateStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Updates.AgentUpdateRepository>();
 builder.Services.AddSingleton<ActionRunner>();
 builder.Services.AddSingleton<ApprovalService>();
 builder.Services.AddSingleton<ServerProbe>();
@@ -154,6 +156,8 @@ await app.Services.GetRequiredService<ChatStore>()
 await app.Services.GetRequiredService<OperatorUserStore>()
     .InitializeAsync(app.Lifetime.ApplicationStopping);
 await app.Services.GetRequiredService<ActionStore>()
+    .InitializeAsync(app.Lifetime.ApplicationStopping);
+await app.Services.GetRequiredService<ControlPlane.Api.Updates.AgentUpdateStore>()
     .InitializeAsync(app.Lifetime.ApplicationStopping);
 
 // Endpoint agents and health monitors can reach the explicitly public routes
@@ -509,6 +513,7 @@ app.MapGet("/api/files/office/{artifactId}", async (string artifactId, HttpConte
         artifact.File.FileName, artifact.File.LastModifiedUtc, enableRangeProcessing: true);
 }).RequireAuthorization();
 app.MapActionEndpoints();
+ControlPlane.Api.Updates.AgentUpdateEndpoints.MapAgentUpdateEndpoints(app);
 app.MapGet("/api/activity", (int? limit, string? agentId, ActivityStore store) =>
     Results.Ok(store.Get(limit ?? 100, agentId)));
 // Requests for abilities the support agent does not have yet (loopback operator view).

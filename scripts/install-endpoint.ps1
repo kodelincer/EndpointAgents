@@ -28,6 +28,10 @@ $endpointAgentsDataRoot = Join-Path $env:ProgramData "EndpointAgents"
 $credentialRoot = Join-Path $env:ProgramData "EndpointAgents\Credentials"
 $officeRemediationRoot = Join-Path $env:ProgramData "EndpointAgents\OfficeRemediation"
 $windowsRemediationRoot = Join-Path $env:ProgramData "EndpointAgents\WindowsRemediation"
+# This PC's own settings live outside the program folder, so self-updates keep them.
+$configRoot = Join-Path $env:ProgramData "EndpointAgents\Config"
+$siteSettingsPath = Join-Path $configRoot "appsettings.site.json"
+$updatesRoot = Join-Path $env:ProgramData "EndpointAgents\Updates"
 $systemSid = "S-1-5-18"
 $administratorsSid = "S-1-5-32-544"
 $usersSid = "S-1-5-32-545"
@@ -391,6 +395,19 @@ New-SafeDirectory $windowsRemediationRoot
 Set-ExactProtectedTreeAcl $credentialRoot
 Set-ExactProtectedTreeAcl $officeRemediationRoot -AllowUsersReadAndExecute
 Set-ExactProtectedTreeAcl $windowsRemediationRoot
+New-SafeDirectory $configRoot
+$siteSettings = [ordered]@{
+    ControlPlane = [ordered]@{ HubUrl = $ControlPlaneHubUrl.AbsoluteUri }
+    PackageSigning = [ordered]@{
+        TrustedPublicKeys = @($PackageSigningPublicKey)
+        RequireForActivationRepairs = [bool]$RequireSignedActivationRepairs
+    }
+}
+[IO.File]::WriteAllText($siteSettingsPath, (($siteSettings | ConvertTo-Json -Depth 5) + [Environment]::NewLine),
+    [Text.UTF8Encoding]::new($false))
+Set-ExactProtectedTreeAcl $configRoot -AllowUsersReadAndExecute
+New-SafeDirectory $updatesRoot
+Set-ExactProtectedTreeAcl $updatesRoot
 
 Start-Service -Name $serviceName
 

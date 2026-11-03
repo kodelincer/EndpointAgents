@@ -1,12 +1,12 @@
 ---
 title: Ideas and future features
-summary: Reza's notebook of features the system should get one day, so no idea is forgotten. Nothing on this page is built yet.
+summary: Reza's notebook of features the system should get one day, so no idea is forgotten.
 order: 12
 ---
 
 # Ideas and future features
 
-This page is the place to keep ideas for the system, big or small, so none of them get lost. **Nothing here is built yet.** When an idea is picked for a batch, it moves to [How the system was born and where it is going](/docs/roadmap/), and when it is built it appears in the rest of this manual.
+This page is the place to keep ideas for the system, big or small, so none of them get lost. Ideas are not built unless their status says so. When an idea is picked for a batch, it moves to [How the system was born and where it is going](/docs/roadmap/), and when it is built it appears in the rest of this manual.
 
 Every idea must still keep the promises of the system: only catalogued, fixed operations and signed packages (no free scripts), no Microsoft 365, Intune or Entra, nothing that needs GPO or SCCM, and it must work on Windows 10 and 11.
 
@@ -21,7 +21,7 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 
 | # | Idea | Group | Priority | Status | Since |
 | --- | --- | --- | --- | --- | --- |
-| A | Agent self-update and daily self-check | Before a wide rollout | 1 | Idea | 2026-11-02 |
+| A | Agent self-update and daily self-check | Before a wide rollout | 1 | Self-update built 2026-11-03; self-check is an idea | 2026-11-02 |
 | B | Stored inventory and a Devices page | Before a wide rollout | 1 | Idea | 2026-11-02 |
 | C | Offline queue, both ways | Before a wide rollout | 1 | Idea | 2026-11-02 |
 | D | Health rules: fix problems before users call | Proactive care | 2 | Idea | 2026-11-02 |
@@ -34,6 +34,9 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | K | Software metering | Later | 4 | Idea | 2026-11-02 |
 | L | Remote help with the user's consent | Later | 4 | Idea | 2026-11-02 |
 | M | Safe software install requests: approval, system requirements, one generic installer | Software | 2 | Idea | 2026-11-03 |
+| N | Supervised learning from solved problems | AI agent | 2 | Idea | 2026-11-03 |
+| O | Light, read-only event log checks | Helpdesk tools | 2 | Idea | 2026-11-03 |
+| P | Network OS installation for new PCs | Later | 4 | Idea | 2026-11-03 |
 
 Ideas A to L come from studying what the SCCM client and the Intune agent do (from Microsoft's public documentation only, never from their code), and what our system is still missing.
 
@@ -44,11 +47,13 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **What:** the agent reports its version; the control plane keeps a target version per ring. An agent update is a signed package of its own kind; a small updater swaps the files and rolls back if the new version does not connect. A daily self-check makes sure the service and Tray run, the device credential is valid (re-enroll if not), the clock is right, the disk is not full and the control plane answers. It fixes what it can and reports the rest.
 - **Why:** there is no GPO or SCCM to push new versions to hundreds of PCs, and today nobody knows when the agent on a PC is broken until the user calls.
 - **Idea from:** SCCM automatic client upgrade and its daily client health check.
+- **Built (2026-11-03):** the self-update, with pilot PCs, update hours, no update during a chat or a repair, and going back to the previous version by itself when the new one does not connect or keeps crashing. See [Updating the endpoint agent](/docs/updates/). The daily self-check is still an idea, and it must use fixed checks only, no AI.
 
 ### B. Stored inventory and a Devices page
 
-- **What:** a light heartbeat every 15 minutes and a full inventory once a day: model, serial, CPU, memory, disk, Windows version, last boot, installed software, drivers, Windows and Office activation, Defender and BitLocker state (never keys). Stored with history and shown on a new **Devices** page. The agent can read the stored facts instead of asking the user.
-- **Why:** today inventory is read only during a chat and then thrown away.
+- **What (recommended design, 2026-11-03): "keep, don't schedule".** The PC does not collect a full inventory on a timer. Whenever a tool reads facts from a PC (during a chat, or when an IT member opens the PC), the control plane stores the answer in its database with the time it was read. The next time the same fact is needed and the stored copy is fresh enough (for example 7 days for hardware, 1 day for installed software), the control plane gives the stored copy and does not ask the PC at all. The only regular message is the small one the agent already sends when it connects (version, Windows build, last boot, free disk). A **Devices** page shows the stored facts with their age, and an IT member can press **Refresh** for one PC.
+- **Why:** today inventory is read only during a chat and then thrown away. This way the AI gets short, ready answers (fewer tokens), the PCs do no extra work, and IT still has a Devices page. Nothing here uses AI.
+- **Waiting for:** Reza's yes before building.
 - **Idea from:** SCCM hardware and software inventory.
 
 ### C. Offline queue, both ways
@@ -65,6 +70,7 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **Why:** many tickets can be stopped before they happen.
 - **First rules to consider:** KMS activation close to expiry, old Defender signatures, almost full disk, a restart pending for many days, clock out of sync, time zone or proxy different from the Environment map, Tray not running.
 - **Idea from:** Intune Remediations and SCCM configuration baselines.
+- **Keeping the choices small (Reza, 2026-11-03):** IT members decide *what* is checked, never write code. A rule has only five answers to pick: which check (from a fixed list), which fix (from the fixed list for that check, or none), how often (daily or weekly, at a random minute so PCs do not run at once), which PCs (all, pilot or a group), and what to do when it fails (only report, fix by itself, or tell the user in the Tray). Every new rule starts in **only report** mode for a week, so IT sees how many PCs would be touched before any fix runs. Start with 5 rules; the list grows only when a new fixed check is built.
 
 ### E. Device groups and pilot rings
 
@@ -95,11 +101,25 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **Why:** the helpdesk often needs logs and should not have to ask the user to find them.
 - **Idea from:** the Intune "Collect diagnostics" remote action.
 
+### O. Light, read-only event log checks
+
+- **What:** a few fixed, read-only tools that read the Windows event log for the agent: "errors of the last 24 hours for this app", "why did the PC restart", "last blue screen", "failed Windows updates", "disk and driver warnings". Each one reads only a small, fixed slice (one log, a few event IDs, a time limit, at most 50 events), runs only when the agent asks during a chat, and sends back a short summary instead of the raw log. Personal data (user names in messages, paths) is cut before it leaves the PC.
+- **Why:** many causes are written in the event log; today the agent cannot see it. Small, fixed queries keep the load on the PC and on the AI tiny.
+- **Idea from:** Reza, 2026-11-03.
+
 ### H. Fleet questions
 
 - **What:** saved, read-only questions over the stored inventory, such as "which PCs have Office not activated?" or "who has less than 5 GB free?".
 - **Why:** answers in seconds instead of checking PCs one by one. Needs idea B.
 - **Idea from:** SCCM CMPivot.
+
+## AI agent
+
+### N. Supervised learning from solved problems
+
+- **What:** after each solved chat, the control plane writes a short "lesson" (symptom, what was tried, what fixed it), without AI where possible. Lessons wait in a **Lessons** queue on the dashboard. An IT member reads them and chooses: turn it into a skill change, edit it, or drop it. Only approved lessons ever reach Hermes, as a reviewed skill update with a version, and every change can be undone. All lessons are kept for later analysis (which problems come back, which fixes work best).
+- **Why:** the agent gets better from real tickets, but people stay in control, and nothing changes the agent by itself.
+- **Idea from:** Reza, 2026-11-03.
 
 ## Later
 
@@ -119,8 +139,12 @@ Count how often licensed applications are really used, to free licences nobody u
 
 Start the company's remote-support tool from the chat, only after the user says yes. The operation catalog already lists "remote-support launch" for batch 3.
 
+### P. Network OS installation for new PCs
+
+A new or empty PC starts from the network (PXE) into a small Windows PE, and installs Windows from an approved image. IT members write the steps as skills and fixed tools: how to partition the disk, which drivers to add for each PC model, and which software the PC and its users need. The AI only picks among those approved steps; it never makes up disk or install commands. Idea from Reza, 2026-11-03 (earlier listed under "not to copy"; now an idea of its own because new PCs need it).
+
 ## Things we decided not to copy
 
 - **Free scripts** (SCCM Run Scripts, Intune platform scripts): they break the rule that only catalogued operations and signed packages run.
-- **Operating system deployment**, a **Windows Update server** replacement and the **MDM channel**: each is a large product of its own.
+- A **Windows Update server** replacement and the **MDM channel**: each is a large product of its own. (Operating system installation is now idea P.)
 - **Code from Microsoft's agents**: their licence forbids reverse engineering, so we learn only from public documentation and build our own code.

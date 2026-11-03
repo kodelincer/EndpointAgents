@@ -17,6 +17,7 @@
     <ProjectReference Include="..\EndpointAgents.Service\EndpointAgents.Service.csproj" />
     <ProjectReference Include="..\EndpointAgents.Shared\EndpointAgents.Shared.csproj" />
     <ProjectReference Include="..\EndpointAgents.Tray\EndpointAgents.Tray.csproj" />
+    <ProjectReference Include="..\EndpointAgents.Updater\EndpointAgents.Updater.csproj" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\deploy\control-plane\FileRepository\packages\office-activation-repair\office-activation-repair.bat"

@@ -121,4 +121,45 @@ static class PackageSigningKey
         Console.WriteLine($"Signed {id} with key {signature.KeyId}.");
         return true;
     }
+
+    /// <summary>
+    /// Signs an agent update manifest written by scripts\new-agent-update.ps1, after checking
+    /// that the zip next to it is exactly the one the manifest describes.
+    /// </summary>
+    public static async Task<bool> SignAgentUpdateAsync(string manifestPath, string name)
+    {
+        var publicKey = TryGetPublicKey(name);
+        if (publicKey is null)
+        {
+            Console.WriteLine($"No signing key named '{name}' on this PC. Create one with scripts\\new-package-signing-key.ps1.");
+            return false;
+        }
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
+        var manifest = JsonSerializer.Deserialize<EndpointAgents.Shared.Updates.AgentUpdateManifest>(
+            await File.ReadAllTextAsync(manifestPath), json);
+        if (!EndpointAgents.Shared.Updates.AgentUpdatePolicy.TryValidate(manifest, out var error))
+        {
+            Console.WriteLine($"Cannot sign: {error}");
+            return false;
+        }
+        var zip = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(manifestPath))!, manifest!.FileName);
+        if (!File.Exists(zip) || new FileInfo(zip).Length != manifest.SizeBytes)
+        {
+            Console.WriteLine($"Cannot sign: {manifest.FileName} is missing or its size differs from the manifest.");
+            return false;
+        }
+        await using (var stream = File.OpenRead(zip))
+            if (!Convert.ToHexString(await SHA256.HashDataAsync(stream)).Equals(manifest.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Cannot sign: the zip does not match the manifest's SHA-256.");
+                return false;
+            }
+        using var key = new ECDsaCng(CngKey.Open(name));
+        var signature = PackageSignaturePolicy.Sign(
+            EndpointAgents.Shared.Updates.AgentUpdatePolicy.BuildStatement(manifest), key, publicKey);
+        await File.WriteAllTextAsync(manifestPath,
+            JsonSerializer.Serialize(manifest with { Signature = signature }, json) + Environment.NewLine);
+        Console.WriteLine($"Signed agent update {manifest.Version} with key {signature.KeyId}.");
+        return true;
+    }
 }
