@@ -2,6 +2,7 @@ using ControlPlane.Api.Files;
 using ControlPlane.Api.Updates;
 using EndpointAgents.Shared.Packages;
 using EndpointAgents.Shared.Updates;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Options;
 using System.IO.Compression;
 using System.Security.Cryptography;
@@ -17,6 +18,7 @@ public sealed class AgentUpdateTests : IDisposable
 
     public void Dispose()
     {
+        SqliteConnection.ClearAllPools(); // pooled connections keep cp.db open on Windows
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
     }
 
