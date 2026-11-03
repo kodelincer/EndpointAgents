@@ -772,3 +772,5 @@ button:focus-visible, input:focus-visible, select:focus-visible, tr:focus-visibl
 .health-results { margin-top: 8px; width: 100%; border-collapse: collapse; font-size: 12px; }
 .health-results th, .health-results td { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: left; }
 .health-results td.failed { color: var(--danger); } .health-results td.passed, .health-results td.fixed { color: var(--success); }
+
+.tab-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }

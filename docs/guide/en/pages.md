@@ -17,6 +17,7 @@ order: 11
 | **Packages** | Every repair and install package with its status, symptoms, requirements, hashes, signer and exactly what to fix when it is not Ready. Admins switch an install package to **No approval needed**. | Everyone reads, admins switch |
 | **Helpdesk** | Live conversations, escalated cases, take over, read-only diagnostics. See [Daily helpdesk work](/docs/helpdesk/). | Members and above |
 | **Approvals** | Requests that wait for a helpdesk member: removing software, uninstall packages, and fixes an admin marked "Needs IT approval". **Approve and run** runs it at once; **Decline** takes a note the user sees. | Members and above |
+| **Lessons** | Every solved chat leaves a short lesson (what the user said, what was tried, what fixed it), written without AI. A reviewer starts a skill draft from it, keeps it for analysis, or drops it; only a skill a reviewer publishes reaches the agent. The top shows which fixes solved the most chats. | Everyone reads, reviewers decide |
 | **Feature requests** | Things users asked for that the system cannot do yet: New, Planned, Done, Declined. | Reviewers and above |
 | **Capabilities** | Four tabs: **Actions** (switches and limits, admins change them), **Agent tools**, **Writing a skill**, **Recent runs** (reviewers can undo a fix). | Everyone reads |
 | **Skills** | Draft, check, submit, publish, retire and roll back skills. | Members draft, reviewers publish |

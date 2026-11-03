@@ -1,6 +1,6 @@
 "use client";
 
-import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, CloudDownload, HeartPulse, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, MonitorSmartphone, Package, PanelLeftClose, PanelLeftOpen, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
+import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, CloudDownload, GraduationCap, HeartPulse, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, MonitorSmartphone, Package, PanelLeftClose, PanelLeftOpen, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { roleName } from "@/lib/auth";
@@ -66,7 +66,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { title: "Support", items: [
       { href: "/support/", label: "Helpdesk", icon: LifeBuoy, count: supportRequests.length },
       { href: "/approvals/", label: "Approvals", icon: ClipboardCheck },
-      { href: "/feature-requests/", label: "Feature requests", icon: Lightbulb }
+      { href: "/feature-requests/", label: "Feature requests", icon: Lightbulb },
+      { href: "/lessons/", label: "Lessons", icon: GraduationCap }
     ] },
     { title: "Agent setup", items: [
       { href: "/skills/", label: "Skills", icon: Sparkles },

@@ -122,6 +122,7 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **What:** after each solved chat, the control plane writes a short "lesson" (symptom, what was tried, what fixed it), without AI where possible. Lessons wait in a **Lessons** queue on the dashboard. An IT member reads them and chooses: turn it into a skill change, edit it, or drop it. Only approved lessons ever reach Hermes, as a reviewed skill update with a version, and every change can be undone. All lessons are kept for later analysis (which problems come back, which fixes work best).
 - **Why:** the agent gets better from real tickets, but people stay in control, and nothing changes the agent by itself.
 - **Idea from:** Reza, 2026-11-03.
+- **Built (2026-11-03):** the **Lessons** page. A lesson is written a few minutes after a chat is marked solved, from the chat's first message and the steps that ran (no AI). Reviewers choose **Start skill draft** (opens the Skills page with that chat; the draft is checked, published and can be rolled back there), **Keep** or **Drop**. All lessons stay, and the top of the page counts which fixes solved the most chats.
 
 ## Later
 
