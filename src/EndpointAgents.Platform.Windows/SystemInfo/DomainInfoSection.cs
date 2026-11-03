@@ -40,7 +40,7 @@ public sealed class DomainInfoSection : ISystemInfoSection
         };
     }
 
-    private static (string? JoinType, string? Name) ReadJoinInformation()
+    internal static (string? JoinType, string? Name) ReadJoinInformation()
     {
         var status = NativeMethods.NetGetJoinInformation(null, out var buffer, out var type);
         if (status != 0) throw new InvalidOperationException($"NetGetJoinInformation {status}");

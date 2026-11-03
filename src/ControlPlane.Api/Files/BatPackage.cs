@@ -33,6 +33,8 @@ public sealed class BatPackageManifest
     /// <summary>Wait for a helpdesk member's approval before each run (always true for <c>uninstall-</c> problems).</summary>
     public bool RequiresApproval { get; set; }
     public List<BatchSupportFileManifestEntry> SupportFiles { get; set; } = [];
+    /// <summary>Install packages: system requirements, typed installer, detection rules (signed).</summary>
+    public EndpointAgents.Shared.Packages.SoftwareSpec? Software { get; set; }
     public BatchPlaybook? Playbook { get; set; }
     public string PlaybookSha256 { get; set; } = string.Empty;
     public BatPackageOffice? Office { get; set; }
@@ -48,7 +50,7 @@ public sealed class BatPackageFile
 
 public sealed class PackageFileManifest
 {
-    /// <summary><c>bat</c> or <c>exe</c>.</summary>
+    /// <summary><c>bat</c>, <c>exe</c>, <c>msi</c>, <c>msix</c> or <c>zip</c>.</summary>
     public string Type { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
     public string Sha256 { get; set; } = string.Empty;
@@ -138,7 +140,8 @@ public sealed record BatPackageStatus(
     string? Signer = null,
     string? ExeSubsystem = null,
     string? Problem = null,
-    int Order = BatPackageOrdering.Default);
+    int Order = BatPackageOrdering.Default,
+    EndpointAgents.Shared.Packages.SoftwareSpec? Software = null);
 
 public static class BatPackageOrdering
 {

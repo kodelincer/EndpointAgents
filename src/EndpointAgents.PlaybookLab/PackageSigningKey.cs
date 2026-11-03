@@ -108,11 +108,27 @@ static class PackageSigningKey
         }
         if (acceptedRisks.Count > 0)
             Console.WriteLine($"Signing with accepted risks: {string.Join(", ", acceptedRisks)}.");
+        string? softwareSha256 = null;
+        if (manifest.SchemaVersion == 2 && (manifest.Software is not null
+                || stagedName.EndsWith(".msi", StringComparison.OrdinalIgnoreCase)
+                || stagedName.EndsWith(".msix", StringComparison.OrdinalIgnoreCase)
+                || stagedName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!SoftwareSpecPolicy.TryNormalize(manifest.Software,
+                    Path.GetExtension(stagedName).TrimStart('.').ToLowerInvariant(),
+                    out var software, out var softwareError))
+            {
+                Console.WriteLine($"Cannot sign: software: {softwareError}");
+                return false;
+            }
+            softwareSha256 = SoftwareSpecPolicy.ComputeSha256(software!);
+            Console.WriteLine($"Signing the software section ({software!.Install?.Kind ?? "requirements only"}).");
+        }
         var statement = PackageSignaturePolicy.BuildStatement(id, stagedName, sha256,
             BatchPlaybookPolicy.ComputeSha256(playbook!),
             supportFiles.Length == 0 ? null
                 : BatchSupportFilePolicy.ComputeBundleSha256(sha256, supportFiles),
-            publisher, acceptedRisks);
+            publisher, acceptedRisks, softwareSha256);
 
         using var key = new ECDsaCng(CngKey.Open(name));
         var signature = PackageSignaturePolicy.Sign(statement, key, publicKey);

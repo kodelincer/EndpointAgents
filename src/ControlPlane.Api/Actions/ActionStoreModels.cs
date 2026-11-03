@@ -74,7 +74,9 @@ public static class PersonRequestKinds
         new("local-admin", "Temporary administrator rights", "دسترسی موقت مدیر سیستم"),
         new("bitlocker-key", "BitLocker recovery key", "کلید بازیابی BitLocker"),
         new("site-access", "Open a blocked website", "باز کردن دسترسی یک سایت"),
-        new("trust-repair", "Rejoin the PC to the domain", "اتصال دوبارهٔ کامپیوتر به دامنه")
+        new("trust-repair", "Rejoin the PC to the domain", "اتصال دوبارهٔ کامپیوتر به دامنه"),
+        // Created by the install flow for software that cannot be installed silently.
+        new("manual-install", "Install software by hand", "نصب دستی نرم‌افزار")
     ];
 
     public static Kind? Find(string? id) =>

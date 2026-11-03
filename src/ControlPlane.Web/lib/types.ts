@@ -1,3 +1,4 @@
+import type { SoftwareSpec } from "./software";
 export type Agent = { agentId: string; hostname: string; machineName: string; userName: string; version: string; connectedAtUtc: string };
 export type CommandDefinition = { method: string; name: string; description: string; defaultParams: unknown };
 export type RpcRequest = { jsonRpc: "2.0"; id: string; method: string; params: unknown };
@@ -76,6 +77,7 @@ export type BatPackage = {
   } | null;
   review?: { reviewedBy?: string | null; reviewedOn?: string | null;
     source?: string | null; notes?: string | null; acceptedRisks?: string[] | null } | null;
+  software?: SoftwareSpec | null;
 };
 export type PackageInventory = {
   packagesPath: string; protectedAclRequired: boolean;

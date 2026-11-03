@@ -25,6 +25,21 @@ Installers whose wizard asks questions:
   (/SAVEINF). Endpoints then replay them silently (/s /f1 or /LOADINF).
   An installer with no silent mode cannot run unattended; see docs/software-install.md.
 
+System requirements (checked on each PC before approval and again before installing):
+  -MinWindowsBuild 19045 -MinMemoryGB 8 -MinFreeDiskGB 4 -MinCpuCores 2 -MinScreen 1366x768
+  -Architectures x64 -Editions Professional,Enterprise -Runtimes vcredist-2015-x64,webview2
+  -RequireDomain. Copy them from the vendor's "system requirements" page.
+Approval: every install waits for a helpdesk member unless an admin puts it on the
+"No approval needed" list (dashboard > Packages). -Licensed keeps it on approval always.
+
+-Typed builds a package without a BAT: the PC runs the installer itself with compiled code
+(software.install: msi, inno, nsis, wix-burn, installshield, squirrel or exe) and checks the
+detection rule afterwards. Use it for every new package; the BAT template stays for
+installers that need recorded answers. -Manual makes a package for an installer that cannot
+run silently: the agent then creates a helpdesk task instead of installing.
+-Provides marks a runtime package (for example vcredist-2015-x64), so applications that need
+it get it installed first.
+
 The package is created with a draft Persian symptom marked TODO; the control plane does not
 publish it until you replace that line, then run with -Sign (or
 test-bat-playbook.ps1 -Package <folder> -Fix -Sign).
@@ -64,6 +79,23 @@ param(
     [string]$PersianSymptom,
     [string]$MinWindowsVersion = "10.0.10240",
     [ValidateRange(60, 3600)] [int]$TimeoutSeconds = 900,
+    # System requirements (software.requirements).
+    [ValidateRange(10240, 99999)] [int]$MinWindowsBuild,
+    [ValidateRange(1, 1024)] [double]$MinMemoryGB,
+    [ValidateRange(1, 10240)] [double]$MinFreeDiskGB,
+    [ValidateRange(1, 256)] [int]$MinCpuCores,
+    [ValidatePattern('^\d{3,5}x\d{3,5}$')] [string]$MinScreen,
+    [ValidateSet("x64", "x86", "arm64")] [string[]]$Architectures,
+    [string[]]$Editions,
+    [ValidateSet("dotnet-desktop-6", "dotnet-desktop-8", "dotnet-desktop-9", "dotnet-desktop-10",
+        "vcredist-2015-x64", "vcredist-2015-x86", "webview2", "java-8")] [string[]]$Runtimes,
+    [switch]$RequireDomain,
+    [switch]$Licensed,
+    [ValidateSet("dotnet-desktop-6", "dotnet-desktop-8", "dotnet-desktop-9", "dotnet-desktop-10",
+        "vcredist-2015-x64", "vcredist-2015-x86", "webview2", "java-8")] [string]$Provides,
+    # The PC runs the installer itself (no BAT); see the description.
+    [switch]$Typed,
+    [string]$Manual,
     [string]$RepositoryRoot = "$env:ProgramData\EndpointAgents\ControlPlane\FileRepository",
     [switch]$Development,
     [switch]$Sign
@@ -185,6 +217,40 @@ foreach ($pattern in $detectPattern, $detectAltPattern) {
 }
 Write-Host "Install command:  $(if ($kind -eq 'msi') { "msiexec /i $InstallerName /qn /norestart $arguments" } else { "$InstallerName $arguments" })"
 
+# --- The signed software section: requirements, typed installer, detection ----------------
+$requirements = [ordered]@{}
+if ($MinWindowsBuild) { $requirements.minWindowsBuild = $MinWindowsBuild }
+if ($MinMemoryGB) { $requirements.minMemoryMb = [int]($MinMemoryGB * 1024) }
+if ($MinFreeDiskGB) { $requirements.minFreeDiskMb = [int]($MinFreeDiskGB * 1024) }
+if ($MinCpuCores) { $requirements.minCpuCores = $MinCpuCores }
+if ($MinScreen) { $w, $h = $MinScreen.Split("x"); $requirements.minScreenWidth = [int]$w; $requirements.minScreenHeight = [int]$h }
+if ($Architectures) { $requirements.architectures = @($Architectures) }
+if ($Editions) { $requirements.editions = @($Editions) }
+if ($Runtimes) { $requirements.runtimes = @($Runtimes) }
+if ($RequireDomain) { $requirements.domainJoined = $true }
+$software = [ordered]@{ name = $App; licensed = [bool]$Licensed }
+if ($requirements.Count -gt 0) { $software.requirements = $requirements }
+if ($Provides) { $software.provides = $Provides }
+if ($Detect) { $software.detection = @([ordered]@{ kind = "uninstall-entry"; displayName = $Detect.Trim() }) }
+if ($Typed -or $Manual) {
+    if ($answerFile -or $arguments -match '%~dp0') { throw "-Typed cannot replay recorded answers; leave out -Typed to use the BAT template." }
+    if (-not $Detect -and -not $Manual) { throw "-Typed needs -Detect (DisplayName text), so the PC can tell whether the install worked." }
+    $installKind = if ($Manual) { "manual" } elseif ($Technology -eq "burn") { "wix-burn" } else { $Technology }
+    $install = [ordered]@{ kind = $installKind }
+    if ($Manual) { $install.manualReason = $Manual }
+    elseif ($installKind -eq "msi" -and $MsiProperties) {
+        $props = [ordered]@{}
+        foreach ($pair in ($MsiProperties -split '\s+' | Where-Object { $_ })) {
+            $name, $value = $pair.Split("=", 2); $props[$name] = $value.Trim('"')
+        }
+        $install.msiProperties = $props
+    }
+    elseif ($installKind -eq "exe" -or $SilentArguments) { $install.arguments = @($arguments -split '\s+' | Where-Object { $_ }) }
+    else { $install.timeoutSeconds = $TimeoutSeconds }
+    if (-not $install.Contains("timeoutSeconds") -and -not $Manual) { $install.timeoutSeconds = $TimeoutSeconds }
+    $software.install = $install
+}
+
 # --- Write the package ---------------------------------------------------------------------
 $template = Get-Content -LiteralPath (Join-Path $repoRoot "deploy\package-templates\install-app.bat") -Raw
 $bat = $template.Replace("@@APP@@", $App).Replace("@@KIND@@", $kind).Replace("@@INSTALLER@@", $InstallerName).
@@ -225,6 +291,7 @@ try {
         order = 100
         symptoms = @($Symptoms) + @($PersianSymptom)
         file = [ordered]@{ type = "bat"; fileName = $batName; sha256 = (Get-FileHash -LiteralPath (Join-Path $folder $batName) -Algorithm SHA256).Hash; publisher = $null }
+        software = $software
         compatibility = [ordered]@{ minWindowsVersion = $MinWindowsVersion; maxWindowsVersionExclusive = $null }
         supportFiles = $support
         playbook = [ordered]@{
@@ -238,6 +305,18 @@ try {
             source = if ($source) { "TODO: where $InstallerName came from" } else { "TODO: where the installer comes from" }
             notes = "Generated by new-install-package.ps1 ($Technology)."
         }
+    }
+    if ($Typed -and -not $Manual) {
+        # The installer itself is the package file; no BAT, no supporting files.
+        Remove-Item -LiteralPath (Join-Path $folder $batName) -Force
+        $installerPath = Join-Path $folder "files\$InstallerName"
+        if (Test-Path -LiteralPath $installerPath) { Move-Item -LiteralPath $installerPath -Destination (Join-Path $folder $InstallerName) }
+        $hash = if (Test-Path -LiteralPath (Join-Path $folder $InstallerName)) { (Get-FileHash -LiteralPath (Join-Path $folder $InstallerName) -Algorithm SHA256).Hash } else { "0" * 64 }
+        $publisher = if ($signature) { $signature.SignerCertificate.Subject } else { "TODO: the installer's signer subject" }
+        $package.file = [ordered]@{ type = $kind; fileName = $InstallerName; sha256 = $hash; publisher = $publisher }
+        $package.supportFiles = @()
+        $package.playbook = [ordered]@{ version = 3; arguments = @(); steps = @(); timeoutSeconds = $TimeoutSeconds }
+        $package.description = "Checks this PC's system requirements and whether $App is installed and, if not, installs it silently for all users."
     }
     $json = $package | ConvertTo-Json -Depth 10
     [IO.File]::WriteAllText((Join-Path $folder "package.json"), $json + "`n", (New-Object Text.UTF8Encoding $false))

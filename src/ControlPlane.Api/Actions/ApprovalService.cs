@@ -20,7 +20,7 @@ public sealed record ApprovalOutcome(bool Accepted, string? Error, ApprovalReque
 /// </summary>
 public sealed class ApprovalService(ActionStore store, ActionRunner runner, ChatStore chat,
     AgentRegistry registry, CommandCatalog catalog, FileArtifactRepository files,
-    ILogger<ApprovalService> logger)
+    Software.SoftwareApprovalStore softwareApprovals, ILogger<ApprovalService> logger)
 {
     public async Task<ApprovalOutcome> ApproveAsync(string approvalId, string decidedBy,
         string? note, CancellationToken cancellationToken)
@@ -52,7 +52,7 @@ public sealed class ApprovalService(ActionStore store, ActionRunner runner, Chat
         if (approval.Kind == ApprovalKinds.Package)
         {
             (ok, summary) = await EndpointSupportTools.RunApprovedPackageAsync(registry, catalog,
-                files, approval.AgentId, approval.UserSid, approval.ItemId, cancellationToken);
+                files, softwareApprovals, approval.AgentId, approval.UserSid, approval.ItemId, cancellationToken);
         }
         else
         {

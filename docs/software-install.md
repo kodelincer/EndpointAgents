@@ -135,6 +135,46 @@ be answered in advance. In order of preference:
 A wizard with none of these cannot run unattended: the run stops as "GUI dialog blocked"
 and the agent hands the user to the helpdesk.
 
+## Requirements, approval and typed installers
+
+An install package can carry a signed `software` section. It is part of what you sign, so
+nobody can change it later without breaking the signature.
+
+**What happens when a user asks for an app** (no AI decides any of it):
+
+1. The PC checks the requirements first: Windows build, edition, 32/64-bit, memory, free
+   space on C:, processor cores, screen size, domain, runtimes such as .NET or the Visual C++
+   runtime, and apps that must not be installed. If one fails, nothing is asked or installed
+   and the user is told why in simple words.
+2. Already installed: the user is told so.
+3. A missing runtime that the catalog has (a package with `provides`) is installed first.
+4. **Approval.** Every install waits on the Approvals page, where the card shows each
+   requirement the PC passed. An admin can switch a package to "No approval needed" on the
+   Packages page. Chrome, the Persian fonts, Foxit Reader, Adobe Connect and Photos start on
+   that list. Licensed software can never be on it.
+5. The PC checks the requirements again, installs silently, and checks it really is
+   installed. Exit 3010 or 1641 means "worked, restart needed"; 1618 means another install
+   is running, so the user is asked to try again later.
+
+**Make one** with `scripts\new-install-package.ps1`:
+
+```powershell
+.\scripts\new-install-package.ps1 -Installer C:\Vendor\app.msi -Id app-install -App "App" `
+    -Typed -MinWindowsBuild 19041 -MinMemoryGB 8 -MinFreeDiskGB 4 -Runtimes webview2
+```
+
+- `-Typed` runs the MSI, MSIX or EXE itself with the fixed silent switches for its kind
+  (no BAT). Without it you get the BAT template as before; the requirements still apply.
+- `-Manual` is for an installer that cannot run silently: the user's request becomes a
+  helpdesk task on the Approvals page.
+- `-Licensed` always asks for approval. `-Provides dotnet-desktop-8` marks a runtime package.
+- A ZIP can be a `copy-files` package (fonts or a portable app); paths that leave the
+  target folder are refused.
+
+The control plane and the endpoint both refuse a section with quotes or control characters
+in switches, a REBOOT property other than ReallySuppress, or a typed installer without a
+detection rule.
+
 ## Known limits (first version)
 
 - Detection runs as LocalSystem, so a copy installed only in the user's own profile is not
@@ -143,4 +183,4 @@ and the agent hands the user to the helpdesk.
   the user removed it themselves, a sign-out may not bring it back; then the helpdesk takes
   over.
 - New fonts show up after the user signs out and back in.
-- 64-bit Windows 10 and 11 only.
+- 64-bit Windows 10 and 11 only, unless a package lists `x86` in its architectures.

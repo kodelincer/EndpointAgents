@@ -38,7 +38,7 @@ public sealed partial class SkillService(ActionStore store, IOptions<HelpdeskSki
         "endpoint_get_info", "endpoint_system_info", "windows_activation_status",
         "office_inventory", "office_activation_status", "office_runtime_status",
         "run_windows_activation_repair", "run_office_activation_repair",
-        "find_repair_packages", "run_repair_package", "list_repair_attempts",
+        "find_repair_packages", "check_software_requirements", "run_repair_package", "list_repair_attempts",
         "propose_endpoint_action", "mark_problem_resolved", "escalate_to_helpdesk", "request_helpdesk_action",
         "record_feature_request", "list_endpoint_actions", "list_environment_targets",
         "run_endpoint_action", "check_known_incidents", "recent_reports_from_others",

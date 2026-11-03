@@ -3,6 +3,7 @@
 import { Check, CircleAlert, ClipboardCheck, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { approvalDetails } from "@/lib/software";
 import { approveRequest, declineRequest, getApprovals, pendingSummary, type ApprovalRequest } from "@/lib/capabilities";
 
 const REFRESH_MS = 15000;
@@ -67,6 +68,7 @@ export function Approvals() {
               <span className="ticket-status">{item.kind === "person" ? "Helpdesk task" : item.kind === "package" ? "Package" : "Action"}</span><code>{item.itemId}</code></div>
             {item.kind === "person" && <p className="file-compatibility">Do this yourself (for example in Active Directory), then mark it done. Nothing runs on the PC. Never write a key or password in the note: the note appears in the user&apos;s chat.</p>}
             {item.reason && <p className="file-description" dir="auto">{item.reason}</p>}
+            <InstallDetails argumentsJson={item.argumentsJson} />
             <p className="file-compatibility">PC {item.agentId.slice(0, 8)} · {new Date(item.createdAtUtc).toLocaleString()}
               {item.conversationId && <>{" "}·{" "}
                 <Link href={`/support/?conversation=${encodeURIComponent(item.conversationId)}`}>Conversation</Link></>}</p>
@@ -95,5 +97,21 @@ export function Approvals() {
           </div>
         </article>)}</section>
     </>}
+  </div>;
+}
+
+/** Requirement results the PC reported for a software install, checked before this approval. */
+function InstallDetails({ argumentsJson }: { argumentsJson: string }) {
+  const details = approvalDetails(argumentsJson);
+  if (!details) return null;
+  return <div className="approval-install">
+    <p className="file-compatibility"><strong>{details.software}{details.version ? ` ${details.version}` : ""}</strong>
+      {details.licensed && <span className="ticket-status">Licensed: check a licence is free</span>}
+      {details.requirementsMet === true && " · this PC meets every requirement"}</p>
+    {details.requirements && details.requirements.length > 0 && <ul className="approval-requirements">
+      {details.requirements.map(result => <li key={result.rule} className={result.passed ? "passed" : "failed"}>
+        {result.passed ? "✓" : "✗"} {result.rule}: needs {result.needed}, PC has {result.found}</li>)}</ul>}
+    {details.installFirst && details.installFirst.length > 0 &&
+      <p className="file-compatibility">Installed first: {details.installFirst.join(", ")}</p>}
   </div>;
 }

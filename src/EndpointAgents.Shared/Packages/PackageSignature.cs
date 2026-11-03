@@ -26,15 +26,17 @@ public static class PackageSignaturePolicy
     /// </param>
     public static string BuildStatement(string packageId, string fileName, string sha256,
         string? playbookSha256, string? bundleSha256, string? publisher,
-        IReadOnlyCollection<string>? acceptedRisks = null)
+        IReadOnlyCollection<string>? acceptedRisks = null, string? softwareSha256 = null)
     {
         var statement = string.Join('\n', StatementHeader, packageId,
             fileName.ToLowerInvariant(), sha256.ToUpperInvariant(),
             (playbookSha256 ?? "-").ToUpperInvariant(),
             (bundleSha256 ?? "-").ToUpperInvariant(), publisher ?? "-");
         var risks = NormalizeRisks(acceptedRisks);
-        return risks.Count == 0 ? statement
-            : statement + "\nrisks:" + string.Join(',', risks);
+        if (risks.Count > 0) statement += "\nrisks:" + string.Join(',', risks);
+        // Like risks, only added when present, so older packages keep their signatures.
+        if (softwareSha256 is not null) statement += "\nsoftware:" + softwareSha256.ToUpperInvariant();
+        return statement;
     }
 
     /// <summary>Accepted risks, lower-cased, de-duplicated and ordered, for a stable statement.</summary>
@@ -91,6 +93,6 @@ public static class PackageSignaturePolicy
         IEnumerable<string>? trustedPublicKeys) =>
         Verify(BuildStatement(descriptor.PackageId, descriptor.FileName, descriptor.Sha256,
                 descriptor.PlaybookSha256, descriptor.BundleSha256, descriptor.Publisher,
-                descriptor.AcceptedRisks),
+                descriptor.AcceptedRisks, descriptor.SoftwareSha256),
             descriptor.Signature, trustedPublicKeys);
 }

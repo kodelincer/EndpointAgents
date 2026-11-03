@@ -167,6 +167,7 @@ builder.Services.AddSingleton<IEndpointCommandHandler, WindowsActivationStatusCo
 builder.Services.AddSingleton<IEndpointCommandHandler, WindowsActivationBugfixCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, WindowsHelloSampleCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, PackageRunCommandHandler>();
+builder.Services.AddSingleton<IEndpointCommandHandler, EndpointAgents.Platform.Windows.Software.CheckRequirementsCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, SystemInfoCommandHandler>();
 // General catalogued actions (EndpointActionCatalog): one RPC, fixed implementations only.
 builder.Services.AddSingleton<IEndpointCommandHandler, EndpointActionCommandHandler>();

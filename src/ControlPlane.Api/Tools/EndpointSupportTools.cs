@@ -162,6 +162,7 @@ public sealed class EndpointSupportTools
     public static async Task<string> FindRepairPackages(
         ChatStore store,
         FileArtifactRepository files,
+        Software.SoftwareApprovalStore approvals,
         [Description("The random capability supplied in this run's instructions.")]
         string runCapability,
         CancellationToken cancellationToken)
@@ -176,6 +177,8 @@ public sealed class EndpointSupportTools
             .ToHashSet(StringComparer.Ordinal);
         await store.WriteToolAuditAsync(scope, "find_repair_packages", "success",
             null, cancellationToken);
+        var noApproval = (await approvals.GetAsync(cancellationToken))
+            .Select(entry => entry.PackageId).ToHashSet(StringComparer.Ordinal);
         return ToolResultSanitizer.Sanitize(new
         {
             ok = true,
@@ -185,7 +188,10 @@ public sealed class EndpointSupportTools
                 problem = item.Problem,
                 order = item.Order,
                 alreadyTried = tried.Contains(item.Descriptor.PackageId),
-                requiresApproval = item.RequiresApproval,
+                requiresApproval = item.RequiresApproval
+                    || item.IsInstall && !noApproval.Contains(item.Descriptor.PackageId),
+                isInstall = item.IsInstall,
+                hasRequirements = item.Descriptor.Software?.Requirements is not null,
                 displayName = item.Descriptor.DisplayName,
                 description = item.Descriptor.Description,
                 symptoms = item.Descriptor.Symptoms,
@@ -307,14 +313,50 @@ public sealed class EndpointSupportTools
         });
     }
 
+    [McpServerTool(Name = "check_software_requirements"), Description(
+        "Read-only: check whether the user's PC meets an install package's system requirements (Windows, memory, disk, processor, screen, runtimes) and whether the software is already installed. Use the exact packageId from find_repair_packages. Nothing is installed or changed.")]
+    public static async Task<string> CheckSoftwareRequirements(
+        ChatStore store,
+        AgentRegistry registry,
+        CommandCatalog catalog,
+        FileArtifactRepository files,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        [Description("The exact packageId returned by find_repair_packages.")]
+        string packageId,
+        CancellationToken cancellationToken)
+    {
+        var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+        if (scope is null)
+            return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+        var package = await files.GetRepairPackageAsync(packageId?.Trim() ?? string.Empty, cancellationToken);
+        if (package?.Descriptor.Software is null)
+            return """{"ok":false,"error":"That package has no system requirements to check."}""";
+        var (report, error) = await Software.SoftwareInstallFlow.CheckOnPcAsync(registry, catalog,
+            scope.AgentId, package.Descriptor.PackageId, cancellationToken);
+        await store.WriteToolAuditAsync(scope, "check_software_requirements",
+            report is null ? "error" : report.Met ? "met" : "not-met", error, cancellationToken);
+        return report is null
+            ? ToolResultSanitizer.Sanitize(new { ok = false, error })
+            : ToolResultSanitizer.Sanitize(new
+            {
+                ok = true,
+                requirementsMet = report.Met,
+                alreadyInstalled = report.AlreadyInstalled,
+                problems = report.Problems,
+                installsFirst = report.InstallFirst.Count
+            });
+    }
+
     [McpServerTool(Name = "run_repair_package"), Description(
-        "Run one administrator-approved repair package on the user's PC by the exact packageId from find_repair_packages. It runs unattended with the administrator's fixed arguments and answers; nothing else can be passed. A package with requiresApproval=true is sent to the helpdesk for approval instead (status AwaitingApproval) and runs once a helpdesk member approves it.")]
+        "Run one administrator-approved repair or install package on the user's PC by the exact packageId from find_repair_packages. It runs unattended with the administrator's fixed settings; nothing else can be passed. Install packages are checked against the PC's system requirements first (status RequirementsNotMet with the problems when the PC is not suitable) and are skipped when already installed. Packages that need approval are sent to the helpdesk (status AwaitingApproval) and run once a member approves; software that cannot install silently becomes a helpdesk task (status AwaitingHelpdesk).")]
     public static async Task<string> RunRepairPackage(
         ChatStore store,
         AgentRegistry registry,
         CommandCatalog catalog,
         FileArtifactRepository files,
         Actions.ActionStore actions,
+        Software.SoftwareApprovalStore approvals,
         [Description("The random capability supplied in this run's instructions.")]
         string runCapability,
         [Description("The exact packageId returned by find_repair_packages.")]
@@ -325,31 +367,114 @@ public sealed class EndpointSupportTools
     {
         var package = await files.GetRepairPackageAsync(packageId?.Trim() ?? string.Empty,
             cancellationToken);
-        if (package?.RequiresApproval == true)
+        if (package is not null && (package.IsInstall || package.RequiresApproval
+                || package.Descriptor.Software is not null))
         {
             var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
             if (scope is null)
                 return """{"ok":false,"error":"The run capability is invalid or expired."}""";
-            await actions.CreateApprovalAsync(Actions.ApprovalKinds.Package,
-                package.Descriptor.PackageId, package.Descriptor.DisplayName, scope.AgentId,
-                scope.UserSid, scope.ConversationId, "{}", reason ?? string.Empty,
-                cancellationToken);
-            await store.WriteToolAuditAsync(scope, "run_repair_package", "awaiting-approval",
-                null, cancellationToken);
-            return ToolResultSanitizer.Sanitize(new
+            var plan = await Software.SoftwareInstallFlow.PlanAsync(package, registry, catalog, files,
+                approvals, scope.AgentId, alreadyApproved: false, cancellationToken);
+            var id = package.Descriptor.PackageId;
+            switch (plan.Decision)
             {
-                ok = true,
-                status = "AwaitingApproval",
-                summary = Actions.ActionRunner.AwaitingApprovalSummary
-            });
+                case Software.InstallDecision.CheckFailed:
+                    await store.WriteToolAuditAsync(scope, "run_repair_package", "error", plan.Error, cancellationToken);
+                    return ToolResultSanitizer.Sanitize(new { ok = false, error = "The PC's requirements could not be checked: " + plan.Error });
+                case Software.InstallDecision.AlreadyInstalled:
+                    await store.WriteToolAuditAsync(scope, "run_repair_package", "already-installed", null, cancellationToken);
+                    await store.RecordRepairAttemptAsync(scope, "run_repair_package", id, true, null, cancellationToken);
+                    return ToolResultSanitizer.Sanitize(new { ok = true, result = new { state = SoftwareRunStates.AlreadyInstalled, exitCode = 10, restartRequired = false } });
+                case Software.InstallDecision.RequirementsNotMet:
+                    await store.WriteToolAuditAsync(scope, "run_repair_package", "requirements-not-met", null, cancellationToken);
+                    await store.RecordRepairAttemptAsync(scope, "run_repair_package", id, false,
+                        "Requirements not met", cancellationToken);
+                    return ToolResultSanitizer.Sanitize(new
+                    {
+                        ok = false,
+                        status = SoftwareRunStates.RequirementsNotMet,
+                        problems = Software.SoftwareInstallFlow.Problems(plan.Report),
+                        summary = "This PC is not suitable for this software. Tell the user simply why, and offer the helpdesk."
+                    });
+                case Software.InstallDecision.ManualInstall:
+                    await actions.CreateApprovalAsync(Actions.ApprovalKinds.Person, "manual-install",
+                        $"Install {package.Descriptor.DisplayName} by hand", scope.AgentId, scope.UserSid,
+                        scope.ConversationId, Software.SoftwareInstallFlow.ApprovalArguments(package, plan),
+                        PromptRedactor.RedactSecrets(((reason ?? string.Empty) + " "
+                            + package.Descriptor.Software?.Install?.ManualReason).Trim()), cancellationToken);
+                    await store.WriteToolAuditAsync(scope, "run_repair_package", "awaiting-person", null, cancellationToken);
+                    return ToolResultSanitizer.Sanitize(new
+                    {
+                        ok = true,
+                        status = "AwaitingHelpdesk",
+                        summary = "This software is installed by a helpdesk member. Tell the user in one sentence; the answer will appear in this chat."
+                    });
+                case Software.InstallDecision.NeedsApproval:
+                    await actions.CreateApprovalAsync(Actions.ApprovalKinds.Package, id,
+                        package.Descriptor.DisplayName, scope.AgentId, scope.UserSid, scope.ConversationId,
+                        Software.SoftwareInstallFlow.ApprovalArguments(package, plan),
+                        PromptRedactor.RedactSecrets(reason ?? string.Empty), cancellationToken);
+                    await store.WriteToolAuditAsync(scope, "run_repair_package", "awaiting-approval",
+                        null, cancellationToken);
+                    return ToolResultSanitizer.Sanitize(new
+                    {
+                        ok = true,
+                        status = "AwaitingApproval",
+                        summary = Actions.ActionRunner.AwaitingApprovalSummary
+                    });
+            }
+            // Missing runtimes first, each as its own recorded run.
+            foreach (var dependency in plan.InstallFirst)
+            {
+                var result = await RunAutomaticRepairAsync(store, registry, catalog, files, runCapability,
+                    PackageCommands.Run, dependency.Descriptor.PackageId, "runtime package", "run_repair_package",
+                    ChatProgressActivity.EndpointCheck, cancellationToken);
+                if (!result.Contains("\"ok\":true", StringComparison.Ordinal)) return result;
+            }
         }
         return await RunAutomaticRepairAsync(store, registry, catalog, files, runCapability,
             PackageCommands.Run, packageId ?? string.Empty, "repair package", "run_repair_package",
             ChatProgressActivity.EndpointCheck, cancellationToken);
     }
 
-    /// <summary>Runs a package a helpdesk member approved, for the PC and user that asked.</summary>
+    /// <summary>
+    /// Runs a package a helpdesk member approved, for the PC and user that asked. Install
+    /// packages are checked against the PC again first, and missing runtimes go first.
+    /// </summary>
     public static async Task<(bool Ok, string Summary)> RunApprovedPackageAsync(
+        AgentRegistry registry, CommandCatalog catalog, FileArtifactRepository files,
+        Software.SoftwareApprovalStore approvals,
+        string agentId, string? userSid, string packageId, CancellationToken cancellationToken)
+    {
+        var package = await files.GetRepairPackageAsync(packageId, cancellationToken);
+        if (package is null) return (false, "The package is no longer in the approved catalog.");
+        var toRun = new List<string>();
+        if (package.Descriptor.Software is not null)
+        {
+            var plan = await Software.SoftwareInstallFlow.PlanAsync(package, registry, catalog, files,
+                approvals, agentId, alreadyApproved: true, cancellationToken);
+            switch (plan.Decision)
+            {
+                case Software.InstallDecision.CheckFailed: return (false, "The PC could not be checked: " + plan.Error);
+                case Software.InstallDecision.AlreadyInstalled: return (true, "It was already installed on the PC.");
+                case Software.InstallDecision.RequirementsNotMet:
+                    return (false, "The PC no longer meets the requirements: "
+                        + string.Join(" ", Software.SoftwareInstallFlow.Problems(plan.Report)));
+                case Software.InstallDecision.ManualInstall: return (false, "This software must be installed by hand.");
+            }
+            toRun.AddRange(plan.InstallFirst.Select(item => item.Descriptor.PackageId));
+        }
+        toRun.Add(packageId);
+        foreach (var id in toRun)
+        {
+            var (ok, summary) = await RunPackageOnceAsync(registry, catalog, files, agentId, userSid, id,
+                cancellationToken);
+            if (!ok) return (false, id == packageId ? summary : $"A runtime it needs did not install: {summary}");
+        }
+        return (true, toRun.Count > 1 ? "The runtime and the package finished on the PC." : "The package finished on the PC.");
+    }
+
+    private static async Task<(bool Ok, string Summary)> RunPackageOnceAsync(
         AgentRegistry registry, CommandCatalog catalog, FileArtifactRepository files,
         string agentId, string? userSid, string packageId, CancellationToken cancellationToken)
     {

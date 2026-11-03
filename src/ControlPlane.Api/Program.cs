@@ -92,6 +92,9 @@ builder.Services.AddMcpServer()
 // General endpoint actions: catalogue runner, environment map, incidents, helpdesk skills.
 builder.Services.AddSingleton<ActionStore>();
 builder.Services.AddSingleton<ControlPlane.Api.Updates.AgentUpdateStore>();
+builder.Services.Configure<ControlPlane.Api.Software.SoftwareInstallOptions>(
+    builder.Configuration.GetSection("SoftwareInstall"));
+builder.Services.AddSingleton<ControlPlane.Api.Software.SoftwareApprovalStore>();
 builder.Services.AddSingleton<ControlPlane.Api.Updates.AgentUpdateRepository>();
 builder.Services.AddSingleton<ActionRunner>();
 builder.Services.AddSingleton<ApprovalService>();
@@ -159,6 +162,7 @@ await app.Services.GetRequiredService<ActionStore>()
     .InitializeAsync(app.Lifetime.ApplicationStopping);
 await app.Services.GetRequiredService<ControlPlane.Api.Updates.AgentUpdateStore>()
     .InitializeAsync(app.Lifetime.ApplicationStopping);
+await app.Services.GetRequiredService<ControlPlane.Api.Software.SoftwareApprovalStore>().InitializeAsync();
 
 // Endpoint agents and health monitors can reach the explicitly public routes
 // below. The unauthenticated operator console and command surface remain local
@@ -514,6 +518,7 @@ app.MapGet("/api/files/office/{artifactId}", async (string artifactId, HttpConte
 }).RequireAuthorization();
 app.MapActionEndpoints();
 ControlPlane.Api.Updates.AgentUpdateEndpoints.MapAgentUpdateEndpoints(app);
+ControlPlane.Api.Software.SoftwareEndpoints.MapSoftwareEndpoints(app);
 app.MapGet("/api/activity", (int? limit, string? agentId, ActivityStore store) =>
     Results.Ok(store.Get(limit ?? 100, agentId)));
 // Requests for abilities the support agent does not have yet (loopback operator view).

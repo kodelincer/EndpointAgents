@@ -7,15 +7,24 @@ namespace ControlPlane.Api.Files;
 
 /// <param name="Problem">Groups packages that fix the same problem.</param>
 /// <param name="Order">Try order within <paramref name="Problem"/>, lower first.</param>
-/// <param name="RequiresApproval">A helpdesk member approves each run first (removal
-/// packages, whose problem starts with <c>uninstall-</c>, and packages that ask for it).</param>
+/// <param name="RequiresApproval">A helpdesk member always approves each run first (removal
+/// packages, whose problem starts with <c>uninstall-</c>, licensed software, and packages
+/// that ask for it). Install packages also need approval unless an admin put them on the
+/// "No approval needed" list (<see cref="ControlPlane.Api.Software.SoftwareApprovalStore"/>).</param>
 public sealed record RepairPackageArtifact(
     FileArtifact File,
     PackageDescriptor Descriptor,
     string SupportDirectory,
     string Problem,
     int Order = BatPackageOrdering.Default,
-    bool RequiresApproval = false);
+    bool RequiresApproval = false)
+{
+    /// <summary>Installs software: its problem starts with <c>install-</c> or it has a typed installer.</summary>
+    public bool IsInstall => Problem.StartsWith("install-", StringComparison.Ordinal)
+        || Descriptor.Software?.Install is not null;
+
+    public bool Licensed => Descriptor.Software?.Licensed == true;
+}
 
 /// <summary>
 /// Loads packages from <c>FileRepository/packages/&lt;id&gt;/package.json</c>. Schema 1
@@ -378,7 +387,8 @@ public sealed partial class FileArtifactRepository
     private void CheckSignature(List<(string Status, string Reason)> reasons,
         List<string> warnings, string packageId, string stagedName, string? fileSha256,
         string? playbookSha256, IReadOnlyList<BatchSupportFile>? supportFiles,
-        string? publisher, IReadOnlyList<string> acceptedRisks, PackageSignature? signature)
+        string? publisher, IReadOnlyList<string> acceptedRisks, PackageSignature? signature,
+        string? softwareSha256 = null)
     {
         if (fileSha256 is null || playbookSha256 is null || supportFiles is null
             || reasons.Any(reason => reason.Status is BatPackageStatuses.HashMismatch
@@ -387,7 +397,7 @@ public sealed partial class FileArtifactRepository
         var statement = PackageSignaturePolicy.BuildStatement(packageId, stagedName,
             fileSha256, playbookSha256, supportFiles.Count == 0 ? null
                 : BatchSupportFilePolicy.ComputeBundleSha256(fileSha256, supportFiles),
-            publisher, acceptedRisks);
+            publisher, acceptedRisks, softwareSha256);
         if (PackageSignaturePolicy.Verify(statement, signature,
                 _options.TrustedPackageSigningKeys))
             return;
@@ -474,7 +484,7 @@ public sealed partial class FileArtifactRepository
         if (string.IsNullOrEmpty(publisher)) publisher = null;
         FileArtifact? file = null;
         if (!PackageDescriptorPolicy.IsValidSourceFileName(type, fileName))
-            Invalid("file.type must be \"bat\" or \"exe\", and file.fileName the name of a matching .bat or .exe inside the package folder.");
+            Invalid("file.type must be \"bat\", \"exe\", \"msi\", \"msix\" or \"zip\", and file.fileName the name of a matching file inside the package folder.");
         else
         {
             file = await InspectFileAsync(Path.Combine(directory, fileName), null,
@@ -519,6 +529,21 @@ public sealed partial class FileArtifactRepository
                 (BatPackageStatuses.LintRejected, $"Lint: {error}")));
             warnings.AddRange(lint.Warnings);
         }
+        else if (file is not null && type == PackageFileTypes.Zip)
+        {
+            if (publisher is not null)
+                Invalid("file.publisher does not apply to zip files.");
+        }
+        else if (file is not null && type is PackageFileTypes.Msi or PackageFileTypes.Msix)
+        {
+            signer = ExecutableInspector.ReadSignerSubject(file.FullPath);
+            if (signer is null)
+                Invalid($"{fileName} has no embedded Authenticode signature. Only installers signed by their vendor can be packaged.");
+            else if (publisher is null)
+                Invalid($"Set file.publisher to \"{signer}\" so endpoints verify the vendor signature before installing {fileName}.");
+            else if (!publisher.Equals(signer, StringComparison.OrdinalIgnoreCase))
+                Invalid($"file.publisher pins '{publisher}' but {fileName} is signed by '{signer}'.");
+        }
         else if (file is not null)
         {
             subsystem = ExecutableInspector.ReadSubsystem(file.FullPath);
@@ -535,6 +560,25 @@ public sealed partial class FileArtifactRepository
                 Invalid($"Set file.publisher to \"{signer}\" so endpoints verify the vendor signature before running {fileName}.");
             else if (!publisher.Equals(signer, StringComparison.OrdinalIgnoreCase))
                 Invalid($"file.publisher pins '{publisher}' but {fileName} is signed by '{signer}'.");
+        }
+
+        // The typed software section: requirements, installer, detection (signed with the package).
+        SoftwareSpec? software = null;
+        string? softwareSha256 = null;
+        if (manifest.Software is not null || type is PackageFileTypes.Msi
+                or PackageFileTypes.Msix or PackageFileTypes.Zip)
+        {
+            if (!SoftwareSpecPolicy.TryNormalize(manifest.Software, type, out software,
+                    out var softwareError))
+                Invalid($"software: {softwareError}");
+            else
+            {
+                softwareSha256 = SoftwareSpecPolicy.ComputeSha256(software!);
+                if (software!.Install is { Kind: not InstallerKinds.Manual }
+                    && (playbook?.Steps.Count > 0 || playbook?.Arguments?.Count > 0))
+                    reasons.Add((BatPackageStatuses.InvalidPlaybook,
+                        "A typed installer (software.install) builds its own command line: use playbook version 3 with no steps and no arguments."));
+            }
         }
 
         // Supporting files in <package>/files/.
@@ -560,7 +604,8 @@ public sealed partial class FileArtifactRepository
         }
 
         CheckSignature(reasons, warnings, folder, stagedName, file?.Sha256,
-            computedPlaybook, supportFiles, publisher, acceptedRisks, manifest.Signature);
+            computedPlaybook, supportFiles, publisher, acceptedRisks, manifest.Signature,
+            softwareSha256);
 
         var status = OverallStatus(reasons, warnings);
         var compatibility = minWindows is null && maxWindows is null ? null
@@ -576,7 +621,7 @@ public sealed partial class FileArtifactRepository
             file?.SizeBytes, NormalizeSha256(manifest.PlaybookSha256), computedPlaybook,
             playbook ?? manifest.Playbook, supportEntries, null, null, manifest.Review,
             PackageFileTypes.IsKnown(type) ? type : manifest.File?.Type ?? string.Empty,
-            symptoms, compatibility, signer, subsystem, problem, order);
+            symptoms, compatibility, signer, subsystem, problem, order, software ?? manifest.Software);
         if (!BatPackageStatuses.IsPublished(status))
             return new LoadedPackage(packageStatus, null, null);
 
@@ -586,10 +631,10 @@ public sealed partial class FileArtifactRepository
             supportFiles!.Count == 0 ? null
                 : BatchSupportFilePolicy.ComputeBundleSha256(file.Sha256, supportFiles),
             NormalizeVersion(minWindows), NormalizeVersion(maxWindows), publisher,
-            symptoms, manifest.Signature, acceptedRisks);
+            symptoms, manifest.Signature, acceptedRisks, software, softwareSha256);
         return new LoadedPackage(packageStatus, null, null,
             new RepairPackageArtifact(file, descriptor, supportDirectory, problem, order,
-                manifest.RequiresApproval
+                manifest.RequiresApproval || software?.Licensed == true
                 || problem.StartsWith("uninstall-", StringComparison.Ordinal)));
     }
 }

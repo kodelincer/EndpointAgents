@@ -55,6 +55,7 @@ mcp_servers:
         - run_windows_activation_repair
         - run_office_activation_repair
         - find_repair_packages
+        - check_software_requirements
         - run_repair_package
         - list_repair_attempts
         - propose_endpoint_action
