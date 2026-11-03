@@ -12,7 +12,9 @@ order: 11
 | --- | --- | --- |
 | **Overview** | See the state of the control plane, endpoints online and recent activity. Admins can switch maintenance mode on or off. | Everyone reads, admins change |
 | **Endpoints** | The PCs that are connected. Admins can send a catalogued command; the user still sees a consent card for commands that change the PC. | Everyone reads, admins send |
-| **Packages** | Every repair package with its status, symptoms, hashes, signer and exactly what to fix when it is not Ready. | Everyone reads |
+| **Devices** | What is known about each PC from earlier checks (Windows, hardware, disks, programs, drivers) and how old it is. **Read now** asks one PC again. PCs are never asked on a timer. | Everyone reads |
+| **Health rules** | Daily or weekly checks that fix common problems before users call. See [Health rules](/docs/health/). | Everyone reads, admins change |
+| **Packages** | Every repair and install package with its status, symptoms, requirements, hashes, signer and exactly what to fix when it is not Ready. Admins switch an install package to **No approval needed**. | Everyone reads, admins switch |
 | **Helpdesk** | Live conversations, escalated cases, take over, read-only diagnostics. See [Daily helpdesk work](/docs/helpdesk/). | Members and above |
 | **Approvals** | Requests that wait for a helpdesk member: removing software, uninstall packages, and fixes an admin marked "Needs IT approval". **Approve and run** runs it at once; **Decline** takes a note the user sees. | Members and above |
 | **Feature requests** | Things users asked for that the system cannot do yet: New, Planned, Done, Declined. | Reviewers and above |

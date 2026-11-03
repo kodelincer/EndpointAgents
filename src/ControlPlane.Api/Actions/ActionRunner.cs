@@ -33,7 +33,7 @@ public sealed record ActionRunOutcome(
 /// and the dashboard both go through here.
 /// </summary>
 public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
-    ILogger<ActionRunner> logger)
+    ILogger<ActionRunner> logger, ControlPlane.Api.Inventory.InventoryStore inventory, TimeProvider clock)
 {
     public static readonly TimeSpan LimitWindow = TimeSpan.FromHours(1);
 
@@ -96,6 +96,19 @@ public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
 
         var environment = await store.GetSettingsAsync(cancellationToken);
         var masker = new TargetMasker(targets, environment);
+
+        // Keep, don't schedule: a fresh stored answer is given to the agent instead of asking the PC again.
+        var inventoryKey = ControlPlane.Api.Inventory.InventoryKeys.Action(actionId);
+        var keepable = definition.Tier == ActionTier.Look && normalized.Count == 0
+            && ControlPlane.Api.Inventory.InventoryKeys.IsKept(inventoryKey);
+        if (keepable && context.Source == ActionRunSources.Agent
+            && await inventory.GetFreshAsync(context.AgentId, inventoryKey, cancellationToken) is { } stored)
+        {
+            var age = clock.GetUtcNow() - stored.ReadAtUtc;
+            return new ActionRunOutcome(true, null, null, actionId, ActionStatus.Ok,
+                $"Stored answer from {(age.TotalHours < 1 ? $"{Math.Max(1, (int)age.TotalMinutes)} minutes" : $"{(int)age.TotalHours} hours")} ago; the PC was not asked again.",
+                masker.Mask(stored.Value), null, false);
+        }
         var runId = Guid.NewGuid().ToString("N");
         await store.StartRunAsync(runId, actionId, context.AgentId, context.ConversationId,
             context.Source, JsonSerializer.Serialize(normalized), cancellationToken);
@@ -136,6 +149,9 @@ public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
         }
 
         var data = Annotate(actionId, ToNode(result.Data), targets);
+        if (keepable && result.Status == ActionStatus.Ok)
+            await inventory.SaveAsync(context.AgentId, MachineName(context.AgentId), inventoryKey,
+                data?.DeepClone(), cancellationToken);
         var undoJson = result.Undo is { Count: > 0 } && definition.UndoActionId is not null
             ? JsonSerializer.Serialize(result.Undo) : null;
         await store.CompleteRunAsync(runId, result.Status.ToString(), result.Summary,
@@ -154,6 +170,9 @@ public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
         "Sent to the helpdesk for approval. It runs as soon as a helpdesk member approves it, and the user sees the result in this chat.";
 
     /// <summary>ItApproval actions, and any fix an administrator switched to "needs approval".</summary>
+    private string? MachineName(string agentId) =>
+        registry.GetOnlineAgents().FirstOrDefault(agent => agent.AgentId == agentId)?.MachineName;
+
     public static bool NeedsApproval(EndpointActionDefinition definition, ActionSetting? setting) =>
         definition.Tier == ActionTier.ItApproval
         || setting is { RequiresApproval: true } && definition.Tier is ActionTier.SafeFix or ActionTier.Disruptive;

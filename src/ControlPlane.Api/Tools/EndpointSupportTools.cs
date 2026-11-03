@@ -47,10 +47,11 @@ public sealed class EndpointSupportTools
         "Read the endpoint's configuration: network adapters with IP address, subnet mask, default gateway, DNS servers, DHCP server and lease, " +
         "DNS suffix and firewall profiles; Windows version, edition, uptime and pending restart; domain, workgroup or Entra ID membership and " +
         "domain controller reachability; hardware and memory; and disk free space. Read-only.")]
-    public static Task<string> GetEndpointSystemInfo(
+    public static async Task<string> GetEndpointSystemInfo(
         ChatStore store,
         AgentRegistry registry,
         IOptions<PrivacyOptions> privacy,
+        ControlPlane.Api.Inventory.InventoryStore inventory,
         [Description("The random capability supplied in this run's instructions.")]
         string runCapability,
         [Description("Optional subset of sections: network, windows, domain, hardware, storage. Omit for all.")]
@@ -58,14 +59,48 @@ public sealed class EndpointSupportTools
         CancellationToken cancellationToken = default)
     {
         if (!SystemInfoContracts.TryNormalizeSections(sections, out var normalized))
-            return Task.FromResult(ToolResultSanitizer.Sanitize(new
+            return ToolResultSanitizer.Sanitize(new
             {
                 ok = false,
                 error = $"Unknown section. Use only: {string.Join(", ", SystemInfoContracts.Sections)}."
-            }));
-        return RunReadOnlyAsync(store, registry, runCapability, SystemInfoContracts.Method,
-            JsonSerializer.SerializeToElement(new { sections = normalized }),
-            cancellationToken, keepIpAddresses: privacy.Value.ShareIpAddressesWithAgent);
+            });
+        // Keep, don't schedule: sections read recently are given from the store; only the rest is asked.
+        var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+        var stored = new Dictionary<string, ControlPlane.Api.Inventory.StoredFact>(StringComparer.Ordinal);
+        if (scope is not null)
+            foreach (var section in normalized)
+                if (await inventory.GetFreshAsync(scope.AgentId,
+                        ControlPlane.Api.Inventory.InventoryKeys.System(section), cancellationToken) is { } fact)
+                    stored[section] = fact;
+        if (scope is not null && stored.Count == normalized.Count)
+            return ToolResultSanitizer.Sanitize(new
+            {
+                ok = true,
+                result = new
+                {
+                    result = stored.ToDictionary(pair => pair.Key, pair => pair.Value.Value),
+                    storedCopy = $"Read from this PC at {stored.Values.Min(fact => fact.ReadAtUtc):u}; the PC was not asked again."
+                }
+            }, privacy.Value.ShareIpAddressesWithAgent);
+        var ask = normalized.Where(section => !stored.ContainsKey(section)).ToArray();
+        return await RunReadOnlyAsync(store, registry, runCapability, SystemInfoContracts.Method,
+            JsonSerializer.SerializeToElement(new { sections = ask }),
+            cancellationToken, keepIpAddresses: privacy.Value.ShareIpAddressesWithAgent,
+            transform: async (agentId, result) =>
+            {
+                var node = JsonSerializer.SerializeToNode(result) as global::System.Text.Json.Nodes.JsonObject;
+                var sectionsNode = node?.FirstOrDefault(pair =>
+                    string.Equals(pair.Key, "result", StringComparison.OrdinalIgnoreCase)).Value as global::System.Text.Json.Nodes.JsonObject;
+                if (sectionsNode is null) return result;
+                var machine = registry.GetOnlineAgents().FirstOrDefault(agent => agent.AgentId == agentId)?.MachineName;
+                foreach (var section in ask)
+                    if (sectionsNode.TryGetPropertyValue(section, out var value) && value is not null)
+                        await inventory.SaveAsync(agentId, machine, ControlPlane.Api.Inventory.InventoryKeys.System(section),
+                            value.DeepClone(), cancellationToken);
+                foreach (var (section, fact) in stored)
+                    sectionsNode[section] = fact.Value?.DeepClone();
+                return node;
+            });
     }
 
     [McpServerTool(Name = "windows_activation_status"), Description(
@@ -673,7 +708,7 @@ public sealed class EndpointSupportTools
     private static async Task<string> RunReadOnlyAsync(ChatStore store,
         AgentRegistry registry, string capability, string method,
         JsonElement? parameters, CancellationToken cancellationToken,
-        bool keepIpAddresses = false)
+        bool keepIpAddresses = false, Func<string, object?, Task<object?>>? transform = null)
     {
         var scope = await store.ResolveCapabilityAsync(capability, cancellationToken);
         if (scope is null)
@@ -700,8 +735,10 @@ public sealed class EndpointSupportTools
                 ? ChatProgressOutcome.Success
                 : ChatProgressOutcome.Failure,
             cancellationToken);
+        var result = response.Error is null && transform is not null
+            ? await transform(scope.AgentId, response.Result) : response.Result;
         return ToolResultSanitizer.Sanitize(response.Error is null
-            ? new { ok = true, result = response.Result }
+            ? new { ok = true, result }
             : new { ok = false, error = response.Error.Message }, keepIpAddresses);
     }
 

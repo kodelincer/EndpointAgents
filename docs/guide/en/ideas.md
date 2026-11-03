@@ -53,7 +53,7 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 
 - **What (recommended design, 2026-11-03): "keep, don't schedule".** The PC does not collect a full inventory on a timer. Whenever a tool reads facts from a PC (during a chat, or when an IT member opens the PC), the control plane stores the answer in its database with the time it was read. The next time the same fact is needed and the stored copy is fresh enough (for example 7 days for hardware, 1 day for installed software), the control plane gives the stored copy and does not ask the PC at all. The only regular message is the small one the agent already sends when it connects (version, Windows build, last boot, free disk). A **Devices** page shows the stored facts with their age, and an IT member can press **Refresh** for one PC.
 - **Why:** today inventory is read only during a chat and then thrown away. This way the AI gets short, ready answers (fewer tokens), the PCs do no extra work, and IT still has a Devices page. Nothing here uses AI.
-- **Waiting for:** Reza's yes before building.
+- **Built (2026-11-03):** kept facts for Windows, domain, hardware, disks, installed programs, drivers, disk health and BitLocker (network facts are never kept), the Devices page with **Read now**, and the agent gets a fresh stored answer instead of asking the PC.
 - **Idea from:** SCCM hardware and software inventory.
 
 ### C. Offline queue, both ways

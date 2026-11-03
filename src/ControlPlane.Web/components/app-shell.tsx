@@ -1,6 +1,6 @@
 "use client";
 
-import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, CloudDownload, HeartPulse, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, Package, PanelLeftClose, PanelLeftOpen, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
+import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, CloudDownload, HeartPulse, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, MonitorSmartphone, Package, PanelLeftClose, PanelLeftOpen, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { roleName } from "@/lib/auth";
@@ -60,6 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { title: "Monitor", items: [
       { href: "/", label: "Overview", icon: LayoutDashboard, exact: true },
       { href: "/agents/", label: "Endpoints", icon: Waypoints },
+      { href: "/devices/", label: "Devices", icon: MonitorSmartphone },
       { href: "/health/", label: "Health rules", icon: HeartPulse }
     ] },
     { title: "Support", items: [
