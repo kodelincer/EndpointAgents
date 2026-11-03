@@ -146,6 +146,8 @@ Start the company's remote-support tool from the chat, only after the user says 
 
 A new or empty PC starts from the network (PXE) into a small Windows PE, and installs Windows from an approved image. IT members write the steps as skills and fixed tools: how to partition the disk, which drivers to add for each PC model, and which software the PC and its users need. The AI only picks among those approved steps; it never makes up disk or install commands. Idea from Reza, 2026-11-03 (earlier listed under "not to copy"; now an idea of its own because new PCs need it).
 
+**Design (2026-11-03):** fixed, signed steps only (identify, partition with a named layout, apply a hash-pinned image, add the model's drivers, fill a fixed answer file, install the agent, restart), an IT member approves each new PC by serial number before anything is erased, and the domain join uses an offline join blob so no password reaches the PC. Start with a USB stick, then PXE. Not built yet: it needs a PXE server and a spare PC or VM that can be wiped. Full design in `docs/network-os-install.md`.
+
 ## Things we decided not to copy
 
 - **Free scripts** (SCCM Run Scripts, Intune platform scripts): they break the rule that only catalogued operations and signed packages run.

@@ -16,7 +16,7 @@ within strict allow-lists, repair the user's PC through the endpoint service.
 | `src/EndpointAgents.TrayWeb` | The Tray (default): WPF host + WebView2 + React UI in `ui/` for the interactive user session: helpdesk chat, Status & Control, Reports, in-app consent. Page reaches the PC only through the allow-listed `TrayBridge`. |
 | `src/EndpointAgents.Tray.Runtime` | Shared Tray pieces: service channel (`tray.attach`), catalogued user-session task handlers, consent prompt, status, logging, tray icon. |
 | `src/EndpointAgents.Tray` | Previous WinUI 3 Tray, kept until the WebView2 Tray is accepted (`-LegacyTray`). |
-| `src/ControlPlane.Api` | ASP.NET Core Windows service on 5052: `AgentHub` (remote, authenticated) and `dashboard-hub` (loopback), REST, SQLite (WAL) chat/runs/audit, Hermes orchestration (`Hermes/`), loopback MCP at `/internal/mcp` (`Tools/`), hash-verified file repository (`Files/`). |
+| `src/ControlPlane.Api` | ASP.NET Core Windows service on 5052: `AgentHub` (remote, authenticated) and `dashboard-hub` (loopback), REST, SQLite (WAL) chat/runs/audit, Hermes orchestration (`Hermes/`), loopback MCP at `/internal/mcp` (`Tools/`), hash-verified file repository (`Files/`), software installs (`Software/`), scheduled health rules (`Health/`), kept inventory (`Inventory/`) and the Lessons queue (`Lessons/`); none of these background parts call an LLM. |
 | `src/ControlPlane.Web` | Next.js operator dashboard on 127.0.0.1:3000; loopback-only, never served by the API. |
 | `deploy/hermes/` | `SOUL.md` (agent identity/rules) and reviewed skills (`office-support`, `windows-support`, `ibsng-support`), promoted manually into the Hermes profile. |
 | `deploy/control-plane/FileRepository` | Development copy of repair artifacts and their manifests. |
@@ -67,6 +67,7 @@ Stop any installed `EndpointAgents.Service` and running Tray before the dev scri
 
 - `docs/guide/` - the dashboard Documentation page (Markdown in `fa/` and `en/`; edit here, the page reads it at build time)
 - `docs/guide/en/updates.md` - agent self-update: rollout, rollback, first manual 0.2.0 install
+- `docs/network-os-install.md` - design for network (PXE) Windows installation of new PCs (idea P, not built)
 - `docs/operation-catalog.md` - master list of common Windows helpdesk tickets mapped to safe operations, gaps and build order
 - `docs/endpoint-actions.md` - general action catalogue, tiers, environment map, agent tools, helpdesk skills
 - `docs/control-plane-operations.md` - ports, routes, dev and production install, troubleshooting
