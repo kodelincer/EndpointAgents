@@ -50,6 +50,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
   const [listOpen, setListOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [confirmNew, setConfirmNew] = useState(false);
+  const [notFixed, setNotFixed] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
   const [stopping, setStopping] = useState(false);
   const [finishNote, setFinishNote] = useState("");
@@ -309,6 +310,19 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
     composer.current?.focus();
   };
 
+  // The user's own word that the answer did not help: goes to the helpdesk and the Problems page.
+  const reportNotFixed = async () => {
+    if (!activeConversation) return;
+    const conversationId = activeConversation.conversationId;
+    try {
+      await host.call("chat.not_fixed", { conversationId });
+      setNotFixed(conversationId);
+      setNotice("به تیم پشتیبانی خبر دادیم. همکاران ما این گفتگو را می‌بینند.");
+    } catch (error) {
+      setNotice(error instanceof HostError ? "پیام شما ثبت نشد. دوباره تلاش کنید." : String(error));
+    }
+  };
+
   const decide = async (action: ActionProposal, approved: boolean, typed?: string) => {
     setDeciding(action.actionId);
     setNotice(approved ? "در حال آغاز اقدام تأییدشده…" : "در حال ثبت تصمیم شما…");
@@ -558,6 +572,12 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
 
         <footer className="composer-area">
           {shownNotice && <p className="notice" role="status">{shownNotice}</p>}
+          {activeConversation && (activeConversation.state === "Answered" || activeConversation.state === "Resolved")
+            && notFixed !== activeConversation.conversationId && (
+            <div className="not-fixed-bar">
+              <button className="chip" disabled={!connected} onClick={() => void reportNotFixed()}>مشکلم حل نشد</button>
+            </div>
+          )}
           {readOnly ? (
             <div className="closed-bar">
               <span>این گفتگو بسته شده و فقط برای مشاهده است.</span>

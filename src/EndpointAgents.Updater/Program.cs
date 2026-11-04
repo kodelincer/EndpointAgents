@@ -10,6 +10,15 @@ using System.Runtime.Versioning;
 // service and the Tray to the new version and waits for the new service to connect. If it does
 // not, it puts the previous version back. With --rollback (a version that kept crashing during
 // its first 24 hours) it only puts the previous version back.
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    if (e.ExceptionObject is not Exception exception) return;
+    // The service picks this file up the next time it runs.
+    new EndpointAgents.Shared.Problems.ProblemOutbox(EndpointAgents.Shared.Problems.ProblemPaths.UpdaterInbox).Add(
+        EndpointAgents.Shared.Problems.ProblemText.FromException(EndpointAgents.Shared.Problems.ProblemKinds.Crash,
+            "Updater", exception, typeof(AgentSwitcher).Assembly.GetName().Version?.ToString(3), DateTimeOffset.UtcNow),
+        saveNow: true);
+};
 string? statePath = null;
 var rollback = false;
 for (var i = 0; i < args.Length; i++)

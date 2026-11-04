@@ -86,6 +86,25 @@ public sealed class ServiceIpcClient
             await SendAsync(request, cancellationToken));
     }
 
+    public async Task<EndpointAgents.Shared.Problems.ChatNotFixedReceipt> ReportChatNotFixedAsync(
+        EndpointAgents.Shared.Problems.ChatNotFixedRequest report, CancellationToken cancellationToken)
+    {
+        var request = new ServiceIpcRequest(Guid.NewGuid().ToString("N"),
+            ServiceIpcProtocol.ChatNotFixedMethod, JsonSerializer.SerializeToElement(report));
+        return ReadPayload<EndpointAgents.Shared.Problems.ChatNotFixedReceipt>(
+            await SendAsync(request, cancellationToken));
+    }
+
+    /// <summary>Hands the Tray's saved crash reports to the service, which sends them on.</summary>
+    public async Task ReportProblemsAsync(IReadOnlyList<EndpointAgents.Shared.Problems.ProblemReport> reports,
+        CancellationToken cancellationToken)
+    {
+        var request = new ServiceIpcRequest(Guid.NewGuid().ToString("N"),
+            ServiceIpcProtocol.ReportProblemsMethod, JsonSerializer.SerializeToElement(reports));
+        var response = await SendAsync(request, cancellationToken);
+        if (!response.Success) throw new InvalidOperationException(response.Message ?? "The service refused the reports.");
+    }
+
     public async Task<ChatRunStopReceipt> StopChatRunAsync(
         ChatRunStopRequest stop, CancellationToken cancellationToken)
     {

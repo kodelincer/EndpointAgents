@@ -582,3 +582,6 @@ input, textarea { caret-color: var(--action); }
   background: transparent; font-size: 13px; text-align: start;
 }
 .copy-menu button:hover, .copy-menu button:focus-visible { background: var(--action-soft); }
+
+/* The user's own "this did not fix it", under the last answer. */
+.not-fixed-bar { display: flex; justify-content: flex-start; margin-bottom: 6px; }

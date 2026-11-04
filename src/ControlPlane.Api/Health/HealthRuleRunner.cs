@@ -12,7 +12,7 @@ namespace ControlPlane.Api.Health;
 /// kill switches, hourly limits and before/after checks apply. No AI is involved.
 /// </summary>
 public sealed class HealthRuleRunner(HealthRuleStore store, ActionRunner actions, TimeProvider clock,
-    ILogger<HealthRuleRunner> logger)
+    ILogger<HealthRuleRunner> logger, ControlPlane.Api.Problems.ProblemRecorder? problems = null)
 {
     /// <summary>At most this many checks start per minute, so PCs are not all checked at once.</summary>
     public const int MaxRunsPerTick = 20;
@@ -88,6 +88,10 @@ public sealed class HealthRuleRunner(HealthRuleStore store, ActionRunner actions
         }
         await store.SaveResultAsync(result, cancellationToken);
         logger.LogInformation("Health rule {Rule} on {Machine}: {Outcome}", rule.Name, machineName, result.Outcome);
+        if (result.Outcome == HealthOutcomes.Error && problems is not null)
+            await problems.RecordAsync(agentId, machineName, null,
+                EndpointAgents.Shared.Problems.ProblemKinds.HealthCheckFailed, rule.CheckId,
+                $"The health check {rule.CheckId} could not run: {check.LookActionId}", "not-run");
         return result;
     }
 

@@ -8,8 +8,10 @@ using EndpointAgents.Shared.Chat;
 using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Support;
 using EndpointAgents.Shared.Ibsng;
+using ControlPlane.Api.Problems;
 using ControlPlane.Api.Support;
 using ControlPlane.Api.Updates;
+using EndpointAgents.Shared.Problems;
 using EndpointAgents.Shared.Updates;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
@@ -22,6 +24,7 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
     ChatStore chatStore, CommandCatalog commandCatalog,
     DashboardPublisher dashboard, IOptions<AgentSecurityOptions> security,
     AgentUpdateStore updateStore, AgentUpdateRepository updateRepository,
+    ProblemRecorder problems,
     ILogger<AgentHub> logger) : Hub
 {
     private static readonly HashSet<string> ChatActions =
@@ -92,6 +95,45 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
             report.ToVersion ?? "", report.Message ?? "", Context.ConnectionAborted);
         logger.LogInformation("Agent {AgentId} update {From} -> {To}: {Status} {Message}",
             agentId, report.FromVersion, report.ToVersion, report.Status, report.Message);
+        if (report.Status is AgentUpdateStatuses.RolledBack or AgentUpdateStatuses.Failed)
+        {
+            registry.TryGetByConnectionId(Context.ConnectionId, out var agent);
+            await problems.RecordAsync(agentId, agent?.MachineName, report.ToVersion, ProblemKinds.UpdateRolledBack,
+                "Updater", $"Update {report.FromVersion} -> {report.ToVersion}: {report.Status}. {report.Message}",
+                $"{report.Status}:{report.ToVersion}");
+        }
+    }
+
+    /// <summary>
+    /// Problem reports from this PC, and every so often an empty call that only says it is alive.
+    /// Returns normally when the PC can forget them, also when some were over a limit.
+    /// </summary>
+    public async Task<int> ReportProblems(ProblemReportBatch batch)
+    {
+        var agentId = GetAuthenticatedAgentId();
+        EnsureRegisteredAgent(agentId);
+        if (batch?.Device is null || batch.Reports is null || batch.Reports.Count > ProblemLimits.MaxReportsPerHour)
+            throw new HubException("The problem report is invalid.");
+        registry.TryGetByConnectionId(Context.ConnectionId, out var agent);
+        return await problems.AddFromAgentAsync(agentId,
+            batch.Device with { MachineName = agent?.MachineName ?? batch.Device.MachineName },
+            batch.Reports, Context.ConnectionAborted);
+    }
+
+    /// <summary>The user says this chat did not fix the problem. Carries no chat text.</summary>
+    public async Task<ChatNotFixedReceipt> ReportChatNotFixed(ChatNotFixedRequest request)
+    {
+        var agentId = GetAuthenticatedAgentId();
+        EnsureRegisteredAgent(agentId);
+        var conversationId = Normalize(request.ConversationId, 64);
+        if (!await chatStore.EscalateForUserAsync(agentId, request.Identity.UserSid, conversationId,
+                "The user pressed: this did not fix it.", Context.ConnectionAborted))
+            return new ChatNotFixedReceipt(false, "این گفتگو پیدا نشد.");
+        registry.TryGetByConnectionId(Context.ConnectionId, out var agent);
+        await problems.RecordAsync(agentId, agent?.MachineName, agent?.Version, ProblemKinds.UserReported, "Chat",
+            "The user said this chat did not fix the problem.", conversationId, conversationId);
+        await dashboard.PublishHelpdeskAsync(new HelpdeskChange(conversationId, "escalated"), Context.ConnectionAborted);
+        return new ChatNotFixedReceipt(true, "به تیم پشتیبانی خبر دادیم.");
     }
 
     public Task<ChatConversation> OpenChat(ChatIdentity identity)

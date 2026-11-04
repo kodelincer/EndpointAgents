@@ -26,7 +26,23 @@ builder.Configuration.AddJsonFile(
     EndpointAgents.Platform.Windows.Updates.AgentUpdatePaths.SiteSettingsPath, optional: true, reloadOnChange: false);
 builder.Configuration.AddEnvironmentVariables();
 builder.Configuration.AddCommandLine(args);
-builder.Logging.AddProvider(new EndpointActivityLoggerProvider());
+// Problem reports wait in a small file until the control plane has them (ProblemReportWorker).
+var problems = new EndpointAgents.Shared.Problems.ProblemOutbox(EndpointAgents.Shared.Problems.ProblemPaths.ServiceOutbox);
+var agentVersion = builder.Configuration["ControlPlane:Version"] ?? ControlPlaneOptions.BuildVersion;
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    if (e.ExceptionObject is Exception exception)
+        problems.Add(EndpointAgents.Shared.Problems.ProblemText.FromException(
+            EndpointAgents.Shared.Problems.ProblemKinds.Crash, "Service", exception, agentVersion, DateTimeOffset.UtcNow), saveNow: true);
+};
+TaskScheduler.UnobservedTaskException += (_, e) =>
+{
+    problems.Add(EndpointAgents.Shared.Problems.ProblemText.FromException(
+        EndpointAgents.Shared.Problems.ProblemKinds.Crash, "Service", e.Exception, agentVersion, DateTimeOffset.UtcNow), saveNow: true);
+    e.SetObserved();
+};
+builder.Logging.AddProvider(new EndpointActivityLoggerProvider(problems, agentVersion));
+builder.Services.AddSingleton(problems);
 
 // Registers Windows Service lifetime integration; host.Run() starts the service
 // after all hosted services have been built.
@@ -169,6 +185,7 @@ builder.Services.AddSingleton<IEndpointCommandHandler, WindowsHelloSampleCommand
 builder.Services.AddSingleton<IEndpointCommandHandler, PackageRunCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, EndpointAgents.Platform.Windows.Software.CheckRequirementsCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, SystemInfoCommandHandler>();
+builder.Services.AddSingleton<IEndpointCommandHandler, EndpointAgents.Platform.Windows.Diagnostics.CollectLogsCommandHandler>();
 // General catalogued actions (EndpointActionCatalog): one RPC, fixed implementations only.
 builder.Services.AddSingleton<IEndpointCommandHandler, EndpointActionCommandHandler>();
 foreach (var action in EndpointActionSet.CreateSystemActions())
@@ -189,6 +206,7 @@ builder.Services.AddOptions<EndpointAgents.Platform.Windows.Updates.AgentUpdateO
     .Bind(builder.Configuration.GetSection(EndpointAgents.Platform.Windows.Updates.AgentUpdateOptions.SectionName));
 builder.Services.AddSingleton<EndpointAgents.Platform.Windows.Updates.AgentUpdateInstaller>();
 builder.Services.AddHostedService<AgentUpdateWorker>();
+builder.Services.AddHostedService<ProblemReportWorker>();
 builder.Services.AddHostedService<ServiceIpcServer>();
 
 var host = builder.Build();

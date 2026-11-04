@@ -11,7 +11,8 @@ namespace ControlPlane.Api.Agents;
 /// Tracks the live SignalR connection for each logical endpoint agent and routes
 /// catalogued RPC requests to the currently registered connection.
 /// </summary>
-public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPublisher dashboard)
+public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPublisher dashboard,
+    ControlPlane.Api.Problems.ProblemRecorder? problems = null)
 {
     private readonly ConcurrentDictionary<string, OnlineAgent> _agentsById = new();
     private readonly ConcurrentDictionary<string, string> _agentIdByConnectionId = new();
@@ -111,7 +112,22 @@ public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPub
         }
 
         await PublishCompletedAsync(agentId, request, response, startedAt, cancellationToken);
+        await RecordFailureAsync(agent, request, response);
         return response;
+    }
+
+    /// <summary>
+    /// A failed or timed-out operation goes to the Problems page. Busy, paused and cancelled are
+    /// normal answers, not bugs.
+    /// </summary>
+    private async Task RecordFailureAsync(OnlineAgent agent, RpcRequest request, RpcResponse response)
+    {
+        if (problems is null || response.Error is not { } error || error.Code is 429 or 499 or 503) return;
+        var kind = request.Method == "system.package_run"
+            ? EndpointAgents.Shared.Problems.ProblemKinds.PackageFailed
+            : EndpointAgents.Shared.Problems.ProblemKinds.OperationFailed;
+        await problems.RecordAsync(agent.AgentId, agent.MachineName, agent.Version, kind, request.Method,
+            $"{request.Method} failed with code {error.Code}: {error.Message}", $"code-{error.Code}");
     }
 
     private async Task CancelOnEndpointBestEffortAsync(string connectionId, string requestId)

@@ -366,6 +366,11 @@ public sealed class AgentWorker : BackgroundService
         GetConnectedConnection().InvokeAsync<ChatConversationCloseReceipt>(
             "CloseChat", request, cancellationToken);
 
+    public Task<EndpointAgents.Shared.Problems.ChatNotFixedReceipt> ReportChatNotFixedAsync(
+        EndpointAgents.Shared.Problems.ChatNotFixedRequest request, CancellationToken cancellationToken) =>
+        GetConnectedConnection().InvokeAsync<EndpointAgents.Shared.Problems.ChatNotFixedReceipt>(
+            EndpointAgents.Shared.Problems.ProblemHubMethods.ChatNotFixed, request, cancellationToken);
+
     public Task<ChatRunStopReceipt> StopChatRunAsync(
         ChatRunStopRequest request, CancellationToken cancellationToken) =>
         GetConnectedConnection().InvokeAsync<ChatRunStopReceipt>(

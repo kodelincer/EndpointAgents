@@ -103,6 +103,42 @@ public sealed partial class ChatStore
         return true;
     }
 
+    /// <summary>
+    /// The user pressed "this did not fix it": the chat goes to the helpdesk, as if the agent had
+    /// escalated it. Only the user who owns the chat, on that PC, can do this.
+    /// </summary>
+    public async Task<bool> EscalateForUserAsync(string agentId, string userSid, string conversationId,
+        string reason, CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow;
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var update = connection.CreateCommand();
+            update.CommandText =
+                """
+                UPDATE conversations SET helpdesk_status = 'Escalated',
+                    escalation_reason = $reason, escalation_summary = '',
+                    escalated_at_utc = $now, resolved_at_utc = NULL, updated_at_utc = $now
+                WHERE conversation_id = $id AND agent_id = $agent AND user_sid = $sid;
+                """;
+            update.Parameters.AddWithValue("$reason", reason);
+            update.Parameters.AddWithValue("$now", Format(now));
+            update.Parameters.AddWithValue("$id", conversationId);
+            update.Parameters.AddWithValue("$agent", agentId);
+            update.Parameters.AddWithValue("$sid", userSid);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) == 0) return false;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+        await AppendAgentTraceAsync(conversationId, EscalationEventType, "Escalated",
+            new { reason, summary = "", escalatedAtUtc = now }, cancellationToken);
+        return true;
+    }
+
     private Task AppendAgentTraceAsync(string conversationId, string eventType,
         string outcome, object payload, CancellationToken cancellationToken) =>
         ExecuteAsync(

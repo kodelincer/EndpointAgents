@@ -92,6 +92,23 @@ builder.Services.AddMcpServer()
 // General endpoint actions: catalogue runner, environment map, incidents, helpdesk skills.
 builder.Services.AddSingleton<ActionStore>();
 builder.Services.AddSingleton<ControlPlane.Api.Updates.AgentUpdateStore>();
+// Problem reports from PCs: own database file, optional copy to an outside log server. No AI.
+builder.Services.AddOptions<ControlPlane.Api.Problems.ProblemOptions>()
+    .Bind(builder.Configuration.GetSection("Problems"))
+    .Validate(options => options.RetentionDays is >= 1 and <= 3650,
+        "Problems:RetentionDays must be between 1 and 3650.")
+    .Validate(options => options.MaxDatabaseMegabytes is >= 1 and <= 1024 * 1024,
+        "Problems:MaxDatabaseMegabytes must be between 1 and 1048576.")
+    .Validate(options => options.MaxReportsPerPcPerHour is >= 1 and <= 10_000,
+        "Problems:MaxReportsPerPcPerHour must be between 1 and 10000.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<ControlPlane.Api.Problems.ProblemStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Problems.Forwarding.LogServerSettingsStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Problems.Forwarding.LogForwarder>();
+builder.Services.AddHostedService(provider =>
+    provider.GetRequiredService<ControlPlane.Api.Problems.Forwarding.LogForwarder>());
+builder.Services.AddSingleton<ControlPlane.Api.Problems.ProblemRecorder>();
+builder.Services.AddHostedService<ControlPlane.Api.Problems.ProblemMaintenanceWorker>();
 builder.Services.Configure<ControlPlane.Api.Software.SoftwareInstallOptions>(
     builder.Configuration.GetSection("SoftwareInstall"));
 builder.Services.AddSingleton<ControlPlane.Api.Software.SoftwareApprovalStore>();
@@ -173,6 +190,8 @@ await app.Services.GetRequiredService<ControlPlane.Api.Software.SoftwareApproval
 await app.Services.GetRequiredService<ControlPlane.Api.Health.HealthRuleStore>().InitializeAsync();
 await app.Services.GetRequiredService<ControlPlane.Api.Inventory.InventoryStore>().InitializeAsync();
 await app.Services.GetRequiredService<ControlPlane.Api.Lessons.LessonStore>().InitializeAsync();
+await app.Services.GetRequiredService<ControlPlane.Api.Problems.ProblemStore>().InitializeAsync();
+await app.Services.GetRequiredService<ControlPlane.Api.Problems.Forwarding.LogServerSettingsStore>().InitializeAsync();
 
 // Endpoint agents and health monitors can reach the explicitly public routes
 // below. The unauthenticated operator console and command surface remain local
@@ -533,6 +552,7 @@ ControlPlane.Api.Health.HealthEndpoints.MapHealthEndpoints(app);
 ControlPlane.Api.Inventory.InventoryEndpoints.MapInventoryEndpoints(app);
 ControlPlane.Api.Lessons.LessonEndpoints.MapLessonEndpoints(app);
 ControlPlane.Api.Dashboard.OverviewEndpoints.MapOverviewEndpoints(app);
+ControlPlane.Api.Problems.ProblemEndpoints.MapProblemEndpoints(app);
 app.MapGet("/api/activity", (int? limit, string? agentId, ActivityStore store) =>
     Results.Ok(store.Get(limit ?? 100, agentId)));
 // Requests for abilities the support agent does not have yet (loopback operator view).

@@ -33,7 +33,8 @@ public sealed record ActionRunOutcome(
 /// and the dashboard both go through here.
 /// </summary>
 public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
-    ILogger<ActionRunner> logger, ControlPlane.Api.Inventory.InventoryStore inventory, TimeProvider clock)
+    ILogger<ActionRunner> logger, ControlPlane.Api.Inventory.InventoryStore inventory, TimeProvider clock,
+    ControlPlane.Api.Problems.ProblemRecorder? problems = null)
 {
     public static readonly TimeSpan LimitWindow = TimeSpan.FromHours(1);
 
@@ -160,6 +161,10 @@ public sealed class ActionRunner(ActionStore store, AgentRegistry registry,
             cancellationToken);
         logger.LogInformation("Endpoint action {ActionId} on {AgentId}: {Status}", actionId,
             context.AgentId, result.Status);
+        if (result.Status == ActionStatus.Failed && problems is not null)
+            await problems.RecordAsync(context.AgentId, MachineName(context.AgentId), null,
+                EndpointAgents.Shared.Problems.ProblemKinds.OperationFailed, actionId,
+                $"{actionId} failed: {result.Summary}", "action-failed");
 
         return new ActionRunOutcome(true, null, runId, actionId, result.Status,
             masker.Mask(result.Summary), masker.Mask(data), masker.Mask(verification),

@@ -36,6 +36,53 @@ $systemSid = "S-1-5-18"
 $administratorsSid = "S-1-5-32-544"
 $usersSid = "S-1-5-32-545"
 
+# If anything below fails, leave a log on this PC and send one small report to the control plane,
+# so a PC that never finished installing shows on the Problems page. There is no agent and no token
+# yet: the report holds the step, the first line of the error with personal data cut, and Windows facts.
+$script:InstallStep = "Starting"
+
+function Get-CleanInstallError([string]$Text) {
+    $line = (($Text -split "`r?`n") | Select-Object -First 1)
+    $line = $line -replace '(?i)([A-Z]:\\(Users|Documents and Settings))\\[^\\\s"'']+', '$1\<user>'
+    $line = $line -replace '\\\\[A-Za-z0-9._-]+\\[^\s"'']+', '\\<server>\<share>'
+    $line = $line -replace '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '<email>'
+    if ($line.Length -gt 300) { $line = $line.Substring(0, 300) }
+    return $line
+}
+
+function Send-InstallFailure([string]$Step, [string]$ErrorText) {
+    $message = Get-CleanInstallError $ErrorText
+    try {
+        $reports = Join-Path $env:ProgramData "EndpointAgents\Reports"
+        New-Item -ItemType Directory -Path $reports -Force | Out-Null
+        Add-Content -LiteralPath (Join-Path $reports "install-failure.log") -Encoding UTF8 `
+            -Value "$((Get-Date).ToUniversalTime().ToString('o')) Install failed at step '$Step': $message"
+    }
+    catch { Write-Warning "The install log could not be written: $($_.Exception.Message)" }
+    try {
+        $windows = Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        $body = @{
+            machineName = $env:COMPUTERNAME
+            step = $Step
+            message = $message
+            osName = $(if ([int]$windows.CurrentBuildNumber -ge 22000) { "Windows 11" } else { "Windows 10" })
+            osVersion = $windows.DisplayVersion
+            osBuild = "$($windows.CurrentBuildNumber).$($windows.UBR)"
+        } | ConvertTo-Json -Compress
+        $url = $ControlPlaneHubUrl.GetLeftPart([UriPartial]::Authority) + "/api/install-reports"
+        Invoke-RestMethod -Uri $url -Method Post -ContentType "application/json" `
+            -Body ([Text.Encoding]::UTF8.GetBytes($body)) -TimeoutSec 10 | Out-Null
+        Write-Host "The control plane was told that this install failed at step '$Step'."
+    }
+    catch { Write-Warning "The control plane could not be told about this failure: $($_.Exception.Message)" }
+}
+
+trap {
+    Send-InstallFailure $script:InstallStep $_.Exception.Message
+    break
+}
+
 function Test-WebView2Runtime {
     $clientKey = "Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
     foreach ($path in "HKLM:\SOFTWARE\WOW6432Node\$clientKey", "HKLM:\SOFTWARE\$clientKey") {
@@ -310,7 +357,9 @@ function Set-ExactProtectedTreeAcl(
     }
 }
 
+$script:InstallStep = "Check administrator"
 Assert-Administrator
+$script:InstallStep = "Check settings"
 Ensure-EventSource "EndpointAgents.Service"
 Ensure-EventSource "EndpointAgents.Tray"
 if ($ControlPlaneHubUrl.Scheme -notin @("http", "https") `
@@ -322,6 +371,7 @@ if ($ControlPlaneHubUrl.Scheme -ne "https" `
     throw "Remote endpoint connections must use HTTPS."
 }
 
+$script:InstallStep = "Remove old install"
 $installRootExists = Test-Path -LiteralPath $InstallRoot
 $resolvedInstallRoot = Get-SafeInstallRoot $InstallRoot
 Remove-ServiceIfPresent $serviceName
@@ -329,17 +379,21 @@ if ($installRootExists) {
     Remove-Item -LiteralPath $resolvedInstallRoot -Recurse -Force
 }
 
+$script:InstallStep = "Publish service"
 dotnet publish (Join-Path $repoRoot "src\EndpointAgents.Service\EndpointAgents.Service.csproj") `
     -c $Configuration -r win-x64 --self-contained false -o $serviceOutput
 if ($LASTEXITCODE -ne 0) {
     throw "Endpoint service publish failed with exit code $LASTEXITCODE."
 }
+$script:InstallStep = "Publish Tray"
 if ($LegacyTray) {
     dotnet publish (Join-Path $repoRoot "src\EndpointAgents.Tray\EndpointAgents.Tray.csproj") `
         -c $Configuration -r win-x64 --self-contained false -o $trayOutput
 }
 else {
+    $script:InstallStep = "WebView2 runtime"
     Ensure-WebView2Runtime $WebView2InstallerPath
+    $script:InstallStep = "Publish Tray"
     # A prebuilt UI (ui\dist) means Node.js is not needed on this PC.
     $prebuiltUi = Test-Path -LiteralPath (Join-Path $repoRoot "src\EndpointAgents.TrayWeb\ui\dist\index.html")
     $uiArguments = if ($prebuiltUi) { @("-p:SkipTrayUi=true") } else { @() }
@@ -350,6 +404,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Endpoint Tray publish failed with exit code $LASTEXITCODE."
 }
 
+$script:InstallStep = "Write settings"
 $serviceSettingsPath = Join-Path $serviceOutput "appsettings.json"
 Set-ExactProtectedTreeAcl $serviceOutput
 $serviceSettings = Get-Content -LiteralPath $serviceSettingsPath -Raw | ConvertFrom-Json
@@ -371,6 +426,7 @@ Set-ExactProtectedTreeAcl $serviceOutput
 $serviceExe = Join-Path $serviceOutput "EndpointAgents.Service.exe"
 $trayExe = Join-Path $trayOutput $(if ($LegacyTray) { "EndpointAgents.Tray.exe" } else { "EndpointAgents.TrayWeb.exe" })
 
+$script:InstallStep = "Create service"
 Invoke-NativeChecked "sc.exe" "Creating service $serviceName" @(
     "create", $serviceName,
     "binPath=", "`"$serviceExe`"",
@@ -382,6 +438,7 @@ Invoke-NativeChecked "sc.exe" "Configuring recovery for service $serviceName" @(
     "reset=", "86400",
     "actions=", "restart/5000/restart/15000/restart/30000")
 
+$script:InstallStep = "Protect folders"
 New-Item -Path $runKey -Force | Out-Null
 New-ItemProperty -Path $runKey -Name "EndpointAgents.Tray" `
     -PropertyType String -Value "`"$trayExe`"" -Force | Out-Null
@@ -409,6 +466,7 @@ Set-ExactProtectedTreeAcl $configRoot -AllowUsersReadAndExecute
 New-SafeDirectory $updatesRoot
 Set-ExactProtectedTreeAcl $updatesRoot
 
+$script:InstallStep = "Start service"
 Start-Service -Name $serviceName
 
 Write-Host "Endpoint Agent installed: the background service is running."

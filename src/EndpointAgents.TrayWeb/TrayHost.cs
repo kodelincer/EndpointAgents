@@ -37,6 +37,7 @@ public sealed class TrayHost : IDisposable
         _app = app;
         _options = options;
         _window = new MainWindow(options, RefreshStatusAsync, Exit);
+        _ = TrayProblems.SendSavedAsync(_serviceClient, _shutdown.Token);
 
         var menu = new Forms.ContextMenuStrip { RightToLeft = Forms.RightToLeft.Yes };
         _statusMenuItem = new Forms.ToolStripMenuItem("در حال بررسی وضعیت دستیار پشتیبانی…")
