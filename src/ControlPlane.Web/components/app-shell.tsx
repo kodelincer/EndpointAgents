@@ -1,6 +1,6 @@
 "use client";
 
-import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, CloudDownload, GraduationCap, HeartPulse, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, MonitorSmartphone, Package, PanelLeftClose, PanelLeftOpen, RefreshCw, Server, ShieldCheck, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
+import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, CloudDownload, GraduationCap, HeartPulse, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, MonitorSmartphone, Package, PanelLeftClose, PanelLeftOpen, RefreshCw, Server, Settings as SettingsIcon, ShieldCheck, Siren, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { roleName } from "@/lib/auth";
@@ -61,7 +61,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       { href: "/", label: "Overview", icon: LayoutDashboard, exact: true },
       { href: "/agents/", label: "Endpoints", icon: Waypoints },
       { href: "/devices/", label: "Devices", icon: MonitorSmartphone },
-      { href: "/health/", label: "Health rules", icon: HeartPulse }
+      { href: "/health/", label: "Health rules", icon: HeartPulse },
+      ...(can("problems.view") ? [{ href: "/problems/", label: "Problems", icon: Siren }] : [])
     ] },
     { title: "Support", items: [
       { href: "/support/", label: "Helpdesk", icon: LifeBuoy, count: supportRequests.length },
@@ -77,7 +78,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     ] },
     ...(can("users.manage") ? [{ title: "Administration", items: [
       { href: "/operators/", label: "Operators", icon: ShieldCheck },
-      ...(can("devices.manage") ? [{ href: "/agent-updates/", label: "Agent updates", icon: CloudDownload }] : [])
+      ...(can("devices.manage") ? [{ href: "/agent-updates/", label: "Agent updates", icon: CloudDownload }] : []),
+      { href: "/settings/", label: "Settings", icon: SettingsIcon }
     ] }] : []),
     { title: "Help", items: [
       { href: "/docs/", label: "User manual", icon: BookMarked }

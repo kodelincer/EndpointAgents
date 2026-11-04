@@ -907,3 +907,19 @@ a.ov-tile:hover .ov-tile-go, a.ov-tile:focus-visible .ov-tile-go { opacity: 1; }
 @media (max-width: 1100px) { .ov-grid-wide, .ov-grid-three { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 900px) { .ov-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .ov-grid-four { grid-template-columns: minmax(0, 1fr); } .ov-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; } .ov-tile { min-height: 110px; padding: 12px; } .ov-tile-value { font-size: 22px; } .ov-toolbar { width: 100%; } }
+
+/* Problems page and Settings */
+.problem-filters { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.problem-filters label, .settings-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+.problem-filters select, .problem-filters input { min-width: 110px; max-width: 200px; }
+.problem-storage { margin: 12px 0 0; }
+.problem-stack { margin: 10px 0; padding: 10px 12px; max-height: 260px; overflow: auto; font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); }
+.problem-table { margin: 10px 0; overflow-x: auto; }
+.problem-table table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.problem-table th, .problem-table td { padding: 6px 8px; text-align: start; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.problem-table th { color: var(--muted); font-weight: 600; }
+.problem-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.problem-actions label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.problem-actions input { width: 90px; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin: 12px 0; }
+.settings-grid input, .settings-grid select { width: 100%; }

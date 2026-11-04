@@ -27,7 +27,7 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | D | Health rules: fix problems before users call | Proactive care | 2 | Idea | 2026-11-02 |
 | E | Device groups and pilot rings | Proactive care | 2 | Idea | 2026-11-02 |
 | F | Required deployments of catalog software | Software | 3 | Idea | 2026-11-02 |
-| G | Collect diagnostics | Helpdesk tools | 3 | Idea | 2026-11-02 |
+| G | Collect diagnostics | Helpdesk tools | 3 | Built 2026-11-04 (Get logs on the Problems page) | 2026-11-02 |
 | H | Fleet questions | Helpdesk tools | 3 | Idea | 2026-11-02 |
 | I | Endpoint analytics | Later | 4 | Idea | 2026-11-02 |
 | J | Peer sharing of large packages | Later | 4 | Idea | 2026-11-02 |
@@ -37,7 +37,7 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | N | Supervised learning from solved problems | AI agent | 2 | Idea | 2026-11-03 |
 | O | Light, read-only event log checks | Helpdesk tools | 2 | Idea | 2026-11-03 |
 | P | Network OS installation for new PCs | Later | 4 | Idea | 2026-11-03 |
-| Q | Agent problem reports from pilot PCs | Before a wide rollout | 1 | Idea | 2026-11-04 |
+| Q | Agent problem reports from pilot PCs | Before a wide rollout | 1 | Built 2026-11-04 | 2026-11-04 |
 
 Ideas A to L come from studying what the SCCM client and the Intune agent do (from Microsoft's public documentation only, never from their code), and what our system is still missing.
 
@@ -64,6 +64,8 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **Idea from:** SCCM's way of keeping messages on the PC until the server is reachable.
 
 ### Q. Agent problem reports from pilot PCs
+
+- **Built (2026-11-04):** see [Problems and log server](/docs/problems/). Also built beyond the idea: reports carry the PC model and Windows version, and a row says when a problem is "only" on one of them; forwarding works with Splunk, Graylog and Syslog.
 
 - **What:** every PC sends the control plane a short report when something goes wrong in *our own* agent, and a **Problems** page on the dashboard shows them grouped, so the team knows what to fix in the next version. A report is sent for: a crash of the service, the Tray or the updater (with where in our code it broke); an error our code logs; an operation or package that failed or timed out (operation name, package name and version, return code, how long it ran); a health rule check that could not run; and an update that was rolled back. Each report carries the agent version, the PC name, Windows 10 or 11 and its build, and the time.
 - **How it is kept small:** the same problem is sent once with a counter ("this happened 37 times since 09:10"), not 37 times. The PC keeps unsent reports in a small file (at most 2 MB, the oldest are dropped first) and sends them when it connects again, so nothing is lost when the network or the control plane is down. At most 50 reports per PC per hour. The control plane keeps reports for 90 days.
@@ -114,6 +116,8 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 ## Helpdesk tools
 
 ### G. Collect diagnostics
+
+- **Built (2026-11-04):** **Get logs** on the Problems page, for admins; see [Problems and log server](/docs/problems/). The zip is downloaded from the Problems page rather than attached to a case.
 
 - **What:** one catalogued action that zips a fixed list of our own logs and filtered Windows event logs, masks them and uploads them to the case.
 - **Why:** the helpdesk often needs logs and should not have to ask the user to find them.

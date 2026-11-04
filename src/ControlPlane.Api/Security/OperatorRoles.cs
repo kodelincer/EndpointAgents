@@ -33,7 +33,7 @@ public static class OperatorRoles
         ["dashboard.view", "helpdesk.reply", "helpdesk.diagnose", "skills.draft"];
 
     private static readonly string[] ReviewerPermissions =
-        [.. MemberPermissions, "feature-requests.triage", "skills.publish", "actions.undo"];
+        [.. MemberPermissions, "feature-requests.triage", "skills.publish", "actions.undo", "problems.view"];
 }
 
 public static class OperatorPolicies

@@ -14,6 +14,8 @@ order: 11
 | **Endpoints** | The PCs that are connected. Admins can send a catalogued command; the user still sees a consent card for commands that change the PC. | Everyone reads, admins send |
 | **Devices** | What is known about each PC from earlier checks (Windows, hardware, disks, programs, drivers) and how old it is. **Read now** asks one PC again. PCs are never asked on a timer. | Everyone reads |
 | **Health rules** | Daily or weekly checks that fix common problems before users call. See [Health rules](/docs/health/). | Everyone reads, admins change |
+| **Problems** | What went wrong in our own agent on the PCs, which PCs went quiet or stayed on an old version, and Get logs for one PC. See [Problems and log server](/docs/problems/). | Reviewers and admins read, admins get logs |
+| **Settings** | The outside log server (Splunk, Graylog or Syslog). See [Problems and log server](/docs/problems/). | Admins only |
 | **Packages** | Every repair and install package with its status, symptoms, requirements, hashes, signer and exactly what to fix when it is not Ready. Admins switch an install package to **No approval needed**. | Everyone reads, admins switch |
 | **Helpdesk** | Live conversations, escalated cases, take over, read-only diagnostics. See [Daily helpdesk work](/docs/helpdesk/). | Members and above |
 | **Approvals** | Requests that wait for a helpdesk member: removing software, uninstall packages, and fixes an admin marked "Needs IT approval". **Approve and run** runs it at once; **Decline** takes a note the user sees. | Members and above |
