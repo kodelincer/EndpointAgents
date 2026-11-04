@@ -99,6 +99,9 @@ public static class ProblemPaths
 
     public static string InstallLog => Path.Combine(ReportsRoot, "install-failure.log");
 
+    /// <summary>When the service last looked in the Windows log for crashes of our programs.</summary>
+    public static string NativeCrashCursor => Path.Combine(ReportsRoot, "native-crash-cursor.txt");
+
     public static string TrayOutbox => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "EndpointAgents", "Reports", "tray-problem-outbox.json");

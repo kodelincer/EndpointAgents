@@ -31,6 +31,9 @@ public sealed class ProblemReportWorker(
             try
             {
                 TakeUpdaterReports();
+                foreach (var crash in NativeCrashReader.ReadNew(ProblemPaths.NativeCrashCursor,
+                             options.Value.Version, DateTimeOffset.UtcNow))
+                    outbox.Add(crash, saveNow: true);
                 outbox.Flush();
                 await SendAsync(stoppingToken);
             }

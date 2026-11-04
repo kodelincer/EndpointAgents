@@ -122,7 +122,17 @@ public sealed class AgentRegistry(IHubContext<AgentHub> hubContext, DashboardPub
     /// </summary>
     private async Task RecordFailureAsync(OnlineAgent agent, RpcRequest request, RpcResponse response)
     {
-        if (problems is null || response.Error is not { } error || error.Code is 429 or 499 or 503) return;
+        if (problems is null) return;
+        if (ControlPlane.Api.Problems.ProblemRecorder.RanButDidNotFix(request.Method, response))
+        {
+            await problems.RecordAsync(agent.AgentId, agent.MachineName, agent.Version,
+                EndpointAgents.Shared.Problems.ProblemKinds.OperationFailed, request.Method,
+                $"{request.Method} finished, but the problem is still there.", "not-resolved");
+            return;
+        }
+        if (response.Error is not { } error || error.Code is 429 or 499 or 503) return;
+        // The user said no to a repair: their choice, not a bug.
+        if (error.Message == "UserDeclined") return;
         var kind = request.Method == "system.package_run"
             ? EndpointAgents.Shared.Problems.ProblemKinds.PackageFailed
             : EndpointAgents.Shared.Problems.ProblemKinds.OperationFailed;

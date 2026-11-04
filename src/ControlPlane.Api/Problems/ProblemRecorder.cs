@@ -103,6 +103,18 @@ public sealed class ProblemRecorder(
         }
     }
 
+    /// <summary>A repair that ran to its end, but its own check afterwards says nothing changed.</summary>
+    public static bool RanButDidNotFix(string method, EndpointAgents.Shared.Rpc.RpcResponse response)
+    {
+        if (response.Error is not null || response.Result is null
+            || method != "system.windows_activation_bugfix_run") return false;
+        var result = global::System.Text.Json.JsonSerializer.SerializeToElement(response.Result);
+        return result.ValueKind == global::System.Text.Json.JsonValueKind.Object
+            && (result.TryGetProperty("state", out var state) || result.TryGetProperty("State", out state))
+            && state.ValueKind == global::System.Text.Json.JsonValueKind.String
+            && state.GetString() == "CompletedUnresolved";
+    }
+
     /// <summary>An installer that failed. There is no agent yet, so the PC name is the only identity.</summary>
     public Task RecordInstallFailureAsync(InstallFailureReport report)
     {
