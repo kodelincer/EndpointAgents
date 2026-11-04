@@ -3,6 +3,7 @@
 import { useAuth } from "@/components/auth-gate";
 import { Activity, Check, CircleAlert, Clock3, Pause, Play, RefreshCw, Server,
   Waypoints, X } from "lucide-react";
+import { OverviewDashboard } from "@/components/overview-dashboard";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSystemStatus, setMaintenanceMode } from "@/lib/control-plane";
 import { useControlPlane } from "@/lib/control-plane-context";
@@ -29,8 +30,16 @@ function duration(totalSeconds?: number) {
   return days ? `${days}d ${hours}h` : hours ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
-/** Operations landing page for unified API state and recent endpoint activity. */
+/** Overview: the at-a-glance dashboard, then the control-plane service and its live activity. */
 export function OperationsOverview() {
+  return <div className="overview-page">
+    <OverviewDashboard />
+    <ServiceSection />
+  </div>;
+}
+
+/** Unified API state, command pause/resume and recent endpoint activity. */
+function ServiceSection() {
   const { agents, activity, loading, loadError } = useControlPlane();
   const [status, setStatus] = useState<ApiSystemStatus>();
   const [statusError, setStatusError] = useState<string>();
@@ -77,9 +86,9 @@ export function OperationsOverview() {
   const busy = actionState?.state === "running";
   const lifecycle = buildLifecycle(status, agents.length);
 
-  return <div className="overview-page">
-    <section className="overview-heading" aria-labelledby="overview-title">
-      <div><h1 id="overview-title">Operations overview</h1><p>API readiness, command availability, and endpoint activity from one local service.</p></div>
+  return <div className="ov-service">
+    <section className="overview-heading ov-service-heading" aria-labelledby="service-title">
+      <div><h2 id="service-title">Control plane service</h2><p>API readiness, command availability, and endpoint activity from one local service.</p></div>
       <span className="last-check"><Clock3 size={14} />{checkedAt ? `Checked ${relative(checkedAt)}` : "Checking API status"}</span>
     </section>
 

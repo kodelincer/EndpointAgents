@@ -10,7 +10,7 @@ order: 11
 
 | Page | What you do there | Who |
 | --- | --- | --- |
-| **Overview** | See the state of the control plane, endpoints online and recent activity. Admins can switch maintenance mode on or off. | Everyone reads, admins change |
+| **Overview** | A dashboard for the last 7, 14, 30 or 90 days: key-number tiles (PCs online, chats, share solved by the agent, chats waiting for the helpdesk, fixes run, approvals waiting, failing health checks, new feature requests), charts of chats and fixes per day, PCs by connection, Windows 10/11 and agent version, the most used operations and repair packages with their success rate, health rules, agent update results, and short lists of waiting approvals, chats sent to the helpdesk, feature requests and lessons. Every tile and card links to its page. Below it: the control plane service state and recent activity. Admins can switch maintenance mode on or off. Counting only, no AI. | Everyone reads, admins change |
 | **Endpoints** | The PCs that are connected. Admins can send a catalogued command; the user still sees a consent card for commands that change the PC. | Everyone reads, admins send |
 | **Devices** | What is known about each PC from earlier checks (Windows, hardware, disks, programs, drivers) and how old it is. **Read now** asks one PC again. PCs are never asked on a timer. | Everyone reads |
 | **Health rules** | Daily or weekly checks that fix common problems before users call. See [Health rules](/docs/health/). | Everyone reads, admins change |
