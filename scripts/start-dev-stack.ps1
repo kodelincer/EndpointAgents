@@ -8,6 +8,7 @@ profile (8642), the dashboard (3000), and the endpoint service + Tray. The endpo
 enrolled with a one-time code the first time; its credential is kept in
 %LOCALAPPDATA%\EndpointAgents\dev-device-credential.bin. Close a window to stop that part.
 With -Panes the parts share one Windows Terminal window named "endpointagents", split in four.
+Anything left from an earlier run is stopped first, so running this again restarts everything.
 See docs\run-dev-stack.md.
 #>
 [CmdletBinding()]
@@ -51,16 +52,78 @@ function Wait-Port([int]$Port, [string]$Name) {
     throw "$Name did not start on port $Port within $StartupTimeoutSeconds seconds; check its window."
 }
 
-if (Get-Process -Name "EndpointAgents.Service", "EndpointAgents.Tray", "EndpointAgents.TrayWeb" -ErrorAction SilentlyContinue) {
-    throw "An EndpointAgents service or Tray is already running. Close it first."
+function Stop-Tree([int]$ProcessId) {
+    # Through cmd so a process that has already gone is not an error here.
+    cmd /c "taskkill /PID $ProcessId /T /F >nul 2>&1"
 }
+
+# Closing a window does not stop everything: "next dev" survives and keeps port 3000, and a
+# Hermes gateway blocks a new one and may hold a stale connection to the control plane.
+function Stop-OldStack {
+    $ports = 5052, 8642, 3000
+    $endpointNames = "EndpointAgents.Service", "EndpointAgents.Tray", "EndpointAgents.TrayWeb"
+    $all = @(Get-CimInstance Win32_Process)
+    $owners = @(Get-NetTCPConnection -State Listen -LocalPort $ports -ErrorAction SilentlyContinue)
+    foreach ($owner in $owners) {
+        $process = $all | Where-Object ProcessId -eq $owner.OwningProcess
+        if ($process.Name -notmatch '^(ControlPlane\.Api|dotnet|node|python|hermes)\.exe$') {
+            throw "Port $($owner.LocalPort) is used by $($process.Name), which is not part of this system. Close it first."
+        }
+    }
+
+    & hermes -p endpointagents gateway stop 2>&1 | Out-Null
+
+    $stop = @{}
+    foreach ($owner in $owners) {
+        # Stop from the top of its launcher chain (npm -> next -> server) so none of it stays behind.
+        $top = $all | Where-Object ProcessId -eq $owner.OwningProcess
+        while ($parent = $all | Where-Object { $_.ProcessId -eq $top.ParentProcessId -and
+                $_.CommandLine -match 'npm|next|hermes|ControlPlane' -and $_.Name -ne 'powershell.exe' }) {
+            $top = $parent
+        }
+        $stop[[int]$top.ProcessId] = $true
+    }
+    $all | Where-Object { $_.Name -replace '\.exe$' -in $endpointNames } | ForEach-Object { $stop[[int]$_.ProcessId] = $true }
+
+    # The windows and panes of an earlier run, found by the title Start-Part gives them.
+    $terminals = @{}
+    foreach ($shell in $all | Where-Object Name -eq 'powershell.exe') {
+        $text = "$($shell.CommandLine)"
+        if ($text -match 'EncodedCommand (\S+)') { $text = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($Matches[1])) }
+        if ($text -match "WindowTitle = '(ControlPlane API|Hermes gateway|Dashboard|Endpoint service \+ tray)'") {
+            $stop[[int]$shell.ProcessId] = $true
+            $terminals[[int]$shell.ParentProcessId] = $true
+        }
+    }
+
+    foreach ($id in $stop.Keys) { Stop-Tree $id }
+    if ($stop.Count) { Write-Host "Stopped what was left from an earlier run." }
+
+    # Their panes close with them, but a window with nothing left in it can stay open.
+    Start-Sleep -Seconds 2
+    $all = @(Get-CimInstance Win32_Process)
+    foreach ($id in $terminals.Keys) {
+        $terminal = $all | Where-Object { $_.ProcessId -eq $id -and $_.Name -eq 'WindowsTerminal.exe' }
+        if ($terminal -and -not ($all | Where-Object { $_.ParentProcessId -eq $id -and $_.Name -ne 'OpenConsole.exe' })) {
+            Stop-Tree $id
+        }
+    }
+
+    $deadline = (Get-Date).AddSeconds(20)
+    while (Get-NetTCPConnection -State Listen -LocalPort $ports -ErrorAction SilentlyContinue) {
+        if ((Get-Date) -gt $deadline) { throw "Ports $($ports -join ', ') are still in use after stopping the earlier run." }
+        Start-Sleep -Seconds 1
+    }
+    if (Get-Process -Name $endpointNames -ErrorAction SilentlyContinue) {
+        throw "An EndpointAgents service or Tray could not be stopped. An installed service needs stopping as administrator."
+    }
+}
+
+Stop-OldStack
 
 Start-Part "ControlPlane API" "dotnet run --project .\src\ControlPlane.Api\ControlPlane.Api.csproj --launch-profile http"
 Wait-Port 5052 "Control plane API"
 
-# A gateway left over from an earlier run blocks a new one and may hold a stale
-# connection to the control plane, so stop it first.
-& hermes -p endpointagents gateway stop 2>&1 | Out-Null
 Start-Part "Hermes gateway" "hermes -p endpointagents gateway run"
 Start-Part "Dashboard" "Set-Location .\src\ControlPlane.Web; npm.cmd run dev"
 

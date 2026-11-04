@@ -43,7 +43,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\start-dev-stack.ps
 ```
 
 Add `-Panes` to keep all four parts in one Windows Terminal window named `endpointagents`, split
-in four. Close the window to stop everything, or a pane to stop that part.
+in four.
+
+Run it again to restart everything: it first stops whatever an earlier run left behind (its
+windows, the endpoint service and Tray, and anything on ports 5052, 8642 and 3000). Closing a
+window alone is not enough, because the dashboard server can keep running and hold port 3000.
+If one of those ports is used by a program that is not part of this system, the script stops
+and names it instead of closing it.
 
 Or by hand, each in its own PowerShell window, in this order:
 
