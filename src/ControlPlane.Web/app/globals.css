@@ -923,3 +923,6 @@ a.ov-tile:hover .ov-tile-go, a.ov-tile:focus-visible .ov-tile-go { opacity: 1; }
 .problem-actions input { width: 90px; }
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin: 12px 0; }
 .settings-grid input, .settings-grid select { width: 100%; }
+
+.problem-filters input, .problem-filters select, .settings-grid input, .settings-grid select, .problem-actions input, .problem-actions select { height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface); }
+.problem-filters input:focus-visible, .problem-filters select:focus-visible, .settings-grid input:focus-visible, .settings-grid select:focus-visible, .problem-actions input:focus-visible, .problem-actions select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
