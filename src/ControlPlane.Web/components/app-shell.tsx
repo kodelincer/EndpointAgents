@@ -76,11 +76,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       { href: "/environment/", label: "Environment", icon: MapIcon },
       { href: "/files/", label: "Packages", icon: Package }
     ] },
-    ...(can("users.manage") ? [{ title: "Administration", items: [
-      { href: "/operators/", label: "Operators", icon: ShieldCheck },
-      ...(can("devices.manage") ? [{ href: "/agent-updates/", label: "Agent updates", icon: CloudDownload }] : []),
-      { href: "/settings/", label: "Settings", icon: SettingsIcon }
-    ] }] : []),
+    { title: "Administration", items: [
+      { href: "/settings/", label: "Settings", icon: SettingsIcon },
+      ...(can("users.manage") ? [
+        { href: "/operators/", label: "Operators", icon: ShieldCheck },
+        ...(can("devices.manage") ? [{ href: "/agent-updates/", label: "Agent updates", icon: CloudDownload }] : [])
+      ] : [])
+    ] },
     { title: "Help", items: [
       { href: "/docs/", label: "User manual", icon: BookMarked }
     ] }

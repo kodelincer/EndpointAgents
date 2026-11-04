@@ -41,7 +41,8 @@ public static class EndpointActionSet
         new DefenderUpdateSignaturesAction(), new DefenderThreatsAction(), new BitLockerStatusAction(),
         new DiskHealthAction(), new SystemFileCheckAction(), new SystemImageRepairAction(),
         new SystemRepairStatusAction(), new BatteryReportAction(), new PowerSetPlanStandardAction(),
-        new PowerRestorePlanAction(), new OfficeQuickRepairAction()
+        new PowerRestorePlanAction(), new OfficeQuickRepairAction(),
+        new KmsCheckAction(), new WindowsKmsActivateAction(), new OfficeKmsActivateAction()
     ];
 
     /// <summary>Actions the Tray runs with the signed-in user's own token.</summary>

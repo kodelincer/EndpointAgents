@@ -11,6 +11,9 @@ public sealed record ServerProbeResult(string TargetId, string Label, bool NameR
 
 public sealed record ServerPortResult(int Port, bool Open, long? Milliseconds);
 
+public sealed record ServerHostPortResult(string Host, int Port, bool NameResolves, bool Open,
+    long? Milliseconds);
+
 /// <summary>
 /// Checks an environment-map target from the control-plane server itself, so the agent can
 /// tell "the service is down for everyone" from "only this PC cannot reach it". Only
@@ -63,6 +66,30 @@ public sealed class ServerProbe(IHttpClientFactory httpClients)
             : "ReachableFromServer";
         return new ServerProbeResult(target.Id, target.Label, addresses.Length > 0,
             expectedMatches, portResults, httpStatus, verdict);
+    }
+
+    /// <summary>Resolves an administrator-set host and opens one TCP port (the KMS test).</summary>
+    public static async Task<ServerHostPortResult> TestTcpAsync(string host, int port,
+        CancellationToken cancellationToken)
+    {
+        IPAddress[] addresses = [];
+        if (IPAddress.TryParse(host, out var literal)) addresses = [literal];
+        else
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(ConnectTimeout);
+                addresses = await Dns.GetHostAddressesAsync(host, timeout.Token);
+            }
+            catch (Exception exception) when (exception is SocketException
+                or OperationCanceledException or ArgumentException)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+        if (addresses.Length == 0)
+            return new ServerHostPortResult(host, port, false, false, null);
+        var result = await ConnectAsync(addresses[0], port, cancellationToken);
+        return new ServerHostPortResult(host, port, true, result.Open, result.Milliseconds);
     }
 
     private static async Task<ServerPortResult> ConnectAsync(IPAddress address, int port,

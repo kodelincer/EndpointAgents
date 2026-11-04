@@ -12,7 +12,7 @@
   "file": {
     "type": "bat",
     "fileName": "no-input-repair-sample.bat",
-    "sha256": "E4CDBC1ACB5569B58E9C8057C6512CB9BEFD5962B117D8B5106956A861F4B236",
+    "sha256": "1761C71A22AA92D49C6C0006543F338A181B918989619C05DA5A8C9898906EA1",
     "publisher": null
   },
   "compatibility": {
@@ -46,7 +46,7 @@
     "notes": "Simulation only."
   },
   "signature": {
-    "keyId": "0362074A9D82DF17",
-    "value": "N9I+2Ie0xmCRFn8BT6EALLPw2lRi/SdpOaaFNT4ncOqvSmOGHfqj3tUSh3dALwZRqdIPhC7ZzAjenEoocF2Grg=="
+    "keyId": "22891CD468B949C6",
+    "value": "ZLnlF/50SItWq+C0xCFlx3MO+qZRJqtA8RH+Ad0W/oHV/j/9p8exZCf5+b7T2f9vCHE8mx0g93GqMkeL1oFjAA=="
   }
 }

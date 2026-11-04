@@ -1,8 +1,7 @@
 "use client";
 
-import { CircleAlert, Save, Send, Settings as SettingsIcon } from "lucide-react";
+import { CircleAlert, Save, Send } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useAuth } from "@/components/auth-gate";
 import { defaultsFor, getLogServer, isUnencrypted, protocolsFor, saveLogServer, testLogServer,
   type LogServerSettings, type LogServerState, type LogServerType } from "@/lib/problems";
 
@@ -15,8 +14,7 @@ const typeHelp: Record<LogServerType, string> = {
 };
 
 /** Admins choose an outside log server. The control plane sends a copy of every problem report there. */
-export function SettingsPage() {
-  const { can } = useAuth();
+export function LogServerSection() {
   const [state, setState] = useState<LogServerState>();
   const [draft, setDraft] = useState<LogServerSettings>();
   const [token, setToken] = useState("");
@@ -39,10 +37,6 @@ export function SettingsPage() {
     return () => { window.clearTimeout(initial); window.clearInterval(timer); };
   }, [load]);
 
-  if (!can("users.manage"))
-    return <div className="file-page"><section className="file-empty"><h2>Admins only</h2>
-      <p>Only admins change these settings.</p></section></div>;
-
   const update = (change: Partial<LogServerSettings>) => draft && setDraft({ ...draft, ...change });
   const run = async (action: () => Promise<void>) => {
     setBusy(true); setNote(undefined); setError(undefined);
@@ -62,13 +56,7 @@ export function SettingsPage() {
   });
   const status = state?.status;
 
-  return <div className="file-page">
-    <section className="file-heading" aria-labelledby="settings-title">
-      <div><div className="file-heading-mark"><SettingsIcon size={17} /></div><div>
-        <h1 id="settings-title">Settings</h1>
-        <p>Settings for the whole control plane.</p></div></div>
-    </section>
-
+  return <>
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} />
       <div><strong>That did not work</strong><span>{error}</span></div></div>}
     {status?.down && <div className="inline-error" role="alert"><CircleAlert size={17} />
@@ -115,5 +103,5 @@ export function SettingsPage() {
       <button className="secondary-button" disabled={busy || !draft.host.trim()} onClick={() => void test()}><Send size={14} />Send test</button>
       <button className="primary-button" disabled={busy} onClick={() => void save()}><Save size={14} />{busy ? "Working…" : "Save"}</button>
     </div></article></section>}
-  </div>;
+  </>;
 }
