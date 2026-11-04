@@ -12,9 +12,9 @@ When the agent is on many PCs, most problems never reach you as a call: a user j
 
 | Kind | What it means | Who notices |
 | --- | --- | --- |
-| Crash | The service, the Tray or the updater stopped on an error in our code | The PC |
+| Crash | The service, the Tray or the updater stopped on an error in our code, including an instant crash that Windows recorded in its log. These can arrive a few minutes late, or after the next restart | The PC |
 | Logged error | Our code wrote an error to its log | The PC |
-| Failed operation | An operation failed or timed out on a PC | The control plane |
+| Failed operation | An operation failed or timed out on a PC, or a repair finished but its own check says the problem is still there. A user saying no to a repair does not count | The control plane |
 | Failed package | A repair package could not run or failed | The control plane |
 | Health check did not run | A health rule could not check a PC | The control plane |
 | Update rolled back | A new agent version failed and the PC went back | The control plane |

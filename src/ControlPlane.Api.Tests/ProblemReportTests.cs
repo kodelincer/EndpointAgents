@@ -352,6 +352,20 @@ public sealed class ProblemStoreTests : IDisposable
     }
 }
 
+public sealed class RepairOutcomeTests
+{
+    private static EndpointAgents.Shared.Rpc.RpcResponse Answer(string state) =>
+        EndpointAgents.Shared.Rpc.RpcResponse.Success("1", new { State = state });
+
+    [Fact]
+    public void A_repair_that_changed_nothing_counts_as_a_problem()
+    {
+        Assert.True(ProblemRecorder.RanButDidNotFix("system.windows_activation_bugfix_run", Answer("CompletedUnresolved")));
+        Assert.False(ProblemRecorder.RanButDidNotFix("system.windows_activation_bugfix_run", Answer("Resolved")));
+        Assert.False(ProblemRecorder.RanButDidNotFix("endpoint.get_info", Answer("CompletedUnresolved")));
+    }
+}
+
 public sealed class ProblemViewTests
 {
     private static ProblemOccurrence Occurrence(string agent, string os, string version, string model) =>
