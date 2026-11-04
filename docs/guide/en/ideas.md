@@ -37,6 +37,7 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | N | Supervised learning from solved problems | AI agent | 2 | Idea | 2026-11-03 |
 | O | Light, read-only event log checks | Helpdesk tools | 2 | Idea | 2026-11-03 |
 | P | Network OS installation for new PCs | Later | 4 | Idea | 2026-11-03 |
+| Q | Agent problem reports from pilot PCs | Before a wide rollout | 1 | Idea | 2026-11-04 |
 
 Ideas A to L come from studying what the SCCM client and the Intune agent do (from Microsoft's public documentation only, never from their code), and what our system is still missing.
 
@@ -61,6 +62,17 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **What:** work for a PC that is off waits on the server, with an expiry time, and runs when the PC connects. Results the PC could not send are kept on the PC and sent after it reconnects.
 - **Why:** today commands reach only PCs that are online at that moment, and a result can be lost if the network drops during a fix.
 - **Idea from:** SCCM's way of keeping messages on the PC until the server is reachable.
+
+### Q. Agent problem reports from pilot PCs
+
+- **What:** every PC sends the control plane a short report when something goes wrong in *our own* agent, and a **Problems** page on the dashboard shows them grouped, so the team knows what to fix in the next version. A report is sent for: a crash of the service, the Tray or the updater (with where in our code it broke); an error our code logs; an operation or package that failed or timed out (operation name, package name and version, return code, how long it ran); a health rule check that could not run; and an update that was rolled back. Each report carries the agent version, the PC name, Windows 10 or 11 and its build, and the time.
+- **How it is kept small:** the same problem is sent once with a counter ("this happened 37 times since 09:10"), not 37 times. The PC keeps unsent reports in a small file (at most 2 MB, the oldest are dropped first) and sends them when it connects again, so nothing is lost when the network or the control plane is down. At most 50 reports per PC per hour. The control plane keeps reports for 90 days.
+- **Private data:** every message is cleaned on the PC before it is sent (user names, folders, e-mail addresses and share paths are cut, with the same cleaner the event log tools use). Never sent: chat text, passwords, file contents, the user's documents.
+- **The Problems page:** one row per kind of problem (same error at the same place in the code), with how many PCs and which versions have it, first and last seen. Filters by version, PC and kind. A row can be marked **Fixed in version X**; if it comes back on that version or later, it opens again by itself. A row can be copied as text for a developer.
+- **No AI:** collecting, grouping and showing reports uses no AI at all, so it costs no tokens.
+- **Builds on what exists:** the PC already writes its own events to a local journal (`service-events.jsonl`, `tray-events.jsonl`) and the Windows event log, and the self-update already counts crashes in its first 24 hours and reports rollbacks to the **Agent updates** page. This idea adds the sending, the counting and the page; it does not replace them.
+- **Why:** for a pilot on about 100 PCs, nobody should have to wait for a user to call to learn that a version is broken, and developers need the exact place and version of an error to fix it.
+- **Idea from:** Reza, 2026-11-04, before the pilot.
 
 ## Proactive care
 
