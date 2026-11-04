@@ -378,6 +378,8 @@ FodyWeavers.xsd
 .local/screenshots/
 .local/*.log
 .local/*.err
+.local/problems.db*
+.local/problem-logs/
 
 # Impeccable decision-page state
 .impeccable/questions/

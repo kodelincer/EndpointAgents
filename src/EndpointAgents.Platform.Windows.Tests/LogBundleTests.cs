@@ -86,6 +86,13 @@ public sealed class LogBundleTests
     public void Windows_11_is_told_apart_by_its_build(string? build, string? expected) =>
         Assert.Equal(expected, WindowsDeviceFacts.OsName(build));
 
+    [Theory]
+    [InlineData("System Product Name", null)]
+    [InlineData("To be filled by O.E.M.", null)]
+    [InlineData("OptiPlex 7080", "OptiPlex 7080")]
+    public void Board_blanks_are_not_a_model(string value, string? expected) =>
+        Assert.Equal(expected, WindowsDeviceFacts.RealValue(value));
+
     private sealed class NoToken : IEndpointArtifactAuthorizationProvider
     {
         public Task<string?> GetBearerTokenAsync(CancellationToken cancellationToken) => Task.FromResult<string?>(null);

@@ -25,9 +25,14 @@ public static class WindowsDeviceFacts
             Value(CurrentVersionKey, "DisplayVersion") ?? Value(CurrentVersionKey, "ReleaseId"),
             update is int number && build is not null ? $"{build}.{number}" : build,
             RuntimeInformation.OSArchitecture.ToString(),
-            Value(BiosKey, "SystemManufacturer"),
-            Value(BiosKey, "SystemProductName"));
+            RealValue(Value(BiosKey, "SystemManufacturer")),
+            RealValue(Value(BiosKey, "SystemProductName")));
     }
+
+    /// <summary>Self-built PCs carry the board maker's blanks, which must not look like one model.</summary>
+    public static string? RealValue(string? value) =>
+        value is null or "" or "System Product Name" or "System manufacturer" or "To be filled by O.E.M."
+            or "Default string" or "Not Specified" or "None" ? null : value;
 
     /// <summary>Windows 11 still calls itself Windows 10 in the registry; the build tells them apart.</summary>
     public static string? OsName(string? build) =>
