@@ -342,6 +342,11 @@ public sealed class EnvironmentValidationTests
     [InlineData("activation.kmsPort", "0", false)]
     [InlineData("activation.kmsPort", "70000", false)]
     [InlineData("activation.kmsPort", "-1", false)]
+    [InlineData("time.ntpServer", "time.corp.local", true)]
+    [InlineData("time.ntpServer", "172.16.0.2", true)]
+    [InlineData("time.ntpServer", "172.16.0.2:123", false)]
+    [InlineData("time.ntpServer", "a.corp.local,0x9 b.corp.local", false)]
+    [InlineData("time.ntpServer", "time & calc", false)]
     public void SettingsAreValidated(string key, string value, bool valid) =>
         Assert.Equal(valid, ActionEndpoints.ValidateSetting(key, value) is null);
 
@@ -381,6 +386,36 @@ public sealed class EnvironmentValidationTests
         Assert.Equal(ActionTier.SafeFix, EndpointActionCatalog.Find("windows.kms_activate")!.Tier);
         Assert.Equal(ActionTier.SafeFix, EndpointActionCatalog.Find("office.kms_activate")!.Tier);
         Assert.False(ActionRunner.NeedsApproval(EndpointActionCatalog.Find("office.kms_activate")!, null));
+    }
+}
+
+public sealed class TimeCorrectionTests
+{
+    [Fact]
+    public void NtpSettingIsReadTheSameWayOnBothSides()
+    {
+        Assert.False(NtpSettings.TryRead(new Dictionary<string, string>(), out _));
+        Assert.True(NtpSettings.TryRead(new Dictionary<string, string>
+            { [ActionSettings.NtpServer] = " time.corp.local " }, out var host));
+        Assert.Equal("time.corp.local", host);
+        Assert.False(NtpSettings.TryRead(new Dictionary<string, string>
+            { [ActionSettings.NtpServer] = "time.corp.local,0x9" }, out _));
+        Assert.False(NtpSettings.TryRead(new Dictionary<string, string>
+            { [ActionSettings.NtpServer] = "a b" }, out _));
+    }
+
+    [Fact]
+    public void SetNtpIsASafeFixThatRunsWithoutTheTrayAndUsesOnlyTheSetting()
+    {
+        var definition = EndpointActionCatalog.Find("time.set_ntp")!;
+        Assert.Equal(ActionTier.SafeFix, definition.Tier);
+        Assert.Equal(ActionRunAs.System, definition.RunAs);
+        Assert.Empty(definition.Parameters);
+        Assert.Equal([ActionSettings.NtpServer], definition.UsesSettings);
+        Assert.Equal("time.status", definition.Verify!.ActionId);
+        Assert.False(ActionRunner.NeedsApproval(definition, null));
+        Assert.Contains(ActionSettings.NtpServer,
+            EndpointActionCatalog.Find("time.status")!.UsesSettings!);
     }
 }
 

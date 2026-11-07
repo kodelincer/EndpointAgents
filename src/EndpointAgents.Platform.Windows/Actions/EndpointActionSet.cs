@@ -42,7 +42,8 @@ public static class EndpointActionSet
         new DiskHealthAction(), new SystemFileCheckAction(), new SystemImageRepairAction(),
         new SystemRepairStatusAction(), new BatteryReportAction(), new PowerSetPlanStandardAction(),
         new PowerRestorePlanAction(), new OfficeQuickRepairAction(),
-        new KmsCheckAction(), new WindowsKmsActivateAction(), new OfficeKmsActivateAction()
+        new KmsCheckAction(), new WindowsKmsActivateAction(), new OfficeKmsActivateAction(),
+        new TimeSetNtpAction()
     ];
 
     /// <summary>Actions the Tray runs with the signed-in user's own token.</summary>

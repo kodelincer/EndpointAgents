@@ -55,7 +55,7 @@ An admin can move any Fix or Disrupt operation to **IT** on **Capabilities → A
 | --- | --- | --- |
 | Internal web app does not open | `network.triage`, `web.probe` | Built |
 | Certificate warning | `cert.check_trust` | Built |
-| Wrong clock breaks HTTPS | `time.status`, `time.resync` | Built |
+| Wrong clock breaks HTTPS | `time.status`, `time.resync`, `time.set_ntp` | Built |
 | Browser slow or old pages | `browser.inventory`, `browser.clear_cache`, the Chrome reset package | Built |
 | A work site on the internet (bank, tax, government) does not open | `site.check_access` for a site on your **Allowed work sites** list | Built |
 | The site is blocked by the company filter | `request_helpdesk_action` kind `site-access` (Person) | Built |

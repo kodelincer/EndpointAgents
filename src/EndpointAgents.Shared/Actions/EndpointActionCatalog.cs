@@ -28,9 +28,28 @@ public static class ActionSettings
     /// <summary>The KMS server's TCP port; 1688 when empty.</summary>
     public const string KmsPort = "activation.kmsPort";
 
+    /// <summary>The organisation's NTP (time) server for PCs outside a domain: a host name or IPv4 address (no port).</summary>
+    public const string NtpServer = "time.ntpServer";
+
     public static IReadOnlyList<string> All { get; } =
         [ProxyMode, ProxyPacUrl, ProxyServer, ProxyBypass, StandardTimeZone,
-         RootCaThumbprints, InternalDnsSuffixes, DnsFromDhcp, IpFromDhcp, PowerPlan, KmsHost, KmsPort];
+         RootCaThumbprints, InternalDnsSuffixes, DnsFromDhcp, IpFromDhcp, PowerPlan, KmsHost, KmsPort,
+         NtpServer];
+}
+
+/// <summary>Reads the organisation NTP server setting the same way on the server and the endpoint.</summary>
+public static class NtpSettings
+{
+    /// <summary>True when a valid host name or IPv4 address is configured.</summary>
+    public static bool TryRead(IReadOnlyDictionary<string, string>? settings, out string host)
+    {
+        host = "";
+        if (settings is null || !settings.TryGetValue(ActionSettings.NtpServer, out var value)
+            || !EndpointActionValidator.IsValidHost(value?.Trim()))
+            return false;
+        host = value!.Trim();
+        return true;
+    }
 }
 
 /// <summary>Reads the organisation KMS setting the same way on the server and the endpoint.</summary>
@@ -284,13 +303,19 @@ public static class EndpointActionCatalog
             [], TimeoutSeconds: 45),
         new("time.status", ActionAreas.Domain, ActionTier.Look, ActionRunAs.System,
             "Clock status", "وضعیت ساعت",
-            "Local time, time zone, the time service state and the clock difference to the domain controller.",
-            "TimeZone, MatchesStandardZone, TimeServiceRunning, ClockOffsetSeconds, ClockOk.",
-            [], TimeoutSeconds: 20, UsesSettings: [ActionSettings.StandardTimeZone]),
+            "Local time, time zone, the time service state and the clock difference to the domain controller, or to the organisation NTP server on a PC outside a domain.",
+            "LocalTime, TimeZone, MatchesStandardZone, TimeServiceState, ClockSource (domain, ntp or none), ClockOffsetSeconds (against that source), NtpConfigured, UsesOrganisationNtp, ClockOk.",
+            [], TimeoutSeconds: 20, UsesSettings: [ActionSettings.StandardTimeZone, ActionSettings.NtpServer]),
         new("time.resync", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.System,
             "Sync the clock", "همگام‌سازی ساعت",
             "Starts the Windows Time service if needed and syncs the clock with the domain.",
             "Done.", [], TimeoutSeconds: 45, Verify: new("time.status")),
+        new("time.set_ntp", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.System,
+            "Set the clock from the organisation time server", "تنظیم ساعت با سرور زمان سازمان",
+            "For a PC that is not in a domain: points the Windows Time service at the organisation NTP server and syncs the clock, even when the date is far off (a dead clock battery, a wrong date after a long power-off). Domain PCs keep taking time from the domain controller, so this does nothing for them.",
+            "Done when the clock now agrees with the server, NotNeeded (domain PC, or already set and in sync), Blocked (no NTP server set, or the server does not answer from this PC) or Failed.",
+            [], TimeoutSeconds: 90, Verify: new("time.status"),
+            UsesSettings: [ActionSettings.NtpServer]),
         new("gpo.refresh_computer", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.System,
             "Refresh computer policy", "به‌روزرسانی سیاست‌های کامپیوتر",
             "Re-applies computer Group Policy. Never signs the user out or restarts.",

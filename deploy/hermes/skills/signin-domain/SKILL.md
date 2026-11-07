@@ -14,7 +14,7 @@ reset, administrator rights, domain rejoin) goes through `request_helpdesk_actio
 1. `check_user_account`: disabled, locked out, password expired or must change. If it is
    not set up, continue with the PC checks.
 2. `domain.health`: domain membership, domain controller found, secure channel.
-3. `time.status`: clock offset from the domain controller and time zone.
+3. `time.status`: clock offset (from the domain controller, or from the organisation time server on a PC outside a domain; `ClockSource` says which), time zone and whether the PC follows the organisation time server.
 
 ## Decide
 
@@ -25,6 +25,7 @@ reset, administrator rights, domain rejoin) goes through `request_helpdesk_actio
 | Password expired or must change | Tell the user to press Ctrl+Alt+Del and choose "Change a password". If that fails or they forgot it, `request_helpdesk_action` with kind `password-reset`. |
 | An approved install needs administrator rights | `request_helpdesk_action` with kind `local-admin` and the program's name. |
 | Clock off by more than 2 minutes | `time.resync` (SafeFix). |
+| Clock or date far off, a PC outside a domain (`ClockSource` ntp, or `time.resync` did not fix it; typical after a dead clock battery) | `time.set_ntp` (SafeFix): points Windows Time at the organisation time server and corrects even a large jump. NotNeeded on domain PCs; Blocked when no time server is set or it does not answer, then escalate. |
 | Wrong time zone | `timezone.set_standard` (SafeFix, undoable by the helpdesk). |
 | No domain controller found | Follow network-support (`network.status`); do not touch the domain settings. |
 | Secure channel broken ("trust relationship") | `request_helpdesk_action` with kind `trust-repair`; a domain administrator rejoins the PC. |

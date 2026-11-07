@@ -66,7 +66,7 @@ public static class HealthCheckCatalog
                 return new(hours < days * 24, text);
             }),
         new("clock-sync", "Clock out of sync", "ساعت ناهماهنگ",
-            "The PC clock differs from the domain controller (sign-in and Kerberos fail when it is off by minutes).",
+            "The PC clock differs from the domain controller, or from the organisation time server on a PC outside a domain (sign-in and Kerberos fail when it is off by minutes).",
             "time.status", [], null, "", ["time.resync"], null,
             _ => NoArguments, (data, _) => Bool(data, "clockOk") == false
                 ? new(false, $"Clock off by {Number(data, "clockOffsetSeconds") ?? 0} s")

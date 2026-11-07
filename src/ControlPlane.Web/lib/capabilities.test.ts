@@ -66,3 +66,19 @@ describe("kms settings input", () => {
     expect(kmsInputError("", "1688")).toMatch(/before its port/);
   });
 });
+
+describe("ntp settings input", () => {
+  it("accepts a host name, an IPv4 address or nothing", async () => {
+    const { ntpInputError } = await import("./capabilities");
+    expect(ntpInputError("172.16.0.2")).toBeUndefined();
+    expect(ntpInputError("time.corp.local")).toBeUndefined();
+    expect(ntpInputError("")).toBeUndefined();
+  });
+  it("rejects ports, options and commands", async () => {
+    const { ntpInputError } = await import("./capabilities");
+    expect(ntpInputError("time.corp.local:123")).toMatch(/host name/);
+    expect(ntpInputError("a.example,0x9 b.example")).toMatch(/host name/);
+    expect(ntpInputError("time & calc")).toMatch(/host name/);
+    expect(ntpInputError("300.1.1.1")).toMatch(/host name/);
+  });
+});

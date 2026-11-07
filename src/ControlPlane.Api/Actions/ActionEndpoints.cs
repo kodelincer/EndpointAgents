@@ -9,6 +9,7 @@ public sealed record SkillReviewRequest(int? Version, string? Note);
 public sealed record SkillLintRequest(string Name, string Description, string Body);
 public sealed record MissingActionRequest(string Summary, string? Details);
 public sealed record KmsSettingsInput(string? Host, string? Port);
+public sealed record NtpSettingsInput(string? Host);
 
 /// <summary>
 /// Operator (loopback dashboard) routes for the capabilities page, the environment map,
@@ -212,6 +213,39 @@ public static partial class ActionEndpoints
         })
             .RequireAuthorization(OperatorPolicies.Admin);
 
+        // ---------------- Settings: organisation NTP (time) server ----------------
+        app.MapGet("/api/settings/ntp", async (ActionStore store,
+            CancellationToken cancellationToken) =>
+        {
+            var values = await store.GetSettingsAsync(cancellationToken);
+            return Results.Ok(new
+            {
+                host = values.GetValueOrDefault(ActionSettings.NtpServer) ?? "",
+                configured = NtpSettings.TryRead(values, out _)
+            });
+        });
+        app.MapPut("/api/settings/ntp", async (NtpSettingsInput input, ActionStore store,
+            CancellationToken cancellationToken) =>
+        {
+            var values = new Dictionary<string, string?>
+                { [ActionSettings.NtpServer] = input.Host?.Trim() };
+            if (ValidateSetting(ActionSettings.NtpServer, input.Host) is { } error)
+                return Results.BadRequest(new { message = error });
+            await store.SaveSettingsAsync(values, cancellationToken);
+            return Results.NoContent();
+        })
+            .RequireAuthorization(OperatorPolicies.Admin);
+        app.MapPost("/api/settings/ntp/test", async (NtpSettingsInput input,
+            CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(input.Host))
+                return Results.BadRequest(new { message = "Enter the NTP server first." });
+            if (ValidateSetting(ActionSettings.NtpServer, input.Host) is { } error)
+                return Results.BadRequest(new { message = error });
+            return Results.Ok(await ServerProbe.TestNtpAsync(input.Host.Trim(), cancellationToken));
+        })
+            .RequireAuthorization(OperatorPolicies.Admin);
+
         // ---------------- Incidents ----------------
         app.MapGet("/api/incidents", async (bool? activeOnly, ActionStore store,
             CancellationToken cancellationToken) =>
@@ -388,6 +422,8 @@ public static partial class ActionEndpoints
                 "The KMS server must be a host name or IPv4 address, without a port.",
             ActionSettings.KmsPort when !KmsSettings.TryParsePort(value, out _) =>
                 "The KMS port must be a number from 1 to 65535.",
+            ActionSettings.NtpServer when !EndpointActionValidator.IsValidHost(value) =>
+                "The NTP server must be a host name or IPv4 address, without a port.",
             _ => null
         };
     }

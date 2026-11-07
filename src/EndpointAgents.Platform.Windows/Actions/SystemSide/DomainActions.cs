@@ -129,20 +129,33 @@ public sealed class TimeStatusAction : IEndpointAction
         var standard = invocation.Setting(ActionSettings.StandardTimeZone);
         var zone = TimeZoneInfo.Local.Id;
         double? offset = null;
+        var source = "none";
         if (DomainLookup.JoinedDomain() is { } domain)
         {
             var controller = await DomainLookup.LocateAsync(domain, false, cancellationToken);
             if (controller.Address is { } address)
+            {
+                source = "domain";
                 offset = await NetworkProbes.ClockOffsetSecondsAsync(address,
                     TimeSpan.FromSeconds(3), cancellationToken);
+            }
+        }
+        // A PC outside a domain (or one that cannot find its controller) is checked against the
+        // organisation NTP server when the helpdesk set one.
+        var ntpConfigured = NtpSettings.TryRead(invocation.Settings, out var ntpHost);
+        if (offset is null && ntpConfigured)
+        {
+            source = "ntp";
+            offset = await SntpClient.ClockOffsetSecondsAsync(ntpHost, TimeSpan.FromSeconds(3),
+                cancellationToken);
         }
         var service = DomainFacts.ServiceState("W32Time");
         bool? matches = standard is null ? null
             : zone.Equals(standard, StringComparison.OrdinalIgnoreCase);
-        bool? clockOk = offset is null ? null : Math.Abs(offset.Value) < 120;
+        bool? clockOk = offset is null ? null : Math.Abs(offset.Value) < TimeSetup.OkSeconds;
         return EndpointActionResult.Ok(
             matches == false ? "The time zone is not the organisation standard."
-            : clockOk == false ? "The clock is off compared with the domain."
+            : clockOk == false ? "The clock is off compared with the reference time source."
             : "The clock and time zone look right.",
             new
             {
@@ -150,7 +163,10 @@ public sealed class TimeStatusAction : IEndpointAction
                 TimeZone = zone,
                 MatchesStandardZone = matches,
                 TimeServiceState = service,
+                ClockSource = source,
                 ClockOffsetSeconds = offset,
+                NtpConfigured = ntpConfigured,
+                UsesOrganisationNtp = ntpConfigured && TimeSetup.UsesNtpServer(ntpHost),
                 ClockOk = clockOk
             });
     }

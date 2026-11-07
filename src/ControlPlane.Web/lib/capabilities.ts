@@ -234,14 +234,32 @@ export const saveKmsSettings = (host: string, port: string) =>
 export const testKmsServer = (host: string, port: string) =>
   request<KmsTestResult>("/api/settings/kms/test", "POST", { host: host.trim(), port: port.trim() });
 
+export interface NtpSettings { host: string; configured: boolean }
+export interface NtpTestResult { host: string; nameResolves: boolean; answers: boolean; offsetSeconds: number | null; milliseconds: number | null }
+
+export const getNtpSettings = () => request<NtpSettings>("/api/settings/ntp");
+export const saveNtpSettings = (host: string) =>
+  request<void>("/api/settings/ntp", "PUT", { host: host.trim() });
+export const testNtpServer = (host: string) =>
+  request<NtpTestResult>("/api/settings/ntp/test", "POST", { host: host.trim() });
+
+/** A DNS host name or IPv4 address, the same rule as the server. */
+function isHostName(name: string) {
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(name);
+  return ipv4 ? ipv4.slice(1).every(part => Number(part) <= 255)
+    : name.length <= 253 && /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(name);
+}
+
+export function ntpInputError(host: string): string | undefined {
+  const name = host.trim();
+  return name && !isHostName(name) ? "The NTP server must be a host name or IPv4 address, without a port." : undefined;
+}
+
 /** Same rule as the server: a DNS host name or IPv4 address, and an optional port 1-65535. */
 export function kmsInputError(host: string, port: string): string | undefined {
   const name = host.trim(), portText = port.trim();
   if (!name) return portText ? "Set the KMS server before its port." : undefined;
-  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(name);
-  const validHost = ipv4 ? ipv4.slice(1).every(part => Number(part) <= 255)
-    : name.length <= 253 && /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(name);
-  if (!validHost) return "The KMS server must be a host name or IPv4 address, without a port.";
+  if (!isHostName(name)) return "The KMS server must be a host name or IPv4 address, without a port.";
   if (portText && (!/^\d{1,5}$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535))
     return "The KMS port must be a number from 1 to 65535.";
   return undefined;

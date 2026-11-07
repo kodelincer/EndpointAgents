@@ -122,7 +122,7 @@ The most frequent ticket in every company. The agent should always split it into
 | "Is this site blocked on purpose?" | `site.check_access`: probes a site from the **Allowed work sites** list as the user's browser would and says when a filter page answered | A+L | Look | Built |
 | User needs a new site opened | not a PC fix: `request_helpdesk_action` kind `site-access` puts a request on the Approvals page | S | IT | Built |
 | Certificate warning on an internal site | `cert.check_trust` (org root CAs present), `cert.install_org_roots` (only thumbprints in the environment map, from the control plane) | A | Look/Fix | Built/Batch 3 |
-| Wrong date/time breaks HTTPS | `time.status`, `time.resync` | A | Fix | Built |
+| Wrong date/time breaks HTTPS | `time.status`, `time.resync`, `time.set_ntp` | A | Fix | Built |
 | Keeps asking for a password on an intranet site | `zones.status` (is the site in Local intranet / Trusted), `zones.add_company_site` (environment-map web apps only) | A | Look/Fix | Built |
 | Old app needs IE mode / compatibility | `edge.ie_mode_status`; the site list itself stays in Group Policy | A | Look | Batch 3 |
 | Browser broken, slow, pop-ups | `browser.inventory`, `browser.clear_cache` | A | Fix | Built |
@@ -294,7 +294,7 @@ Teams, OneDrive and Microsoft 365 sign-in are not part of this system (the earli
 | --- | --- | --- | --- | --- |
 | Remote Desktop to my office PC fails | `rdp.status` (enabled, listening, firewall rule, user in Remote Desktop Users) | A | Look | Batch 3 |
 | The helpdesk wants to see my screen | start the company's remote-support tool from the software catalog (Quick Assist, AnyDesk, ...) — the user accepts in that tool | P | Disrupt | Batch 3 |
-| Clock or time wrong | `time.status`, `time.resync` | A | Fix | Built |
+| Clock or time wrong | `time.status`, `time.resync`, `time.set_ntp` | A | Fix | Built |
 
 ## 15. Information the user (or the helpdesk) asks for
 

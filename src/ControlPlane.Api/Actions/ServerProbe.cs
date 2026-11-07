@@ -14,6 +14,10 @@ public sealed record ServerPortResult(int Port, bool Open, long? Milliseconds);
 public sealed record ServerHostPortResult(string Host, int Port, bool NameResolves, bool Open,
     long? Milliseconds);
 
+/// <summary>Answer of one SNTP request; OffsetSeconds is server time minus the server PC's clock.</summary>
+public sealed record ServerNtpResult(string Host, bool NameResolves, bool Answers,
+    double? OffsetSeconds, long? Milliseconds);
+
 /// <summary>
 /// Checks an environment-map target from the control-plane server itself, so the agent can
 /// tell "the service is down for everyone" from "only this PC cannot reach it". Only
@@ -90,6 +94,30 @@ public sealed class ServerProbe(IHttpClientFactory httpClients)
             return new ServerHostPortResult(host, port, false, false, null);
         var result = await ConnectAsync(addresses[0], port, cancellationToken);
         return new ServerHostPortResult(host, port, true, result.Open, result.Milliseconds);
+    }
+
+    /// <summary>Resolves an administrator-set host and sends it one SNTP request (the NTP test).</summary>
+    public static async Task<ServerNtpResult> TestNtpAsync(string host,
+        CancellationToken cancellationToken)
+    {
+        if (!IPAddress.TryParse(host, out _))
+            try
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(ConnectTimeout);
+                if ((await Dns.GetHostAddressesAsync(host, timeout.Token)).Length == 0)
+                    return new ServerNtpResult(host, false, false, null, null);
+            }
+            catch (Exception exception) when (exception is SocketException
+                or OperationCanceledException or ArgumentException)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                return new ServerNtpResult(host, false, false, null, null);
+            }
+        var watch = Stopwatch.StartNew();
+        var offset = await SntpClient.ClockOffsetSecondsAsync(host, ConnectTimeout, cancellationToken);
+        return new ServerNtpResult(host, true, offset is not null, offset,
+            offset is null ? null : watch.ElapsedMilliseconds);
     }
 
     private static async Task<ServerPortResult> ConnectAsync(IPAddress address, int port,
