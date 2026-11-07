@@ -24,6 +24,23 @@ public sealed class EndpointArtifactTransport(
         };
     }
 
+    /// <summary>The one upload a PC makes: the logs an admin asked for, to a fixed route.</summary>
+    public async Task<HttpRequestMessage> CreateLogUploadRequestAsync(string requestId, HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        var token = await authorization.GetBearerTokenAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(token))
+            throw new InvalidOperationException(
+                "An enrolled endpoint device credential is required to upload logs.");
+        var request = new HttpRequestMessage(HttpMethod.Put,
+            new Uri(hubUri, $"{EndpointAgents.Shared.Problems.AgentLogRoutes.Root}/{requestId}"))
+        {
+            Content = content
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        return request;
+    }
+
     public async Task<HttpRequestMessage> CreateGetRequestAsync(string path,
         CancellationToken cancellationToken)
     {

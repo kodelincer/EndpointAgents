@@ -65,3 +65,6 @@
 # Hash-pinned BAT artifacts must keep identical bytes in every checkout.
 *.bat text eol=crlf
 
+
+# Package supporting files are hash-pinned: keep their bytes exactly as reviewed.
+deploy/control-plane/FileRepository/packages/*/files/** -text

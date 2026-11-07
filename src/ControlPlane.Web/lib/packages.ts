@@ -54,6 +54,17 @@ export function describeRun(item: BatPackage) {
   return [`${program}${args}, hidden, as the endpoint service.`, input];
 }
 
+const riskText: Record<string, string> = {
+  "self-elevation": "relaunches itself with administrator rights (the service is already admin)",
+  "embedded-payload": "runs code carried inside the file (covered by its hash and your signature)"
+};
+
+/** Risks the reviewer accepted for this package, in plain language. */
+export function acceptedRiskLines(item: BatPackage) {
+  return (item.review?.acceptedRisks ?? []).map(risk =>
+    `Accepted by the reviewer: ${riskText[risk] ?? risk}.`);
+}
+
 /** How the endpoint decides that a run succeeded. */
 export function finishRules(playbook: Playbook, defaultGraceSeconds: number) {
   const codes = playbook.successExitCodes?.length ? playbook.successExitCodes : [0];

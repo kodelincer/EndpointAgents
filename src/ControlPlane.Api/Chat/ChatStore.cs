@@ -901,6 +901,7 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
             while (await historyReader.ReadAsync(cancellationToken))
                 history.Add(ReadMessage(historyReader));
             await transaction.CommitAsync(cancellationToken);
+            Runs.Register(runId);
 
             return new ChatRunLease(runId, conversationId, agentId, userSid, userName,
                 machineName, userMessageId, capability, attempt, history);
@@ -1147,7 +1148,8 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             var scope = await ResolveCapabilityAsync(connection, (SqliteTransaction)transaction,
                 capability, cancellationToken);
-            if (scope is null)
+            // A request the user stopped must not leave a new proposal behind.
+            if (scope is null || Runs.Get(scope.RunId)?.StopRequested == true)
             {
                 await transaction.RollbackAsync(cancellationToken);
                 return null;

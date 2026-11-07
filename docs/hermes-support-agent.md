@@ -184,7 +184,9 @@ file to `C:\ProgramData\EndpointAgents\Hermes\SOUL.md`. ControlPlane sends only
 run-specific capability and retry data; it does not read or synchronize
 `SOUL.md` at runtime.
 
-Promote the reviewed `office-support`, `windows-support` and `repair-packages` skills. The Windows skill
+Promote every reviewed skill in the `$Skills` list of `scripts\sync-hermes-profile.ps1`
+(office, Windows, repair packages, software install, drivers and devices, VPN, network,
+printing and the other symptom skills). The Windows skill
 allows general Windows intake but restricts automated remediation to activation.
 
 Do not promote `ibsng-support` until IBSng tools and actions are deliberately
@@ -193,8 +195,8 @@ tool permission that ControlPlane or the Hermes MCP allowlist has withheld.
 
 When using the service layout from this guide, the manual filesystem target is
 `C:\ProgramData\EndpointAgents\Hermes\skills`. Stop Hermes, replace only the
-reviewed `office-support`, `windows-support` and `repair-packages` skill folders, then start Hermes
-and verify that all three appear in the selected API-server profile and that the
+reviewed skill folders from that list, then start Hermes
+and verify that they all appear in the selected API-server profile and that the
 profile uses the promoted `SOUL.md`. The same promotion can be performed through
 Hermes Desktop if it manages that exact profile.
 
@@ -274,7 +276,11 @@ Only these tools are visible to Hermes:
 - `propose_endpoint_action`
 - `mark_problem_resolved`
 - `escalate_to_helpdesk`
+- `request_helpdesk_action` (people-only work: unlock, password, temporary admin, BitLocker key, site access, domain rejoin; waits on the Approvals page, nothing runs on the PC)
 - `record_feature_request`
+- `list_endpoint_actions`, `list_environment_targets`, `run_endpoint_action`,
+  `check_known_incidents`, `recent_reports_from_others`, `probe_from_server`,
+  `check_user_account`, `note_skill_used` (general actions; see `docs/endpoint-actions.md`)
 
 `mark_problem_resolved` only sets the run's own conversation to Resolved. The skills ask the user
 whether the problem is solved and call it only after a clear yes; a later user message reopens
@@ -347,4 +353,8 @@ Production endpoint conversations never edit skills or memory. Edit proposed
 skill revisions under `deploy/hermes/skills`, review and test the Git diff, and
 then manually promote the approved folders to the dedicated Hermes profile.
 Keep skill-write approval enabled so any model-requested write is staged rather
-than applied automatically. Cross-user memory remains disabled.
+than applied automatically. Cross-user memory remains disabled. The profile also sets
+`skills.creation_nudge_interval: 0`, which turns off the Hermes background review that
+otherwise proposes skills from support conversations after a run. `-Provision` writes it
+from `config.yaml.example`; on an existing profile set it once with
+`hermes -p endpointagents config set skills.creation_nudge_interval 0` and restart the gateway.

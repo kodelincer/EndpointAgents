@@ -195,15 +195,21 @@ public sealed class BatPackageLoaderTests : IDisposable
         var statuses = await repository.GetPackageStatusesAsync(
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(["no-input-repair-sample", "office-activation-repair",
+        Assert.Equal(["adobe-connect-install", "chrome-install", "chrome-reset",
+                "foxit-editor-install", "foxit-reader-install", "no-input-repair-sample",
+                "office-activation-repair", "persian-fonts-install", "photos-install",
                 "windows-activation-retry"],
             statuses.Select(status => status.Id).Order(StringComparer.Ordinal));
-        foreach (var status in statuses)
+        // Install packages need vendor installers that are not in git, and these new
+        // packages still need an administrator's signature (docs/software-install.md);
+        // RepairPackageLoaderTests checks them with a test key.
+        foreach (var status in statuses.Where(status => status.Id != "chrome-reset"
+                     && !status.Id.EndsWith("-install", StringComparison.Ordinal)))
             Assert.True(status.Status == BatPackageStatuses.Ready,
                 $"{status.Id}: {string.Join(" ", status.Reasons)}");
-        Assert.Equal("no-input-repair-sample", Assert.Single(
-            await repository.GetRepairPackagesAsync(
-                TestContext.Current.CancellationToken)).Descriptor.PackageId);
+        Assert.Contains("no-input-repair-sample", (await repository.GetRepairPackagesAsync(
+                TestContext.Current.CancellationToken))
+            .Select(package => package.Descriptor.PackageId));
     }
 
     private static BatchPlaybook Playbook() => new(2,

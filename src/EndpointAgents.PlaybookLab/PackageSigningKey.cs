@@ -97,17 +97,85 @@ static class PackageSigningKey
         var supportFiles = (manifest.SupportFiles ?? [])
             .Select(entry => new BatchSupportFile(entry.FileName, entry.Sha256, string.Empty))
             .ToArray();
+        var acceptedRisks = PackageSignaturePolicy.NormalizeRisks(
+            manifest.Review?.AcceptedRisks);
+        var unknownRisk = acceptedRisks.FirstOrDefault(risk => !BatRisks.IsAcceptable(risk));
+        if (unknownRisk is not null)
+        {
+            Console.WriteLine($"Cannot sign: review.acceptedRisks may only contain "
+                + $"{string.Join(" or ", BatRisks.Acceptable)}; '{unknownRisk}' is not allowed.");
+            return false;
+        }
+        if (acceptedRisks.Count > 0)
+            Console.WriteLine($"Signing with accepted risks: {string.Join(", ", acceptedRisks)}.");
+        string? softwareSha256 = null;
+        if (manifest.SchemaVersion == 2 && (manifest.Software is not null
+                || stagedName.EndsWith(".msi", StringComparison.OrdinalIgnoreCase)
+                || stagedName.EndsWith(".msix", StringComparison.OrdinalIgnoreCase)
+                || stagedName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (!SoftwareSpecPolicy.TryNormalize(manifest.Software,
+                    Path.GetExtension(stagedName).TrimStart('.').ToLowerInvariant(),
+                    out var software, out var softwareError))
+            {
+                Console.WriteLine($"Cannot sign: software: {softwareError}");
+                return false;
+            }
+            softwareSha256 = SoftwareSpecPolicy.ComputeSha256(software!);
+            Console.WriteLine($"Signing the software section ({software!.Install?.Kind ?? "requirements only"}).");
+        }
         var statement = PackageSignaturePolicy.BuildStatement(id, stagedName, sha256,
             BatchPlaybookPolicy.ComputeSha256(playbook!),
             supportFiles.Length == 0 ? null
                 : BatchSupportFilePolicy.ComputeBundleSha256(sha256, supportFiles),
-            publisher);
+            publisher, acceptedRisks, softwareSha256);
 
         using var key = new ECDsaCng(CngKey.Open(name));
         var signature = PackageSignaturePolicy.Sign(statement, key, publicKey);
         node["signature"] = JsonSerializer.SerializeToNode(signature, json);
         await File.WriteAllTextAsync(manifestPath, node.ToJsonString(json) + Environment.NewLine);
         Console.WriteLine($"Signed {id} with key {signature.KeyId}.");
+        return true;
+    }
+
+    /// <summary>
+    /// Signs an agent update manifest written by scripts\new-agent-update.ps1, after checking
+    /// that the zip next to it is exactly the one the manifest describes.
+    /// </summary>
+    public static async Task<bool> SignAgentUpdateAsync(string manifestPath, string name)
+    {
+        var publicKey = TryGetPublicKey(name);
+        if (publicKey is null)
+        {
+            Console.WriteLine($"No signing key named '{name}' on this PC. Create one with scripts\\new-package-signing-key.ps1.");
+            return false;
+        }
+        var json = new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true };
+        var manifest = JsonSerializer.Deserialize<EndpointAgents.Shared.Updates.AgentUpdateManifest>(
+            await File.ReadAllTextAsync(manifestPath), json);
+        if (!EndpointAgents.Shared.Updates.AgentUpdatePolicy.TryValidate(manifest, out var error))
+        {
+            Console.WriteLine($"Cannot sign: {error}");
+            return false;
+        }
+        var zip = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(manifestPath))!, manifest!.FileName);
+        if (!File.Exists(zip) || new FileInfo(zip).Length != manifest.SizeBytes)
+        {
+            Console.WriteLine($"Cannot sign: {manifest.FileName} is missing or its size differs from the manifest.");
+            return false;
+        }
+        await using (var stream = File.OpenRead(zip))
+            if (!Convert.ToHexString(await SHA256.HashDataAsync(stream)).Equals(manifest.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Cannot sign: the zip does not match the manifest's SHA-256.");
+                return false;
+            }
+        using var key = new ECDsaCng(CngKey.Open(name));
+        var signature = PackageSignaturePolicy.Sign(
+            EndpointAgents.Shared.Updates.AgentUpdatePolicy.BuildStatement(manifest), key, publicKey);
+        await File.WriteAllTextAsync(manifestPath,
+            JsonSerializer.Serialize(manifest with { Signature = signature }, json) + Environment.NewLine);
+        Console.WriteLine($"Signed agent update {manifest.Version} with key {signature.KeyId}.");
         return true;
     }
 }

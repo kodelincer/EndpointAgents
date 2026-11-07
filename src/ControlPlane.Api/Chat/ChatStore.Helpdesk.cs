@@ -248,6 +248,44 @@ public sealed partial class ChatStore
         }
     }
 
+    /// <summary>
+    /// Adds a helpdesk message to a conversation without taking it over, so the user sees the
+    /// outcome of a step a helpdesk member approved or declined. False when the conversation is gone.
+    /// </summary>
+    public async Task<bool> AppendHelpdeskNoticeAsync(string conversationId, string body,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await using var insert = connection.CreateCommand();
+            insert.Transaction = (SqliteTransaction)transaction;
+            insert.CommandText =
+                """
+                INSERT INTO messages(message_id, conversation_id, client_message_id, sequence,
+                    role, body, text_direction, state, created_at_utc, run_id)
+                SELECT $message_id, conversation_id, NULL, last_sequence + 1, 'Operator', $body,
+                    'rtl', 'Completed', $now, NULL
+                FROM conversations WHERE conversation_id = $conversation_id;
+                UPDATE conversations SET last_sequence = last_sequence + 1, updated_at_utc = $now
+                WHERE conversation_id = $conversation_id AND changes() > 0;
+                """;
+            insert.Parameters.AddWithValue("$message_id", Guid.NewGuid().ToString("N"));
+            insert.Parameters.AddWithValue("$conversation_id", Normalize(conversationId, 100));
+            insert.Parameters.AddWithValue("$body", Normalize(body, ChatLimits.MessageCharacters));
+            insert.Parameters.AddWithValue("$now", Format(DateTimeOffset.UtcNow));
+            var changed = await insert.ExecuteNonQueryAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return changed > 0;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<bool> PatchHelpdeskConversationAsync(string conversationId,
         HelpdeskConversationPatch patch, CancellationToken cancellationToken)
     {

@@ -19,8 +19,18 @@ public sealed class ControlPlaneOptions
     public string DeviceCredentialPath { get; set; } =
         @"C:\ProgramData\EndpointAgents\Credentials\device-credential.bin";
 
-    /// <summary>Version advertised when the agent registers.</summary>
-    public string Version { get; set; } = "0.1.0";
+    /// <summary>
+    /// Version advertised when the agent registers and compared by self-update. Defaults to the
+    /// build's version (set with -p:Version by scripts\new-agent-update.ps1); set it here only to
+    /// override it.
+    /// </summary>
+    public string Version { get; set; } = BuildVersion;
+
+    public static string BuildVersion { get; } =
+        (typeof(ControlPlaneOptions).Assembly
+            .GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+            .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()
+            ?.InformationalVersion ?? "0.0.0").Split('+')[0];
 
     /// <summary>Maximum duration for one dispatched command, in seconds.</summary>
     public int CommandTimeoutSeconds { get; set; } = 60;

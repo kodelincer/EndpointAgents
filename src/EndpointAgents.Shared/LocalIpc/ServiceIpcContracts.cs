@@ -14,9 +14,12 @@ public static class ServiceIpcProtocol
     public const string SendChatMessageMethod = "chat.send";
     public const string GetChatDeltaMethod = "chat.sync";
     public const string CloseChatMethod = "chat.close";
+    public const string StopChatRunMethod = "chat.stop";
     public const string RespondToChatActionMethod = "chat.action.respond";
     public const string DiagnoseIbsngMethod = "ibsng.diagnose";
     public const string OpenIbsngMethod = "ibsng.open";
+    public const string ReportProblemsMethod = "problems.report";
+    public const string ChatNotFixedMethod = "chat.not_fixed";
 
     /// <summary>
     /// Opens the long-lived user-session channel. After the "Attached" reply the service writes

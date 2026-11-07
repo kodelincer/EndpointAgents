@@ -21,6 +21,7 @@ public sealed class ServiceIpcServer(
     IbsngDiagnosticService ibsngDiagnostics,
     IOptions<IbsngOptions> ibsngOptions,
     TrayChannelRegistry trays,
+    EndpointAgents.Shared.Problems.ProblemOutbox problems,
     ILogger<ServiceIpcServer> logger) : BackgroundService
 {
     // Each signed-in user keeps one Tray connection open, so leave room for several sessions
@@ -238,6 +239,15 @@ public sealed class ServiceIpcServer(
             case ServiceIpcProtocol.CloseChatMethod:
                 return await CloseChatAsync(pipe, request, cancellationToken);
 
+            case ServiceIpcProtocol.ChatNotFixedMethod:
+                return await ChatNotFixedAsync(pipe, request, cancellationToken);
+
+            case ServiceIpcProtocol.ReportProblemsMethod:
+                return ReportTrayProblems(request);
+
+            case ServiceIpcProtocol.StopChatRunMethod:
+                return await StopChatRunAsync(pipe, request, cancellationToken);
+
             case ServiceIpcProtocol.RespondToChatActionMethod:
                 return await RespondToChatActionAsync(pipe, request, cancellationToken);
 
@@ -327,6 +337,65 @@ public sealed class ServiceIpcServer(
             logger.LogWarning("Support action decision {ActionId} was not accepted: {State}.",
                 decision.ActionId, receipt.Proposal?.State.ToString() ?? "Unknown");
         return Success(request.Id, "Decided", receipt);
+    }
+
+    private async Task<ServiceIpcResponse> StopChatRunAsync(NamedPipeServerStream pipe,
+        ServiceIpcRequest request, CancellationToken cancellationToken)
+    {
+        var stop = request.Payload?.Deserialize<ChatRunStopRequest>()
+            ?? throw new InvalidDataException("The chat stop body is missing.");
+        var normalized = stop with
+        {
+            Identity = GetCallerIdentity(pipe, stop.Identity.SessionId)
+        };
+        var receipt = await worker.StopChatRunAsync(normalized, cancellationToken);
+        logger.LogInformation("User asked to stop the current chat request; outcome is {Outcome}.",
+            receipt.Outcome);
+        return receipt.Accepted
+            ? Success(request.Id, "Stopped", receipt)
+            : new ServiceIpcResponse(request.Id, false, "ChatStopRejected",
+                JsonSerializer.SerializeToElement(receipt), receipt.Message);
+    }
+
+    private async Task<ServiceIpcResponse> ChatNotFixedAsync(NamedPipeServerStream pipe,
+        ServiceIpcRequest request, CancellationToken cancellationToken)
+    {
+        var body = request.Payload?.Deserialize<EndpointAgents.Shared.Problems.ChatNotFixedRequest>()
+            ?? throw new InvalidDataException("The request body is missing.");
+        var receipt = await worker.ReportChatNotFixedAsync(body with
+        {
+            Identity = GetCallerIdentity(pipe, body.Identity.SessionId)
+        }, cancellationToken);
+        return receipt.Accepted
+            ? Success(request.Id, "Reported", receipt)
+            : new ServiceIpcResponse(request.Id, false, "NotFixedRejected",
+                JsonSerializer.SerializeToElement(receipt), receipt.Message);
+    }
+
+    /// <summary>
+    /// Crashes the Tray saved for itself. A Tray runs as the user, so nothing it says is taken as
+    /// it is: the kind and source are fixed here and the text is cleaned again.
+    /// </summary>
+    private ServiceIpcResponse ReportTrayProblems(ServiceIpcRequest request)
+    {
+        var reports = request.Payload?.Deserialize<IReadOnlyList<EndpointAgents.Shared.Problems.ProblemReport>>() ?? [];
+        var now = DateTimeOffset.UtcNow;
+        foreach (var report in reports.Take(10))
+            problems.Add(report with
+            {
+                Kind = EndpointAgents.Shared.Problems.ProblemKinds.IsFromEndpoint(report.Kind)
+                    ? report.Kind : EndpointAgents.Shared.Problems.ProblemKinds.LoggedError,
+                Source = "Tray",
+                Fingerprint = EndpointAgents.Shared.Problems.ProblemText.Limit(report.Fingerprint, 64),
+                Title = EndpointAgents.Shared.Problems.ProblemText.Limit(
+                    EndpointAgents.Shared.Problems.ProblemText.Scrub(report.Title),
+                    EndpointAgents.Shared.Problems.ProblemLimits.MaxTitleCharacters),
+                Stack = EndpointAgents.Shared.Problems.ProblemText.ScrubStack(report.Stack),
+                Count = Math.Clamp(report.Count, 1, 100_000),
+                FirstSeenUtc = report.FirstSeenUtc > now ? now : report.FirstSeenUtc,
+                LastSeenUtc = report.LastSeenUtc > now ? now : report.LastSeenUtc
+            });
+        return Success(request.Id, "Saved", new { saved = reports.Count });
     }
 
     private async Task<ServiceIpcResponse> CloseChatAsync(NamedPipeServerStream pipe,

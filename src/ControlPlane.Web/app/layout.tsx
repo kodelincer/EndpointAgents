@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+// Vazirmatn (free, OFL) is bundled from npm, so Persian text never depends on reaching Google.
+import "@fontsource-variable/vazirmatn";
 import { AppShell } from "@/components/app-shell";
+import { AuthGate } from "@/components/auth-gate";
 import { ControlPlaneProvider } from "@/lib/control-plane-context";
 import "./globals.css";
 
@@ -14,6 +17,6 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <html lang="en"><body className={`${geist.variable} ${mono.variable}`}>
-    <ControlPlaneProvider><AppShell>{children}</AppShell></ControlPlaneProvider>
+    <AuthGate><ControlPlaneProvider><AppShell>{children}</AppShell></ControlPlaneProvider></AuthGate>
   </body></html>;
 }

@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 2,
+  "id": "chrome-install",
+  "displayName": "Install Google Chrome",
+  "description": "Checks whether Google Chrome is installed for all users and, if not, installs it silently from Google's enterprise MSI. Exit code 10 means Chrome was already installed and nothing changed.",
+  "problem": "install-chrome",
+  "order": 100,
+  "symptoms": [
+    "Google Chrome is not installed",
+    "I need Google Chrome installed on my PC",
+    "Chrome is missing or was removed",
+    "گوگل کروم روی سیستم نصب نیست",
+    "می‌خواهم کروم برایم نصب شود",
+    "مرورگر کروم ندارم یا پاک شده است"
+  ],
+  "file": {
+    "type": "bat",
+    "fileName": "chrome-install.bat",
+    "sha256": "E851FFA3C99A409491F86F482E58B74D9F9B7A7E5CC8A6B9AF3C0DABB4829D1F",
+    "publisher": null
+  },
+  "compatibility": {
+    "minWindowsVersion": "10.0.10240",
+    "maxWindowsVersionExclusive": null
+  },
+  "supportFiles": [
+    {
+      "fileName": "GoogleChromeStandaloneEnterprise64.msi",
+      "sha256": "32BA438DEA18F0FED1EC621BFB274A2669ADEC67BE2AA91D96B3CC6C64779276"
+    }
+  ],
+  "playbook": {
+    "version": 3,
+    "arguments": [],
+    "steps": [],
+    "timeoutSeconds": 480,
+    "successExitCodes": [
+      0,
+      10
+    ],
+    "restartExitCodes": [
+      3010
+    ],
+    "successMarker": "Chrome install completed.",
+    "failureMarkers": [
+      "ERROR:"
+    ]
+  },
+  "playbookSha256": "16B6AAD6453A2B1AB8D3630DA0C294698585EAA906A0F60D5DC8AB0DDB245FEA",
+  "review": {
+    "reviewedBy": "EndpointAgents developers",
+    "reviewedOn": "2026-10-13",
+    "source": "Installer: https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi (Authenticode signed by Google LLC). BAT: written for this repository.",
+    "notes": "The MSI is not committed; scripts/update-chrome-package.ps1 downloads it, checks Google's signature, pins its hash and signs the package. Re-run it to move to a newer Chrome."
+  }
+}

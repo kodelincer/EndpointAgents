@@ -48,6 +48,16 @@ bar; the host handles minimize, maximize, close-to-tray and dragging.
   and a request the service withdraws (timeout or disconnect) closes its sheet.
 - WebView2 keeps its profile in `%LOCALAPPDATA%\EndpointAgents\Tray\WebView2`.
 
+## Pop-ups when the chat is closed
+
+While the chat window is closed or minimised, the Tray reads the user's own conversations
+through the service pipe every 10 seconds (no AI, nothing leaves the PC). A finished reply
+from the assistant or the helpdesk, or a question that waits for the user, shows a Windows
+pop-up next to the clock with one short line of the message. A reply that asks for a restart
+gets the title «لطفاً کامپیوتر را دوباره راه‌اندازی کنید». Clicking the pop-up opens that
+conversation. Nothing is shown for what the user already saw in the open window, or for
+the user's own messages. The logic is `ChatNotifier` in `EndpointAgents.Tray.Runtime`.
+
 ## Building and previewing
 
 Node.js is a build-time dependency only: `dotnet build` runs `npm ci` (first time) and `npm run build`
@@ -76,3 +86,16 @@ through Windows Update). When it is missing, the script runs Microsoft's x64 Eve
 Installer from `deploy\endpoint\MicrosoftEdgeWebView2RuntimeInstallerX64.exe` (or
 `-WebView2InstallerPath`) after verifying its Microsoft Authenticode signature. The installer is not
 committed; download it from https://developer.microsoft.com/microsoft-edge/webview2/.
+
+## Stopping a request
+
+While a request is in progress (queued, being worked on, or a proposed action waiting for approval) the
+chat shows a **توقف** button. It calls `chat.stop` -> pipe `chat.stop` -> `StopChatRun` on `AgentHub`.
+
+- A request still in the queue, and a proposal not yet approved, are cancelled immediately (state
+  `Cancelled`, the assistant adds "درخواست شما متوقف شد.").
+- A request the assistant is working on is stopped: the Hermes run is stopped and its capability stops
+  working, so no further tool call or proposal is accepted.
+- A read-only check running on the PC is interrupted (`CancelRpc` to the Service). Anything that repairs
+  or installs (`RpcInterruptPolicy`) is never killed halfway: the request stops after it ends, and the
+  user is told so. Approved actions already executing behave the same way.

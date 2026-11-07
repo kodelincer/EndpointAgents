@@ -160,7 +160,7 @@ What the statuses mean:
 | Ready with lint warnings | Offered; read the warnings. |
 | Hash mismatch | The BAT or a supporting file changed after review. |
 | Invalid playbook | The playbook breaks a rule, or changed without a new `playbookSha256`. |
-| Rejected by lint | The BAT requests elevation, runs encoded PowerShell, or downloads code. |
+| Rejected by lint | The BAT requests elevation, runs encoded or embedded code, or downloads code. Elevation and embedded code can be accepted per package (see "Self-elevating and self-contained BATs"); downloads cannot. |
 | Invalid package | `package.json` is unreadable, still has `TODO`, or its `id` differs from the folder. |
 
 ## 8. Publish to the control plane
@@ -192,6 +192,8 @@ them, because you reviewed it.
 .\scripts\new-package.ps1 -File C:\Vendor\NetReset.bat -Id net-reset
 ```
 
+Installing applications has its own generator and guide, [software-install.md](software-install.md).
+
 A harmless worked example is checked in at
 `deploy\control-plane\FileRepository\packages\no-input-repair-sample`.
 
@@ -209,6 +211,7 @@ What is different in a general `package.json`:
 | `playbook.arguments` | Up to 16 fixed arguments, such as `["/quiet", "/norestart"]`. Letters, digits, spaces and `- _ . / \ : = , + @ #` only; never passwords or keys. |
 | `playbook.timeoutSeconds` | Overall limit for the whole run, 30-3600 (default 480). |
 | `playbook.restartExitCodes` | Exit codes that mean "worked, restart needed", such as `[3010]`. The agent asks the user to restart; nothing restarts automatically. |
+| (environment) | Packages run as LocalSystem. When the agent runs one for a chat user, the endpoint also sets `ENDPOINTAGENTS_USER_SID`, `ENDPOINTAGENTS_USER_PROFILE` and `ENDPOINTAGENTS_USER_LOCALAPPDATA` for that user, so a package can fix something in the user's own profile (see `chrome-reset`). They are never inherited from elsewhere and are missing when no user is known. |
 
 EXE rules: a **console** EXE may answer screens like a BAT. A **windowed (GUI)** EXE, which
 includes most installers, may only run with `steps: []` and its silent-mode arguments. If
@@ -221,6 +224,46 @@ Try it exactly as an endpoint would, then pin the hashes and sign:
 .\scripts\test-bat-playbook.ps1 -Package <folder> -Execute
 .\scripts\test-bat-playbook.ps1 -Package <folder> -Fix -Sign
 ```
+
+## Driver packages (printers, scanners and other devices)
+
+The agent never picks a driver. You list each supported model in Dashboard → Environment
+as a **Device** (kind `device`): a label such as "Brother DCP-L2540DW", its hardware IDs
+separated by `;` (Device Manager → the device → Details → Hardware Ids; the most specific
+line, for example `USBPRINT\BrotherDCP-L2540D3A5E` or `USB\VID_04F9&PID_0321`), and
+`packageId`, the driver package below. `drivers.inventory` then marks a matching device on
+a user's PC with `catalogMatch`, and the `drivers-devices` skill runs that package.
+
+1. Get the vendor's driver as plain files (the folder with the `.inf`, `.cat` and `.sys`
+   files, not a setup EXE). Many vendors offer an "INF" or "basic" driver download.
+2. Copy `deploy\package-templates\install-driver.bat` to `<model>-driver.bat` and replace
+   `@@MODEL@@`, `@@INF@@` (the `.inf` file name) and `@@LOG@@` (for example
+   `brother-dcp-l2540-driver.log`).
+3. Create the package with no input, then add the driver files:
+
+   ```powershell
+   .\scripts\new-package.ps1 -File .\brother-dcp-l2540-driver.bat -Id brother-dcp-l2540-driver -NoInput
+   .\scripts\set-package-files.ps1 -Id brother-dcp-l2540-driver -File (Get-ChildItem C:\Drivers\DCPL2540\*).FullName
+   ```
+
+   Up to 32 files, all in one folder (names with letters, digits, `.`, `_`, `-`). Give it
+   `"problem": "driver-<model>"`, symptoms in the users' words, and
+   `playbook.restartExitCodes: [3010]`.
+4. Test on your PC with `test-bat-playbook.ps1 -Package <folder> -Execute`, then `-Fix -Sign`
+   and publish. Windows refuses a driver whose own `.cat` signature is not valid, on top of
+   the package hash and your signature.
+
+A setup EXE that installs a driver silently can be packaged the same way as an
+application (`new-install-package.ps1`); list its package id on the Device entry.
+
+## Uninstall packages
+
+`software.uninstall` removes an application on the **Removable software** list (kind
+`app`) by itself when Windows Installer installed it. For an application installed
+another way, build a no-input package that runs the vendor's silent uninstaller, give it
+`"problem": "uninstall-<app>"`, and put its id in the list entry's `packageId`. Every
+package whose `problem` starts with `uninstall-` (or with `"requiresApproval": true`)
+waits on the Approvals page until a helpdesk member approves it.
 
 ## Signing packages with your key
 
@@ -251,6 +294,30 @@ below into signed packages, because legacy entries cannot be signed.
 
 The packages checked into this repository are signed with a development key on the
 original developer's PC, which only `appsettings.Development.json` trusts.
+
+## Self-elevating and self-contained BATs
+
+Vendor BATs often relaunch themselves as administrator (`runas`, `-Verb RunAs`) or carry
+their code encoded inside the file (`-EncodedCommand`, `certutil -decode`) and build files
+at run time. The endpoint service already runs as administrator, and code inside the file
+is covered by its SHA-256 pin and your signature, so you can accept both for a package:
+
+```json
+"review": {
+  "reviewedBy": "Reza",
+  "acceptedRisks": ["self-elevation", "embedded-payload"]
+}
+```
+
+- Allowed values are only `self-elevation` and `embedded-payload`. The lint then reports
+  those findings as warnings ("Accepted risk (...)") and the Packages tab lists them.
+- They are part of what `-Sign` signs. Adding or changing a risk without signing again
+  makes the package **Not signed**, on the control plane and on every endpoint.
+- **Downloading code at run time is never accepted** (`certutil -urlcache`,
+  `bitsadmin /transfer`, `Invoke-WebRequest`, `DownloadString`, `DownloadFile`): the
+  signature cannot cover what is fetched later. Ship such files in `files\` instead.
+- Accepting a risk does not make the BAT safe; review it first. The risks are about
+  *what the file does*, not about where its bytes come from.
 
 ## Legacy manifests
 

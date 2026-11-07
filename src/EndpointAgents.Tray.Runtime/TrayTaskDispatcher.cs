@@ -1,3 +1,4 @@
+using EndpointAgents.Platform.Windows.Actions;
 using EndpointAgents.Shared.LocalIpc;
 
 namespace EndpointAgents.Tray;
@@ -12,6 +13,7 @@ public sealed class TrayTaskDispatcher
     private readonly OfficeRemediationLauncher _officeRemediation;
     private readonly WindowsRemediationConsent _windowsRemediation;
     private readonly WindowsHelloLauncher _windowsHello;
+    private readonly UserActionHost _userActions = new();
 
     public TrayTaskDispatcher(IUserConsentPrompt? consent = null)
     {
@@ -46,6 +48,9 @@ public sealed class TrayTaskDispatcher
                     await _windowsRemediation.ConfirmAsync(request, cancellationToken),
                 TrayIpcProtocol.WindowsHelloLaunchMethod =>
                     await _windowsHello.LaunchAsync(request, cancellationToken),
+                TrayIpcProtocol.EndpointUserActionMethod => new TrayIpcResponse(request.Id, true,
+                    "Completed", ActionResult: await _userActions.RunAsync(request.Action,
+                        cancellationToken)),
                 _ => new TrayIpcResponse(request.Id, false, "UnknownMethod")
             };
         }

@@ -21,7 +21,7 @@ public sealed class PackageRunner(PackageArtifactClient artifacts,
     IOptions<PackageSigningOptions> signing)
 {
     public async Task<PackageRunResult> RunAsync(string path, PackageDescriptor descriptor,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, PackageUserContext? user = null)
     {
         if (artifacts.RequireAdministrator)
         {
@@ -47,7 +47,7 @@ public sealed class PackageRunner(PackageArtifactClient artifacts,
 
         var result = await OfficeBugfixRunner.RunProcessAsync(
             CreateStartInfo(Path.GetFullPath(path), descriptor.FileType,
-                playbook!.Arguments ?? []),
+                playbook!.Arguments ?? [], user),
             playbook, cancellationToken);
         return new PackageRunResult(result.ProcessId, result.ExitCode, result.State,
             result.State == OfficeBugfixRunStates.Completed
@@ -55,8 +55,40 @@ public sealed class PackageRunner(PackageArtifactClient artifacts,
             result.CompletedStepCount, result.FailedStepIndex, result.OutputTail);
     }
 
+    /// <summary>
+    /// Runs a package's typed installer (software.install) after the same checks as
+    /// <see cref="RunAsync"/>: signed revision, staged file hash and ACL, vendor signature.
+    /// </summary>
+    public async Task<Software.SoftwareInstallResult> RunSoftwareAsync(string path,
+        PackageDescriptor descriptor, CancellationToken cancellationToken)
+    {
+        if (artifacts.RequireAdministrator)
+        {
+            using var identity = WindowsIdentity.GetCurrent();
+            if (!new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator))
+                throw new InvalidOperationException(
+                    "The EndpointAgents service does not have an administrative token.");
+        }
+        if (descriptor.Software?.Install is not { } install
+            || !PackageDescriptorPolicy.TryValidate(descriptor, out _))
+            throw new InvalidDataException("The package or its software section is not approved.");
+        if (!PackageSignaturePolicy.Verify(descriptor, signing.Value.TrustedPublicKeys))
+            throw new InvalidDataException("The package is not signed by a trusted administrator key.");
+        if (!await IsStagedAndApprovedAsync(path, descriptor, cancellationToken)
+            || !await BatchSupportFileDownloader.AreApprovedAsync(path,
+                descriptor.SupportFiles, artifacts.RequireProtectedAcl, cancellationToken))
+            throw new InvalidDataException("The staged package is not approved.");
+        if (PackageFileTypes.IsVendorSigned(descriptor.FileType)
+            && !string.Equals(descriptor.Publisher, AuthenticodeVerifier.GetVerifiedSigner(path),
+                StringComparison.OrdinalIgnoreCase))
+            return new Software.SoftwareInstallResult(PackageRunStates.SignatureRejected, null, false,
+                "The installer is not signed by its approved publisher.");
+        return await Software.SoftwareInstaller.InstallAsync(Path.GetFullPath(path), install,
+            cancellationToken);
+    }
+
     internal static ProcessStartInfo CreateStartInfo(string path, string fileType,
-        IReadOnlyList<string> arguments)
+        IReadOnlyList<string> arguments, PackageUserContext? user = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -69,6 +101,11 @@ public sealed class PackageRunner(PackageArtifactClient artifacts,
             // Never write a byte-order mark into the first answer.
             StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
         };
+        // The user the package runs for; never inherited from the service's own environment.
+        startInfo.Environment.Remove(PackageUserContext.SidVariable);
+        startInfo.Environment.Remove(PackageUserContext.ProfileVariable);
+        startInfo.Environment.Remove(PackageUserContext.LocalAppDataVariable);
+        user?.Apply(startInfo);
         if (fileType == PackageFileTypes.Exe)
         {
             startInfo.FileName = path;

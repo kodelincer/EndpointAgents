@@ -13,5 +13,8 @@ public static class OperatorAccessPolicy
         || path.StartsWithSegments("/api/files/ibsng-dialer")
         || path.StartsWithSegments("/api/files/office")
         || path.StartsWithSegments("/api/files/windows")
-        || path.StartsWithSegments(EndpointAgents.Shared.Packages.PackageRoutes.Root);
+        || path.StartsWithSegments(EndpointAgents.Shared.Packages.PackageRoutes.Root)
+        || path.StartsWithSegments(EndpointAgents.Shared.Updates.AgentUpdateRoutes.Root)
+        || path.StartsWithSegments(EndpointAgents.Shared.Problems.AgentLogRoutes.Root)
+        || path.StartsWithSegments("/api/install-reports");
 }

@@ -15,7 +15,8 @@ public enum ChatMessageState
     Queued,
     Working,
     Completed,
-    Failed
+    Failed,
+    Cancelled
 }
 
 public enum ChatActionState
@@ -25,7 +26,8 @@ public enum ChatActionState
     Rejected,
     Expired,
     Executed,
-    Failed
+    Failed,
+    Cancelled
 }
 
 public enum ChatProgressStage
@@ -41,7 +43,8 @@ public enum ChatProgressStage
     AwaitingApproval,
     ActionStarted,
     ActionCompleted,
-    ActionRejected
+    ActionRejected,
+    Cancelled
 }
 
 public enum ChatProgressActivity
@@ -135,6 +138,24 @@ public sealed record ChatConversationCloseRequest(
 
 public sealed record ChatConversationCloseReceipt(
     bool Accepted,
+    string Message);
+
+/// <summary>What the Stop button did to the conversation's current request.</summary>
+public enum ChatRunStopOutcome
+{
+    NothingToStop,
+    Stopped,
+    /// <summary>An operation that cannot be interrupted safely is running; the request stops after it ends.</summary>
+    FinishingOperation
+}
+
+public sealed record ChatRunStopRequest(
+    string ConversationId,
+    ChatIdentity Identity);
+
+public sealed record ChatRunStopReceipt(
+    bool Accepted,
+    ChatRunStopOutcome Outcome,
     string Message);
 
 public sealed record ChatDeltaRequest(

@@ -6,8 +6,16 @@ public static class PackageFileTypes
 {
     public const string Bat = "bat";
     public const string Exe = "exe";
+    /// <summary>A Windows Installer package; needs a typed software.install section.</summary>
+    public const string Msi = "msi";
+    public const string Msix = "msix";
+    /// <summary>Files to copy (fonts, templates); needs software.install kind copy-files.</summary>
+    public const string Zip = "zip";
 
-    public static bool IsKnown(string? type) => type is Bat or Exe;
+    public static bool IsKnown(string? type) => type is Bat or Exe or Msi or Msix or Zip;
+
+    /// <summary>Types whose vendor Authenticode signature is pinned and verified.</summary>
+    public static bool IsVendorSigned(string? type) => type is Exe or Msi or Msix;
 
     /// <summary>The extension a package file of this type must have.</summary>
     public static string Extension(string type) => $".{type}";
@@ -27,6 +35,8 @@ public static class PackageCommands
 {
     /// <summary>Downloads, verifies and runs one catalog package by its playbook.</summary>
     public const string Run = "system.package_run";
+    /// <summary>Read-only: checks an install package's system requirements and whether it is already installed.</summary>
+    public const string CheckRequirements = "software.check_requirements";
 }
 
 /// <summary>
@@ -50,7 +60,10 @@ public sealed record PackageDescriptor(
     string? MaxWindowsVersionExclusive,
     string? Publisher,
     IReadOnlyList<string> Symptoms,
-    PackageSignature? Signature = null);
+    PackageSignature? Signature = null,
+    IReadOnlyList<string>? AcceptedRisks = null,
+    SoftwareSpec? Software = null,
+    string? SoftwareSha256 = null);
 
 public sealed record PackageCatalog(IReadOnlyList<PackageDescriptor> Packages);
 
@@ -92,8 +105,9 @@ public static class PackageDescriptorPolicy
             || !IsValidId(descriptor.PackageId)
             || !PackageFileTypes.IsKnown(descriptor.FileType)
             // Every EXE must carry a pinned vendor signature, verified before it runs.
-            || descriptor.FileType == PackageFileTypes.Exe
+            || PackageFileTypes.IsVendorSigned(descriptor.FileType)
                 && string.IsNullOrWhiteSpace(descriptor.Publisher)
+            || !IsValidSoftware(descriptor)
             || descriptor.FileName != StagedFileName(descriptor.PackageId,
                 descriptor.FileType)
             || !BatchSupportFilePolicy.IsSha256(descriptor.Sha256)
@@ -125,6 +139,19 @@ public static class PackageDescriptorPolicy
             || windowsVersion >= Version.Parse(descriptor.MinWindowsVersion))
         && (descriptor.MaxWindowsVersionExclusive is null
             || windowsVersion < Version.Parse(descriptor.MaxWindowsVersionExclusive));
+
+    /// <summary>The software section, when present, is canonical and matches its pinned hash.</summary>
+    public static bool IsValidSoftware(PackageDescriptor descriptor)
+    {
+        if (descriptor.Software is null)
+            return descriptor.SoftwareSha256 is null
+                && descriptor.FileType is PackageFileTypes.Bat or PackageFileTypes.Exe;
+        return SoftwareSpecPolicy.TryNormalize(descriptor.Software, descriptor.FileType,
+                out var normalized, out _)
+            && descriptor.SoftwareSha256 is not null
+            && SoftwareSpecPolicy.ComputeSha256(normalized!).Equals(descriptor.SoftwareSha256,
+                StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool OptionalVersion(string? value) =>
         value is null || Version.TryParse(value, out _);

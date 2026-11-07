@@ -90,11 +90,17 @@ public sealed class PackageRunCommandHandler(
                     descriptor.MaxWindowsVersionExclusive
                 });
 
+        if (descriptor.Software is not null)
+            return await RunSoftwareAsync(request, context, descriptor, catalog, cancellationToken);
+
         try
         {
             var staged = await artifacts.EnsureAsync(descriptor, cancellationToken);
+            // The control plane adds the chat user's SID; packages that change the
+            // user's own profile read it from their environment.
+            OfficeRemediationCommandHandler.TryParseUserSid(request.Params, out var userSid);
             var execution = await runner.RunAsync(staged.Path, descriptor,
-                cancellationToken);
+                cancellationToken, PackageUserContext.Resolve(userSid));
             if (TryGetExecutionFailure(execution, out var code, out var message))
                 return RpcResponse.Failure(request.Id, code, message, new
                 {
@@ -123,6 +129,85 @@ public sealed class PackageRunCommandHandler(
             logger.LogWarning(ex, "Package {PackageId} failed before launch.", packageId);
             return RpcResponse.Failure(request.Id, 500,
                 "The approved package could not be prepared.",
+                DiagnosticResponse.Sanitize(ex));
+        }
+    }
+
+    /// <summary>
+    /// Install packages: requirements are checked again right before installing (they may
+    /// have changed while an approval waited), an installed application is left alone, and
+    /// after the install a detection rule must match.
+    /// </summary>
+    private async Task<RpcResponse> RunSoftwareAsync(RpcRequest request,
+        CommandExecutionContext context, PackageDescriptor descriptor,
+        IReadOnlyList<PackageDescriptor> catalog, CancellationToken cancellationToken)
+    {
+        var spec = descriptor.Software!;
+        var facts = new Software.WindowsMachineFacts();
+        var report = Software.RequirementChecker.Check(descriptor, facts, catalog);
+        if (report.AlreadyInstalled)
+            return RpcResponse.Success(request.Id, DiagnosticResponse.Create(context, new
+            {
+                State = SoftwareRunStates.AlreadyInstalled, descriptor.PackageId, descriptor.DisplayName,
+                ExitCode = 10, RestartRequired = false
+            }, Array.Empty<DiagnosticWarning>()));
+        if (!report.Met || report.MissingRuntimes.Count > 0)
+            return RpcResponse.Failure(request.Id, 409,
+                report.Met ? "A runtime this software needs must be installed first."
+                    : "This PC does not meet the software's system requirements.",
+                new { State = SoftwareRunStates.RequirementsNotMet, report.Problems, report.MissingRuntimes, report.InstallFirst });
+        if (spec.Install is { Kind: InstallerKinds.Manual })
+            return RpcResponse.Failure(request.Id, 409,
+                "This software cannot be installed silently; a helpdesk member installs it.",
+                new { State = SoftwareRunStates.ManualOnly });
+
+        try
+        {
+            var staged = await artifacts.EnsureAsync(descriptor, cancellationToken);
+            bool restart;
+            int? exitCode;
+            if (spec.Install is not null)
+            {
+                var result = await runner.RunSoftwareAsync(staged.Path, descriptor, cancellationToken);
+                if (result.State is not SoftwareRunStates.Installed)
+                    return RpcResponse.Failure(request.Id,
+                        result.State == SoftwareRunStates.RetryLater ? 503 : 500,
+                        result.State == SoftwareRunStates.RetryLater
+                            ? "Another installation is running on the PC; try again in a few minutes."
+                            : "The installer did not finish successfully.",
+                        new { result.State, descriptor.PackageId, result.ExitCode, result.Detail });
+                restart = result.RestartRequired;
+                exitCode = result.ExitCode;
+            }
+            else
+            {
+                OfficeRemediationCommandHandler.TryParseUserSid(request.Params, out var userSid);
+                var execution = await runner.RunAsync(staged.Path, descriptor, cancellationToken,
+                    PackageUserContext.Resolve(userSid));
+                if (TryGetExecutionFailure(execution, out var code, out var message))
+                    return RpcResponse.Failure(request.Id, code, message, new
+                    {
+                        execution.State, descriptor.PackageId, execution.ExitCode, execution.OutputTail
+                    });
+                restart = execution.RestartRequired;
+                exitCode = execution.ExitCode;
+            }
+            if (spec.Detection is { Count: > 0 } && !Software.RequirementChecker.IsInstalled(spec,
+                    new Software.WindowsMachineFacts()))
+                return RpcResponse.Failure(request.Id, 422,
+                    "The installer finished, but the software is not found on the PC.",
+                    new { State = SoftwareRunStates.NotDetectedAfterInstall, descriptor.PackageId, ExitCode = exitCode });
+            return RpcResponse.Success(request.Id, DiagnosticResponse.Create(context, new
+            {
+                State = SoftwareRunStates.Installed, descriptor.PackageId, descriptor.DisplayName,
+                staged.Downloaded, ExitCode = exitCode, RestartRequired = restart
+            }, Array.Empty<DiagnosticWarning>()));
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Install package {PackageId} failed.", descriptor.PackageId);
+            return RpcResponse.Failure(request.Id, 500, "The approved installer could not be prepared.",
                 DiagnosticResponse.Sanitize(ex));
         }
     }

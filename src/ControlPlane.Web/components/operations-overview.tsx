@@ -1,7 +1,9 @@
 "use client";
 
+import { useAuth } from "@/components/auth-gate";
 import { Activity, Check, CircleAlert, Clock3, Pause, Play, RefreshCw, Server,
   Waypoints, X } from "lucide-react";
+import { OverviewDashboard } from "@/components/overview-dashboard";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSystemStatus, setMaintenanceMode } from "@/lib/control-plane";
 import { useControlPlane } from "@/lib/control-plane-context";
@@ -28,13 +30,22 @@ function duration(totalSeconds?: number) {
   return days ? `${days}d ${hours}h` : hours ? `${hours}h ${minutes}m` : `${minutes}m`;
 }
 
-/** Operations landing page for unified API state and recent endpoint activity. */
+/** Overview: the at-a-glance dashboard, then the control-plane service and its live activity. */
 export function OperationsOverview() {
+  return <div className="overview-page">
+    <OverviewDashboard />
+    <ServiceSection />
+  </div>;
+}
+
+/** Unified API state, command pause/resume and recent endpoint activity. */
+function ServiceSection() {
   const { agents, activity, loading, loadError } = useControlPlane();
   const [status, setStatus] = useState<ApiSystemStatus>();
   const [statusError, setStatusError] = useState<string>();
   const [checkedAt, setCheckedAt] = useState<string>();
   const [actionState, setActionState] = useState<MaintenanceActionState>();
+  const canPause = useAuth().can("maintenance.set");
 
   const refreshStatus = useCallback(async () => {
     try {
@@ -75,9 +86,9 @@ export function OperationsOverview() {
   const busy = actionState?.state === "running";
   const lifecycle = buildLifecycle(status, agents.length);
 
-  return <div className="overview-page">
-    <section className="overview-heading" aria-labelledby="overview-title">
-      <div><h1 id="overview-title">Operations overview</h1><p>API readiness, command availability, and endpoint activity from one local service.</p></div>
+  return <div className="ov-service">
+    <section className="overview-heading ov-service-heading" aria-labelledby="service-title">
+      <div><h2 id="service-title">Control plane service</h2><p>API readiness, command availability, and endpoint activity from one local service.</p></div>
       <span className="last-check"><Clock3 size={14} />{checkedAt ? `Checked ${relative(checkedAt)}` : "Checking API status"}</span>
     </section>
 
@@ -99,9 +110,11 @@ export function OperationsOverview() {
           ? `${status.machineName} · One Windows service hosts agents, APIs, and this console.`
           : "One Windows service hosts agents, APIs, and this console."}</span></div>
         <div className="control-actions">
-          <button className="secondary-button" disabled={busy || status?.maintenanceMode !== false}
+          <button className="secondary-button" disabled={!canPause || busy || status?.maintenanceMode !== false}
+            title={canPause ? undefined : "Only admins can pause or resume commands."}
             onClick={() => void updateMaintenance(true)}><Pause size={15} />Pause commands</button>
-          <button className="primary-button" disabled={busy || !status?.maintenanceMode}
+          <button className="primary-button" disabled={!canPause || busy || !status?.maintenanceMode}
+            title={canPause ? undefined : "Only admins can pause or resume commands."}
             onClick={() => void updateMaintenance(false)}><Play size={15} />Resume commands</button>
         </div>
       </div>
@@ -115,7 +128,7 @@ export function OperationsOverview() {
     <section className="system-ledger" aria-label="Control plane measurements">
       <dl><div><dt>API uptime</dt><dd>{duration(status?.uptimeSeconds)}</dd></div>
         <div><dt>API version</dt><dd><code>{status?.version ?? "—"}</code></dd></div>
-        <div><dt>Connected agents</dt><dd>{status?.connectedAgents ?? agents.length}</dd></div>
+        <div><dt>Connected endpoints</dt><dd>{status?.connectedAgents ?? agents.length}</dd></div>
         <div><dt>Retained events</dt><dd>{status?.retainedActivity ?? activity.length} / 500</dd></div>
         <div><dt>Recent failures</dt><dd className={recentFailures.length ? "danger-text" : "success-text"}>{recentFailures.length}</dd></div>
         <div><dt>Recent disconnects</dt><dd>{recentDisconnects.length}</dd></div></dl>
@@ -125,7 +138,7 @@ export function OperationsOverview() {
       <section className="operations-panel"><header><div><Activity size={16} /><h2>Latest activity</h2></div><a href="/agents/">Open agent registry</a></header>
         {loading ? <div className="skeleton-list compact"><div className="skeleton-row" /><div className="skeleton-row" /></div> :
         recentActivity.length ? <div className="operations-list">{recentActivity.map(item => <ActivityLine key={item.eventId} item={item} />)}</div> :
-        <div className="panel-empty"><Waypoints size={19} /><span>Agent connections and command results will appear here.</span></div>}
+        <div className="panel-empty"><Waypoints size={19} /><span>Endpoint connections and command results will appear here.</span></div>}
       </section>
       <section className="operations-panel incident-panel"><header><div><Server size={16} /><h2>Attention queue</h2></div><span>{recentFailures.length + recentDisconnects.length} recent</span></header>
         {recentFailures.length + recentDisconnects.length ? <div className="operations-list">

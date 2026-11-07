@@ -8,6 +8,7 @@ using EndpointAgents.Shared.Packages;
 using EndpointAgents.Shared.Rpc;
 using EndpointAgents.Shared.Support;
 using EndpointAgents.Shared.Windows;
+using Microsoft.Extensions.Options;
 using ModelContextProtocol.Server;
 using System.ComponentModel;
 using System.Text.Json;
@@ -46,9 +47,11 @@ public sealed class EndpointSupportTools
         "Read the endpoint's configuration: network adapters with IP address, subnet mask, default gateway, DNS servers, DHCP server and lease, " +
         "DNS suffix and firewall profiles; Windows version, edition, uptime and pending restart; domain, workgroup or Entra ID membership and " +
         "domain controller reachability; hardware and memory; and disk free space. Read-only.")]
-    public static Task<string> GetEndpointSystemInfo(
+    public static async Task<string> GetEndpointSystemInfo(
         ChatStore store,
         AgentRegistry registry,
+        IOptions<PrivacyOptions> privacy,
+        ControlPlane.Api.Inventory.InventoryStore inventory,
         [Description("The random capability supplied in this run's instructions.")]
         string runCapability,
         [Description("Optional subset of sections: network, windows, domain, hardware, storage. Omit for all.")]
@@ -56,14 +59,48 @@ public sealed class EndpointSupportTools
         CancellationToken cancellationToken = default)
     {
         if (!SystemInfoContracts.TryNormalizeSections(sections, out var normalized))
-            return Task.FromResult(ToolResultSanitizer.Sanitize(new
+            return ToolResultSanitizer.Sanitize(new
             {
                 ok = false,
                 error = $"Unknown section. Use only: {string.Join(", ", SystemInfoContracts.Sections)}."
-            }));
-        return RunReadOnlyAsync(store, registry, runCapability, SystemInfoContracts.Method,
-            JsonSerializer.SerializeToElement(new { sections = normalized }),
-            cancellationToken, keepIpAddresses: true);
+            });
+        // Keep, don't schedule: sections read recently are given from the store; only the rest is asked.
+        var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+        var stored = new Dictionary<string, ControlPlane.Api.Inventory.StoredFact>(StringComparer.Ordinal);
+        if (scope is not null)
+            foreach (var section in normalized)
+                if (await inventory.GetFreshAsync(scope.AgentId,
+                        ControlPlane.Api.Inventory.InventoryKeys.System(section), cancellationToken) is { } fact)
+                    stored[section] = fact;
+        if (scope is not null && stored.Count == normalized.Count)
+            return ToolResultSanitizer.Sanitize(new
+            {
+                ok = true,
+                result = new
+                {
+                    result = stored.ToDictionary(pair => pair.Key, pair => pair.Value.Value),
+                    storedCopy = $"Read from this PC at {stored.Values.Min(fact => fact.ReadAtUtc):u}; the PC was not asked again."
+                }
+            }, privacy.Value.ShareIpAddressesWithAgent);
+        var ask = normalized.Where(section => !stored.ContainsKey(section)).ToArray();
+        return await RunReadOnlyAsync(store, registry, runCapability, SystemInfoContracts.Method,
+            JsonSerializer.SerializeToElement(new { sections = ask }),
+            cancellationToken, keepIpAddresses: privacy.Value.ShareIpAddressesWithAgent,
+            transform: async (agentId, result) =>
+            {
+                var node = JsonSerializer.SerializeToNode(result) as global::System.Text.Json.Nodes.JsonObject;
+                var sectionsNode = node?.FirstOrDefault(pair =>
+                    string.Equals(pair.Key, "result", StringComparison.OrdinalIgnoreCase)).Value as global::System.Text.Json.Nodes.JsonObject;
+                if (sectionsNode is null) return result;
+                var machine = registry.GetOnlineAgents().FirstOrDefault(agent => agent.AgentId == agentId)?.MachineName;
+                foreach (var section in ask)
+                    if (sectionsNode.TryGetPropertyValue(section, out var value) && value is not null)
+                        await inventory.SaveAsync(agentId, machine, ControlPlane.Api.Inventory.InventoryKeys.System(section),
+                            value.DeepClone(), cancellationToken);
+                foreach (var (section, fact) in stored)
+                    sectionsNode[section] = fact.Value?.DeepClone();
+                return node;
+            });
     }
 
     [McpServerTool(Name = "windows_activation_status"), Description(
@@ -160,6 +197,7 @@ public sealed class EndpointSupportTools
     public static async Task<string> FindRepairPackages(
         ChatStore store,
         FileArtifactRepository files,
+        Software.SoftwareApprovalStore approvals,
         [Description("The random capability supplied in this run's instructions.")]
         string runCapability,
         CancellationToken cancellationToken)
@@ -174,6 +212,8 @@ public sealed class EndpointSupportTools
             .ToHashSet(StringComparer.Ordinal);
         await store.WriteToolAuditAsync(scope, "find_repair_packages", "success",
             null, cancellationToken);
+        var noApproval = (await approvals.GetAsync(cancellationToken))
+            .Select(entry => entry.PackageId).ToHashSet(StringComparer.Ordinal);
         return ToolResultSanitizer.Sanitize(new
         {
             ok = true,
@@ -183,6 +223,10 @@ public sealed class EndpointSupportTools
                 problem = item.Problem,
                 order = item.Order,
                 alreadyTried = tried.Contains(item.Descriptor.PackageId),
+                requiresApproval = item.RequiresApproval
+                    || item.IsInstall && !noApproval.Contains(item.Descriptor.PackageId),
+                isInstall = item.IsInstall,
+                hasRequirements = item.Descriptor.Software?.Requirements is not null,
                 displayName = item.Descriptor.DisplayName,
                 description = item.Descriptor.Description,
                 symptoms = item.Descriptor.Symptoms,
@@ -271,9 +315,42 @@ public sealed class EndpointSupportTools
             : """{"ok":false,"error":"The conversation is not available."}""";
     }
 
-    [McpServerTool(Name = "run_repair_package"), Description(
-        "Run one administrator-approved repair package on the user's PC by the exact packageId from find_repair_packages. It runs unattended with the administrator's fixed arguments and answers; nothing else can be passed.")]
-    public static Task<string> RunRepairPackage(
+    [McpServerTool(Name = "request_helpdesk_action"), Description(
+        "Ask a helpdesk member for work only a person may do. Nothing runs on the PC. kind is one of: unlock-account (locked account), password-reset (forgotten or expired password), local-admin (temporary administrator rights for an approved install), bitlocker-key (BitLocker recovery screen), site-access (a work website the company blocks), trust-repair (\"trust relationship\" error the PC cannot fix). The request waits on the Approvals page; the user sees the member's answer in this chat. Never ask the user for a password or key.")]
+    public static async Task<string> RequestHelpdeskAction(
+        ChatStore store,
+        Actions.ActionStore actions,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        [Description("unlock-account, password-reset, local-admin, bitlocker-key, site-access or trust-repair.")]
+        string kind,
+        [Description("One short English line for the helpdesk: what the user needs and why. For site-access, the site's name as the user gave it.")]
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+        if (scope is null)
+            return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+        if (Actions.PersonRequestKinds.Find(kind) is not { } request)
+            return """{"ok":false,"error":"Unknown kind. Use unlock-account, password-reset, local-admin, bitlocker-key, site-access or trust-repair."}""";
+        if (string.IsNullOrWhiteSpace(reason))
+            return """{"ok":false,"error":"A reason is required."}""";
+        await actions.CreateApprovalAsync(Actions.ApprovalKinds.Person, request.Id, request.Title,
+            scope.AgentId, scope.UserSid, scope.ConversationId, "{}",
+            PromptRedactor.RedactSecrets(reason.Trim()), cancellationToken);
+        await store.WriteToolAuditAsync(scope, "request_helpdesk_action", "awaiting-person",
+            null, cancellationToken);
+        return ToolResultSanitizer.Sanitize(new
+        {
+            ok = true,
+            status = "AwaitingHelpdesk",
+            summary = "A helpdesk member was asked. Tell the user in one sentence; their answer will appear in this chat. Do not ask the user to wait or retry."
+        });
+    }
+
+    [McpServerTool(Name = "check_software_requirements"), Description(
+        "Read-only: check whether the user's PC meets an install package's system requirements (Windows, memory, disk, processor, screen, runtimes) and whether the software is already installed. Use the exact packageId from find_repair_packages. Nothing is installed or changed.")]
+    public static async Task<string> CheckSoftwareRequirements(
         ChatStore store,
         AgentRegistry registry,
         CommandCatalog catalog,
@@ -282,10 +359,175 @@ public sealed class EndpointSupportTools
         string runCapability,
         [Description("The exact packageId returned by find_repair_packages.")]
         string packageId,
-        CancellationToken cancellationToken) =>
-        RunAutomaticRepairAsync(store, registry, catalog, files, runCapability,
-            PackageCommands.Run, packageId, "repair package", "run_repair_package",
+        CancellationToken cancellationToken)
+    {
+        var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+        if (scope is null)
+            return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+        var package = await files.GetRepairPackageAsync(packageId?.Trim() ?? string.Empty, cancellationToken);
+        if (package?.Descriptor.Software is null)
+            return """{"ok":false,"error":"That package has no system requirements to check."}""";
+        var (report, error) = await Software.SoftwareInstallFlow.CheckOnPcAsync(registry, catalog,
+            scope.AgentId, package.Descriptor.PackageId, cancellationToken);
+        await store.WriteToolAuditAsync(scope, "check_software_requirements",
+            report is null ? "error" : report.Met ? "met" : "not-met", error, cancellationToken);
+        return report is null
+            ? ToolResultSanitizer.Sanitize(new { ok = false, error })
+            : ToolResultSanitizer.Sanitize(new
+            {
+                ok = true,
+                requirementsMet = report.Met,
+                alreadyInstalled = report.AlreadyInstalled,
+                problems = report.Problems,
+                installsFirst = report.InstallFirst.Count
+            });
+    }
+
+    [McpServerTool(Name = "run_repair_package"), Description(
+        "Run one administrator-approved repair or install package on the user's PC by the exact packageId from find_repair_packages. It runs unattended with the administrator's fixed settings; nothing else can be passed. Install packages are checked against the PC's system requirements first (status RequirementsNotMet with the problems when the PC is not suitable) and are skipped when already installed. Packages that need approval are sent to the helpdesk (status AwaitingApproval) and run once a member approves; software that cannot install silently becomes a helpdesk task (status AwaitingHelpdesk).")]
+    public static async Task<string> RunRepairPackage(
+        ChatStore store,
+        AgentRegistry registry,
+        CommandCatalog catalog,
+        FileArtifactRepository files,
+        Actions.ActionStore actions,
+        Software.SoftwareApprovalStore approvals,
+        [Description("The random capability supplied in this run's instructions.")]
+        string runCapability,
+        [Description("The exact packageId returned by find_repair_packages.")]
+        string packageId,
+        [Description("For packages that need approval: one short English line for the helpdesk on why (what the user asked for).")]
+        string? reason = null,
+        CancellationToken cancellationToken = default)
+    {
+        var package = await files.GetRepairPackageAsync(packageId?.Trim() ?? string.Empty,
+            cancellationToken);
+        if (package is not null && (package.IsInstall || package.RequiresApproval
+                || package.Descriptor.Software is not null))
+        {
+            var scope = await store.ResolveCapabilityAsync(runCapability, cancellationToken);
+            if (scope is null)
+                return """{"ok":false,"error":"The run capability is invalid or expired."}""";
+            var plan = await Software.SoftwareInstallFlow.PlanAsync(package, registry, catalog, files,
+                approvals, scope.AgentId, alreadyApproved: false, cancellationToken);
+            var id = package.Descriptor.PackageId;
+            switch (plan.Decision)
+            {
+                case Software.InstallDecision.CheckFailed:
+                    await store.WriteToolAuditAsync(scope, "run_repair_package", "error", plan.Error, cancellationToken);
+                    return ToolResultSanitizer.Sanitize(new { ok = false, error = "The PC's requirements could not be checked: " + plan.Error });
+                case Software.InstallDecision.AlreadyInstalled:
+                    await store.WriteToolAuditAsync(scope, "run_repair_package", "already-installed", null, cancellationToken);
+                    await store.RecordRepairAttemptAsync(scope, "run_repair_package", id, true, null, cancellationToken);
+                    return ToolResultSanitizer.Sanitize(new { ok = true, result = new { state = SoftwareRunStates.AlreadyInstalled, exitCode = 10, restartRequired = false } });
+                case Software.InstallDecision.RequirementsNotMet:
+                    await store.WriteToolAuditAsync(scope, "run_repair_package", "requirements-not-met", null, cancellationToken);
+                    await store.RecordRepairAttemptAsync(scope, "run_repair_package", id, false,
+                        "Requirements not met", cancellationToken);
+                    return ToolResultSanitizer.Sanitize(new
+                    {
+                        ok = false,
+                        status = SoftwareRunStates.RequirementsNotMet,
+                        problems = Software.SoftwareInstallFlow.Problems(plan.Report),
+                        summary = "This PC is not suitable for this software. Tell the user simply why, and offer the helpdesk."
+                    });
+                case Software.InstallDecision.ManualInstall:
+                    await actions.CreateApprovalAsync(Actions.ApprovalKinds.Person, "manual-install",
+                        $"Install {package.Descriptor.DisplayName} by hand", scope.AgentId, scope.UserSid,
+                        scope.ConversationId, Software.SoftwareInstallFlow.ApprovalArguments(package, plan),
+                        PromptRedactor.RedactSecrets(((reason ?? string.Empty) + " "
+                            + package.Descriptor.Software?.Install?.ManualReason).Trim()), cancellationToken);
+                    await store.WriteToolAuditAsync(scope, "run_repair_package", "awaiting-person", null, cancellationToken);
+                    return ToolResultSanitizer.Sanitize(new
+                    {
+                        ok = true,
+                        status = "AwaitingHelpdesk",
+                        summary = "This software is installed by a helpdesk member. Tell the user in one sentence; the answer will appear in this chat."
+                    });
+                case Software.InstallDecision.NeedsApproval:
+                    await actions.CreateApprovalAsync(Actions.ApprovalKinds.Package, id,
+                        package.Descriptor.DisplayName, scope.AgentId, scope.UserSid, scope.ConversationId,
+                        Software.SoftwareInstallFlow.ApprovalArguments(package, plan),
+                        PromptRedactor.RedactSecrets(reason ?? string.Empty), cancellationToken);
+                    await store.WriteToolAuditAsync(scope, "run_repair_package", "awaiting-approval",
+                        null, cancellationToken);
+                    return ToolResultSanitizer.Sanitize(new
+                    {
+                        ok = true,
+                        status = "AwaitingApproval",
+                        summary = Actions.ActionRunner.AwaitingApprovalSummary
+                    });
+            }
+            // Missing runtimes first, each as its own recorded run.
+            foreach (var dependency in plan.InstallFirst)
+            {
+                var result = await RunAutomaticRepairAsync(store, registry, catalog, files, runCapability,
+                    PackageCommands.Run, dependency.Descriptor.PackageId, "runtime package", "run_repair_package",
+                    ChatProgressActivity.EndpointCheck, cancellationToken);
+                if (!result.Contains("\"ok\":true", StringComparison.Ordinal)) return result;
+            }
+        }
+        return await RunAutomaticRepairAsync(store, registry, catalog, files, runCapability,
+            PackageCommands.Run, packageId ?? string.Empty, "repair package", "run_repair_package",
             ChatProgressActivity.EndpointCheck, cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs a package a helpdesk member approved, for the PC and user that asked. Install
+    /// packages are checked against the PC again first, and missing runtimes go first.
+    /// </summary>
+    public static async Task<(bool Ok, string Summary)> RunApprovedPackageAsync(
+        AgentRegistry registry, CommandCatalog catalog, FileArtifactRepository files,
+        Software.SoftwareApprovalStore approvals,
+        string agentId, string? userSid, string packageId, CancellationToken cancellationToken)
+    {
+        var package = await files.GetRepairPackageAsync(packageId, cancellationToken);
+        if (package is null) return (false, "The package is no longer in the approved catalog.");
+        var toRun = new List<string>();
+        if (package.Descriptor.Software is not null)
+        {
+            var plan = await Software.SoftwareInstallFlow.PlanAsync(package, registry, catalog, files,
+                approvals, agentId, alreadyApproved: true, cancellationToken);
+            switch (plan.Decision)
+            {
+                case Software.InstallDecision.CheckFailed: return (false, "The PC could not be checked: " + plan.Error);
+                case Software.InstallDecision.AlreadyInstalled: return (true, "It was already installed on the PC.");
+                case Software.InstallDecision.RequirementsNotMet:
+                    return (false, "The PC no longer meets the requirements: "
+                        + string.Join(" ", Software.SoftwareInstallFlow.Problems(plan.Report)));
+                case Software.InstallDecision.ManualInstall: return (false, "This software must be installed by hand.");
+            }
+            toRun.AddRange(plan.InstallFirst.Select(item => item.Descriptor.PackageId));
+        }
+        toRun.Add(packageId);
+        foreach (var id in toRun)
+        {
+            var (ok, summary) = await RunPackageOnceAsync(registry, catalog, files, agentId, userSid, id,
+                cancellationToken);
+            if (!ok) return (false, id == packageId ? summary : $"A runtime it needs did not install: {summary}");
+        }
+        return (true, toRun.Count > 1 ? "The runtime and the package finished on the PC." : "The package finished on the PC.");
+    }
+
+    private static async Task<(bool Ok, string Summary)> RunPackageOnceAsync(
+        AgentRegistry registry, CommandCatalog catalog, FileArtifactRepository files,
+        string agentId, string? userSid, string packageId, CancellationToken cancellationToken)
+    {
+        if (!catalog.Contains(PackageCommands.Run))
+            return (false, "Packages are not allow-listed on this control plane.");
+        if (!TryValidateActionParameters(PackageCommands.Run, new EndpointActionParameters(packageId),
+                out var validated, out var error))
+            return (false, error);
+        var pinned = await PinCataloguedActionAsync(files, PackageCommands.Run, validated,
+            cancellationToken);
+        if (pinned is null) return (false, "The package is no longer in the approved catalog.");
+        var requestId = Guid.NewGuid().ToString("N");
+        var response = await registry.SendCommandAsync(agentId, RpcRequest.Create(requestId,
+                PackageCommands.Run, AddUserScope(pinned, userSid ?? string.Empty, requestId)),
+            cancellationToken);
+        return response.Error is null ? (true, "The package finished on the PC.")
+            : (false, response.Error.Message);
+    }
 
     private static async Task<string> RunAutomaticRepairAsync(
         ChatStore store,
@@ -322,30 +564,44 @@ public sealed class EndpointSupportTools
         var requestId = Guid.NewGuid().ToString("N");
         var request = RpcRequest.Create(requestId, method,
             AddUserScope(pinned, scope.UserSid, requestId));
-        await store.WriteProgressAsync(scope.RunId, ChatProgressStage.ActionStarted,
-            activity, ChatProgressOutcome.None, cancellationToken);
 
-        var response = await registry.SendCommandAsync(scope.AgentId, request,
-            cancellationToken);
-        var succeeded = response.Error is null;
-        await store.WriteToolAuditAsync(scope, toolName,
-            succeeded ? "success" : "error", response.Error?.Message, cancellationToken);
-        await store.RecordRepairAttemptAsync(scope, toolName, artifactId, succeeded,
-            response.Error?.Message, cancellationToken);
-        await store.WriteProgressAsync(scope.RunId, ChatProgressStage.ActionCompleted,
-            activity,
-            succeeded ? ChatProgressOutcome.Success : ChatProgressOutcome.Failure,
-            cancellationToken);
+        // A repair that has started is never cut short by Stop; the run stops after it ends.
+        IDisposable? pin = null;
+        if (store.Runs.Get(scope.RunId) is { } handle && !handle.TryPin(out pin))
+            return StoppedByUser;
+        try
+        {
+            await store.WriteProgressAsync(scope.RunId, ChatProgressStage.ActionStarted,
+                activity, ChatProgressOutcome.None, cancellationToken);
+            var response = await registry.SendCommandAsync(scope.AgentId, request,
+                cancellationToken);
+            var succeeded = response.Error is null;
+            await store.WriteToolAuditAsync(scope, toolName,
+                succeeded ? "success" : "error", response.Error?.Message, cancellationToken);
+            await store.RecordRepairAttemptAsync(scope, toolName, artifactId, succeeded,
+                response.Error?.Message, cancellationToken);
+            await store.WriteProgressAsync(scope.RunId, ChatProgressStage.ActionCompleted,
+                activity,
+                succeeded ? ChatProgressOutcome.Success : ChatProgressOutcome.Failure,
+                cancellationToken);
 
-        return ToolResultSanitizer.Sanitize(succeeded
-            ? new { ok = true, result = response.Result }
-            : new
-            {
-                ok = false,
-                error = response.Error!.Message,
-                details = response.Error.Data
-            });
+            return ToolResultSanitizer.Sanitize(succeeded
+                ? new { ok = true, result = response.Result }
+                : new
+                {
+                    ok = false,
+                    error = response.Error!.Message,
+                    details = response.Error.Data
+                });
+        }
+        finally
+        {
+            pin?.Dispose();
+        }
     }
+
+    private const string StoppedByUser =
+        """{"ok":false,"error":"The user stopped this request. Do not run anything else."}""";
 
     [McpServerTool(Name = "propose_endpoint_action"), Description(
         "Create an immutable approved support action card for the endpoint user. This never executes the action and requires user consent.")]
@@ -452,7 +708,7 @@ public sealed class EndpointSupportTools
     private static async Task<string> RunReadOnlyAsync(ChatStore store,
         AgentRegistry registry, string capability, string method,
         JsonElement? parameters, CancellationToken cancellationToken,
-        bool keepIpAddresses = false)
+        bool keepIpAddresses = false, Func<string, object?, Task<object?>>? transform = null)
     {
         var scope = await store.ResolveCapabilityAsync(capability, cancellationToken);
         if (scope is null)
@@ -462,10 +718,14 @@ public sealed class EndpointSupportTools
         var request = RpcRequest.Create(
             Guid.NewGuid().ToString("N"), method, scopedParameters);
         var activity = GetProgressActivity(method);
+        if (store.Runs.Get(scope.RunId)?.StopRequested == true) return StoppedByUser;
         await store.WriteProgressAsync(scope.RunId,
             ChatProgressStage.EndpointCheckStarted, activity,
             ChatProgressOutcome.None, cancellationToken);
-        var response = await registry.SendCommandAsync(scope.AgentId, request, cancellationToken);
+        // Read-only checks can be abandoned: Stop cancels this call and the endpoint stops them.
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken,
+            store.Runs.Get(scope.RunId)?.Token ?? CancellationToken.None);
+        var response = await registry.SendCommandAsync(scope.AgentId, request, stop.Token);
         var outcome = response.Error is null ? "success" : "error";
         await store.WriteToolAuditAsync(scope, method, outcome,
             response.Error?.Message, cancellationToken);
@@ -475,8 +735,10 @@ public sealed class EndpointSupportTools
                 ? ChatProgressOutcome.Success
                 : ChatProgressOutcome.Failure,
             cancellationToken);
+        var result = response.Error is null && transform is not null
+            ? await transform(scope.AgentId, response.Result) : response.Result;
         return ToolResultSanitizer.Sanitize(response.Error is null
-            ? new { ok = true, result = response.Result }
+            ? new { ok = true, result }
             : new { ok = false, error = response.Error.Message }, keepIpAddresses);
     }
 

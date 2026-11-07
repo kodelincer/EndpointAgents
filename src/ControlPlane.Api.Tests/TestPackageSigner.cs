@@ -34,6 +34,10 @@ internal static class TestPackageSigner
             .Select(entry => new BatchSupportFile(entry.FileName, entry.Sha256, "")).ToArray();
         var publisher = schema2 && !string.IsNullOrWhiteSpace(manifest.File?.Publisher)
             ? manifest.File.Publisher.Trim() : null;
+        string? softwareSha256 = null;
+        if (schema2 && manifest.Software is not null
+            && SoftwareSpecPolicy.TryNormalize(manifest.Software, type, out var software, out _))
+            softwareSha256 = SoftwareSpecPolicy.ComputeSha256(software!);
         string statement;
         try
         {
@@ -42,7 +46,8 @@ internal static class TestPackageSigner
                 BatchPlaybookPolicy.ComputeSha256(playbook!),
                 support.Length == 0 ? null
                     : BatchSupportFilePolicy.ComputeBundleSha256(sha256, support),
-                publisher);
+                publisher, PackageSignaturePolicy.NormalizeRisks(manifest.Review?.AcceptedRisks),
+                softwareSha256);
         }
         catch (ArgumentException) { return; } // Invalid support files are reported first.
         package["signature"] = JsonSerializer.SerializeToNode(

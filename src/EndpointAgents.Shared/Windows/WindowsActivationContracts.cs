@@ -59,7 +59,8 @@ public sealed record WindowsBugfixArtifactDescriptor(
     IReadOnlyList<BatchSupportFile>? SupportFiles = null,
     string? BundleSha256 = null,
     IReadOnlyList<WindowsBugfixCompatibilityRange>? AdditionalCompatibility = null,
-    EndpointAgents.Shared.Packages.PackageSignature? Signature = null);
+    EndpointAgents.Shared.Packages.PackageSignature? Signature = null,
+    IReadOnlyList<string>? AcceptedRisks = null);
 
 public sealed record WindowsBugfixCatalog(
     IReadOnlyList<WindowsBugfixArtifactDescriptor> Artifacts);

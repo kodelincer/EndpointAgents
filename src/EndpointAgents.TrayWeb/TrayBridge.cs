@@ -114,6 +114,14 @@ public sealed class TrayBridge(MainWindow window, Func<Task<TrayStatus?>> refres
                 return await _service.CloseChatAsync(new ChatConversationCloseRequest(
                     Text(p, "conversationId", 64), Identity()), CancellationToken.None);
 
+            case "chat.not_fixed":
+                return await _service.ReportChatNotFixedAsync(new EndpointAgents.Shared.Problems.ChatNotFixedRequest(
+                    Text(p, "conversationId", 64), Identity()), CancellationToken.None);
+
+            case "chat.stop":
+                return await _service.StopChatRunAsync(new ChatRunStopRequest(
+                    Text(p, "conversationId", 64), Identity()), CancellationToken.None);
+
             case "chat.action.respond":
             {
                 var approved = p.TryGetProperty("approved", out var value) && value.ValueKind == JsonValueKind.True;

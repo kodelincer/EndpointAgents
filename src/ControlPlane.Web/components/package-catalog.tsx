@@ -3,7 +3,8 @@
 import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, Package, RefreshCw, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { getPackageInventory } from "@/lib/control-plane";
-import { describeRun, describeStep, finishRules, packageCompatibility, packageStatus } from "@/lib/packages";
+import { acceptedRiskLines, describeRun, describeStep, finishRules, packageCompatibility, packageStatus } from "@/lib/packages";
+import { cannotSkipApproval, getNoApproval, installLines, isInstallPackage, requirementLines, setNoApproval } from "@/lib/software";
 import type { BatPackage, PackageInventory } from "@/lib/types";
 
 /** Read-only operator view of FileRepository\packages and why each package is or is not offered. */
@@ -12,11 +13,14 @@ export function PackageCatalog() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [open, setOpen] = useState<string>();
+  const [noApproval, setNoApprovalIds] = useState<Set<string>>(new Set());
+  const [switchError, setSwitchError] = useState<string>();
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       setInventory(await getPackageInventory());
+      setNoApprovalIds(new Set((await getNoApproval().catch(() => [])).map(entry => entry.packageId)));
       setError(undefined);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The package list could not be loaded.");
@@ -32,14 +36,24 @@ export function PackageCatalog() {
 
   const packages = inventory?.packages ?? [];
 
+  const toggleApproval = async (item: BatPackage, skip: boolean) => {
+    if (skip && !window.confirm(`Install "${item.displayName || item.id}" on any PC without a helpdesk approval?`)) return;
+    try {
+      setNoApprovalIds(new Set((await setNoApproval(item.id, skip)).map(entry => entry.packageId)));
+      setSwitchError(undefined);
+    } catch (reason) { setSwitchError(reason instanceof Error ? reason.message : "The list was not changed."); }
+  };
+
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="packages-title">
       <div><div className="file-heading-mark"><Package size={17} /></div><div><h1 id="packages-title">Packages</h1>
-        <p>Reviewed BAT and EXE files with their playbooks. Only Ready packages are offered to endpoints; general packages run without asking the user.</p></div></div>
+        <p>Reviewed BAT, EXE, MSI, MSIX and ZIP files with their playbooks. Only Ready packages are offered to endpoints; general packages run without asking the user. Install packages wait for an approval unless you switch it off.</p></div></div>
       <button className="secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
     </section>
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} /><div><strong>Packages are unavailable</strong><span>{error}</span></div><button onClick={() => void refresh()}>Retry</button></div>}
+
+    {switchError && <div className="inline-error" role="alert"><CircleAlert size={17} /><div><strong>Approval setting not changed</strong><span>{switchError}</span></div></div>}
 
     {inventory && <p className="package-path">Package folder: <code>{inventory.packagesPath}</code></p>}
 
@@ -48,14 +62,17 @@ export function PackageCatalog() {
         <p>Create one with <code>scripts\new-package.ps1</code>; see “How to add a package” below.</p></section> :
       <section className="file-list" aria-label="Packages">{packages.map(item =>
         <PackageRow key={item.id} item={item} inventory={inventory!} open={open === item.id}
+          noApproval={noApproval.has(item.id)} onApprovalChange={skip => void toggleApproval(item, skip)}
           onToggle={() => setOpen(open === item.id ? undefined : item.id)} />)}</section>}
 
     <HowToAddPackage />
   </div>;
 }
 
-function PackageRow({ item, inventory, open, onToggle }:
-  { item: BatPackage; inventory: PackageInventory; open: boolean; onToggle: () => void }) {
+function PackageRow({ item, inventory, open, onToggle, noApproval, onApprovalChange }:
+  { item: BatPackage; inventory: PackageInventory; open: boolean; onToggle: () => void;
+    noApproval: boolean; onApprovalChange: (skip: boolean) => void }) {
+  const blocked = cannotSkipApproval(item);
   const status = packageStatus(item.status);
   const Icon = status.tone === "ready" ? CircleCheck : status.tone === "warning" ? TriangleAlert : CircleAlert;
   return <article className="file-row package-row">
@@ -67,6 +84,11 @@ function PackageRow({ item, inventory, open, onToggle }:
       {item.description && <p className="file-description">{item.description}</p>}
       <p className="file-compatibility">{packageCompatibility(item)}{item.problem && ` · problem ${item.problem}, try order ${item.order ?? 100}`}</p>
       {item.symptoms && item.symptoms.length > 0 && <p className="file-compatibility">Matches: {item.symptoms.map(symptom => <span key={symptom} className="file-chip" dir="auto">{symptom}</span>)}</p>}
+      {isInstallPackage(item) && <label className="package-approval-switch" title={blocked ?? undefined}>
+        <input type="checkbox" checked={noApproval && !blocked} disabled={Boolean(blocked)}
+          onChange={event => onApprovalChange(event.target.checked)} />
+        {blocked ?? (noApproval ? "No approval needed: installs as soon as the PC meets the requirements"
+          : "Waits for a helpdesk approval on the Approvals page")}</label>}
       {item.reasons.length > 0 && <ul className="package-reasons">{item.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       {item.warnings.length > 0 && <ul className="package-warnings">{item.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
       <button type="button" className="package-toggle" onClick={onToggle} aria-expanded={open}>
@@ -79,6 +101,13 @@ function PackageRow({ item, inventory, open, onToggle }:
 function PackageDetail({ item, inventory }: { item: BatPackage; inventory: PackageInventory }) {
   const limits = inventory.limits;
   return <div className="package-detail">
+    {item.software && <>
+      <h3>Software{item.software.name ? `: ${item.software.name}` : ""}{item.software.version ? ` ${item.software.version}` : ""}{item.software.licensed ? " (licensed)" : ""}</h3>
+      <h3>Requirements (checked before approval and again before install)</h3>
+      <ul>{requirementLines(item.software).map(line => <li key={line}>{line}</li>)}</ul>
+      <h3>Install</h3>
+      <ul>{installLines(item.software).map(line => <li key={line}>{line}</li>)}</ul>
+    </>}
     {item.playbook ? <>
       <h3>Playbook (version {item.playbook.version})</h3>
       <ul>{describeRun(item).map(line => <li key={line}>{line}</li>)}</ul>
@@ -86,6 +115,10 @@ function PackageDetail({ item, inventory }: { item: BatPackage; inventory: Packa
       <h3>Finish rules</h3>
       <ul>{finishRules(item.playbook, limits.defaultGuiDialogGraceSeconds).map(rule => <li key={rule}>{rule}</li>)}</ul>
     </> : <p>No readable playbook.</p>}
+    {acceptedRiskLines(item).length > 0 && <>
+      <h3>Accepted risks</h3>
+      <ul>{acceptedRiskLines(item).map(line => <li key={line}>{line}</li>)}</ul>
+    </>}
     <h3>Hashes</h3>
     <dl className="package-hashes">
       <div><dt>File</dt><dd>{item.batFileName ?? "—"}{item.batSizeBytes ? ` · ${item.batSizeBytes} bytes` : ""}</dd></div>

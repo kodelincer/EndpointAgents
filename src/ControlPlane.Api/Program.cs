@@ -1,3 +1,4 @@
+using ControlPlane.Api.Actions;
 using ControlPlane.Api.Agents;
 using ControlPlane.Api.Commands;
 using ControlPlane.Api.Chat;
@@ -14,6 +15,7 @@ using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Packages;
 using EndpointAgents.Shared.Windows;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using ModelContextProtocol.Server;
@@ -28,8 +30,14 @@ builder.Services.AddWindowsService(options =>
 builder.Services.AddSignalR();
 builder.Services.AddAuthentication(AgentAuthentication.Scheme)
     .AddScheme<AuthenticationSchemeOptions, AgentTokenAuthenticationHandler>(
-        AgentAuthentication.Scheme, _ => { });
-builder.Services.AddAuthorization();
+        AgentAuthentication.Scheme, _ => { })
+    .AddOperatorCookie();
+builder.Services.AddAuthorization(OperatorPolicies.Add);
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<OperatorSignInThrottle>();
+builder.Services.AddSingleton<OperatorUserStore>();
+builder.Services.Configure<OperatorDirectoryOptions>(builder.Configuration.GetSection("OperatorDirectory"));
+builder.Services.AddSingleton<IOperatorDirectory, OperatorDirectory>();
 builder.Services.AddCors(options => options.AddPolicy("Dashboard", policy =>
     policy.WithOrigins(builder.Configuration.GetSection("Dashboard:AllowedOrigins").Get<string[]>() ?? [])
         .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
@@ -79,7 +87,55 @@ builder.Services.AddHermesHttpClient(builder.Configuration);
 builder.Services.AddHostedService<HermesRunWorker>();
 builder.Services.AddMcpServer()
     .WithHttpTransport(options => options.Stateless = true)
-    .WithTools<EndpointSupportTools>();
+    .WithTools<EndpointSupportTools>()
+    .WithTools<EndpointActionTools>();
+// General endpoint actions: catalogue runner, environment map, incidents, helpdesk skills.
+builder.Services.AddSingleton<ActionStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Updates.AgentUpdateStore>();
+// Problem reports from PCs: own database file, optional copy to an outside log server. No AI.
+builder.Services.AddOptions<ControlPlane.Api.Problems.ProblemOptions>()
+    .Bind(builder.Configuration.GetSection("Problems"))
+    .Validate(options => options.RetentionDays is >= 1 and <= 3650,
+        "Problems:RetentionDays must be between 1 and 3650.")
+    .Validate(options => options.MaxDatabaseMegabytes is >= 1 and <= 1024 * 1024,
+        "Problems:MaxDatabaseMegabytes must be between 1 and 1048576.")
+    .Validate(options => options.MaxReportsPerPcPerHour is >= 1 and <= 10_000,
+        "Problems:MaxReportsPerPcPerHour must be between 1 and 10000.")
+    .ValidateOnStart();
+builder.Services.AddSingleton<ControlPlane.Api.Problems.ProblemStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Problems.Forwarding.LogServerSettingsStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Problems.Forwarding.LogForwarder>();
+builder.Services.AddHostedService(provider =>
+    provider.GetRequiredService<ControlPlane.Api.Problems.Forwarding.LogForwarder>());
+builder.Services.AddSingleton<ControlPlane.Api.Problems.ProblemRecorder>();
+builder.Services.AddHostedService<ControlPlane.Api.Problems.ProblemMaintenanceWorker>();
+builder.Services.Configure<ControlPlane.Api.Software.SoftwareInstallOptions>(
+    builder.Configuration.GetSection("SoftwareInstall"));
+builder.Services.AddSingleton<ControlPlane.Api.Software.SoftwareApprovalStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Health.HealthRuleStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Inventory.InventoryStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Lessons.LessonStore>();
+builder.Services.AddSingleton<ControlPlane.Api.Dashboard.OverviewStore>();
+builder.Services.AddHostedService<ControlPlane.Api.Lessons.LessonWorker>();
+builder.Services.AddSingleton<ControlPlane.Api.Health.HealthRuleRunner>();
+builder.Services.AddHostedService<ControlPlane.Api.Health.HealthRuleWorker>();
+builder.Services.AddSingleton<ControlPlane.Api.Updates.AgentUpdateRepository>();
+builder.Services.AddSingleton<ActionRunner>();
+builder.Services.AddSingleton<ApprovalService>();
+builder.Services.AddSingleton<ServerProbe>();
+builder.Services.AddHttpClient(ServerProbe.HttpClientName)
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        AllowAutoRedirect = false,
+        UseProxy = false
+    });
+builder.Services.Configure<ActiveDirectoryOptions>(builder.Configuration.GetSection("ActiveDirectory"));
+builder.Services.AddSingleton<ActiveDirectoryAccountChecker>();
+builder.Services.Configure<HelpdeskSkillOptions>(builder.Configuration.GetSection("HelpdeskSkills"));
+builder.Services.AddSingleton<SkillService>();
+builder.Services.Configure<OrganizationKnowledgeOptions>(builder.Configuration.GetSection("Organization"));
+builder.Services.AddSingleton<OrganizationKnowledgeService>();
+builder.Services.Configure<PrivacyOptions>(builder.Configuration.GetSection("Privacy"));
 builder.Services.AddOptions<FileRepositoryOptions>()
     .Bind(builder.Configuration.GetSection("FileRepository"))
     .Validate(options => !string.IsNullOrWhiteSpace(options.RootPath),
@@ -124,6 +180,18 @@ builder.Services.AddHealthChecks()
 var app = builder.Build();
 await app.Services.GetRequiredService<ChatStore>()
     .InitializeAsync(app.Lifetime.ApplicationStopping);
+await app.Services.GetRequiredService<OperatorUserStore>()
+    .InitializeAsync(app.Lifetime.ApplicationStopping);
+await app.Services.GetRequiredService<ActionStore>()
+    .InitializeAsync(app.Lifetime.ApplicationStopping);
+await app.Services.GetRequiredService<ControlPlane.Api.Updates.AgentUpdateStore>()
+    .InitializeAsync(app.Lifetime.ApplicationStopping);
+await app.Services.GetRequiredService<ControlPlane.Api.Software.SoftwareApprovalStore>().InitializeAsync();
+await app.Services.GetRequiredService<ControlPlane.Api.Health.HealthRuleStore>().InitializeAsync();
+await app.Services.GetRequiredService<ControlPlane.Api.Inventory.InventoryStore>().InitializeAsync();
+await app.Services.GetRequiredService<ControlPlane.Api.Lessons.LessonStore>().InitializeAsync();
+await app.Services.GetRequiredService<ControlPlane.Api.Problems.ProblemStore>().InitializeAsync();
+await app.Services.GetRequiredService<ControlPlane.Api.Problems.Forwarding.LogServerSettingsStore>().InitializeAsync();
 
 // Endpoint agents and health monitors can reach the explicitly public routes
 // below. The unauthenticated operator console and command surface remain local
@@ -183,13 +251,17 @@ app.UseCors("Dashboard");
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapHub<AgentHub>("/agent-hub");
+// Every other route needs a signed-in operator (the fallback policy). Endpoint agents
+// authenticate inside the hub with their device token, and Hermes MCP is guarded by
+// its own key above, so neither uses the operator sign-in.
+app.MapHub<AgentHub>("/agent-hub").RequireAuthorization(OperatorPolicies.AgentConnection);
 app.MapHub<DashboardHub>("/dashboard-hub");
-app.MapMcp("/internal/mcp");
+app.MapMcp("/internal/mcp").AllowAnonymous();
+app.MapOperatorAuth();
 
 // Liveness proves that the process can answer. Readiness additionally indicates
 // whether operators currently allow new command work.
-app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
@@ -199,21 +271,36 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
         [HealthStatus.Degraded] = StatusCodes.Status503ServiceUnavailable,
         [HealthStatus.Unhealthy] = StatusCodes.Status503ServiceUnavailable
     }
-});
+}).AllowAnonymous();
 
 app.MapGet("/", () => Results.Ok(new
 {
     service = "EndpointAgents.ControlPlane.Api",
     status = "running"
-}));
-app.MapPost("/api/agent-enrollments", async (ChatStore store,
+})).AllowAnonymous();
+app.MapPost("/api/agent-enrollments", async (HttpContext context, ChatStore store,
+    IAuthorizationService authorization,
     Microsoft.Extensions.Options.IOptions<AgentSecurityOptions> security,
     CancellationToken cancellationToken) =>
 {
+    // Admins issue codes from the dashboard. Scripts on the server itself (for example
+    // start-dev-stack.ps1) may too: browsers always send Origin on a POST, so a
+    // loopback call without one is a local program, not a web page.
+    var localScript = LoopbackRequestGuard.IsLoopback(context.Connection.RemoteIpAddress)
+        && !context.Request.Headers.ContainsKey("Origin");
+    if (!localScript)
+    {
+        var operatorResult = await context.AuthenticateAsync(OperatorAuthentication.Scheme);
+        if (!operatorResult.Succeeded) return Results.Unauthorized();
+        if (!(await authorization.AuthorizeAsync(operatorResult.Principal,
+                OperatorPolicies.Admin)).Succeeded)
+            return Results.Forbid(authenticationSchemes: [OperatorAuthentication.Scheme]);
+    }
+
     var issue = await store.CreateEnrollmentAsync(
         TimeSpan.FromMinutes(security.Value.EnrollmentLifetimeMinutes), cancellationToken);
     return Results.Ok(issue);
-});
+}).AllowAnonymous(); // checked above: admin, or a local script
 app.MapPost("/api/agent-enrollments/redeem", async (EnrollmentRequest request,
     HttpContext context, ChatStore store,
     Microsoft.Extensions.Options.IOptions<AgentSecurityOptions> security,
@@ -226,14 +313,14 @@ app.MapPost("/api/agent-enrollments/redeem", async (EnrollmentRequest request,
     return redemption is null
         ? Results.BadRequest(new { message = "The enrollment code is invalid, expired, or used." })
         : Results.Ok(redemption);
-});
+}).AllowAnonymous();
 app.MapPost("/api/devices/{agentId}/revoke", async (string agentId, ChatStore store,
     AgentRegistry registry, CancellationToken cancellationToken) =>
 {
     await store.RevokeDeviceAsync(agentId, cancellationToken);
     await registry.RevokeAsync(agentId, cancellationToken);
     return Results.NoContent();
-});
+}).RequireAuthorization(OperatorPolicies.Admin);
 app.MapGet("/api/agents", (AgentRegistry registry) => Results.Ok(registry.GetOnlineAgents()));
 app.MapGet("/api/commands", (CommandCatalog catalog) => Results.Ok(catalog.GetAll()));
 app.MapGet("/api/files/ibsng-dialer/metadata", async (FileArtifactRepository repository,
@@ -253,7 +340,7 @@ app.MapGet("/api/files/ibsng-dialer/metadata", async (FileArtifactRepository rep
             artifact.LastModifiedUtc,
             artifact.Sha256
         });
-});
+}).AllowAnonymous();
 app.MapGet("/api/files", async (FileArtifactRepository repository,
     CancellationToken cancellationToken) =>
 {
@@ -357,7 +444,7 @@ app.MapGet("/api/files/ibsng-dialer", async (HttpContext context,
     context.Response.Headers["X-Content-Type-Options"] = "nosniff";
     return Results.File(artifact.FullPath, "application/octet-stream", artifact.FileName,
         artifact.LastModifiedUtc, enableRangeProcessing: true);
-});
+}).AllowAnonymous();
 app.MapGet("/api/files/office/catalog", async (FileArtifactRepository repository,
     CancellationToken cancellationToken) =>
 {
@@ -458,6 +545,14 @@ app.MapGet("/api/files/office/{artifactId}", async (string artifactId, HttpConte
     return Results.File(artifact.File.FullPath, "application/octet-stream",
         artifact.File.FileName, artifact.File.LastModifiedUtc, enableRangeProcessing: true);
 }).RequireAuthorization();
+app.MapActionEndpoints();
+ControlPlane.Api.Updates.AgentUpdateEndpoints.MapAgentUpdateEndpoints(app);
+ControlPlane.Api.Software.SoftwareEndpoints.MapSoftwareEndpoints(app);
+ControlPlane.Api.Health.HealthEndpoints.MapHealthEndpoints(app);
+ControlPlane.Api.Inventory.InventoryEndpoints.MapInventoryEndpoints(app);
+ControlPlane.Api.Lessons.LessonEndpoints.MapLessonEndpoints(app);
+ControlPlane.Api.Dashboard.OverviewEndpoints.MapOverviewEndpoints(app);
+ControlPlane.Api.Problems.ProblemEndpoints.MapProblemEndpoints(app);
 app.MapGet("/api/activity", (int? limit, string? agentId, ActivityStore store) =>
     Results.Ok(store.Get(limit ?? 100, agentId)));
 // Requests for abilities the support agent does not have yet (loopback operator view).
@@ -468,7 +563,8 @@ app.MapMethods("/api/feature-requests/{requestId}", ["PATCH"], async (string req
     FeatureRequestPatch patch, ChatStore store, CancellationToken cancellationToken) =>
     await store.SetFeatureRequestStatusAsync(requestId, patch.Status, cancellationToken)
         ? Results.NoContent()
-        : Results.BadRequest(new { message = "Unknown request or status." }));
+        : Results.BadRequest(new { message = "Unknown request or status." }))
+    .RequireAuthorization(OperatorPolicies.Reviewer);
 app.MapGet("/api/support-requests", (int? limit, string? agentId,
     SupportRequestStore store) => Results.Ok(store.Get(limit ?? 100, agentId)));
 app.MapGet("/api/helpdesk/conversations", async (int? limit, string? status, string? query,
@@ -565,7 +661,7 @@ app.MapPost("/api/system/maintenance", (MaintenanceModeRequest request,
 
     runtime.SetMaintenanceMode(request.Enabled);
     return Results.Ok(new { maintenanceMode = runtime.IsMaintenanceMode });
-});
+}).RequireAuthorization(OperatorPolicies.Admin);
 
 app.MapPost("/api/agents/{agentId}/commands", async (string agentId, RpcRequest request,
     AgentRegistry registry, CommandCatalog catalog, ControlPlaneRuntimeState runtime,
@@ -589,7 +685,7 @@ app.MapPost("/api/agents/{agentId}/commands", async (string agentId, RpcRequest 
 
     var response = await registry.SendCommandAsync(agentId, request, cancellationToken);
     return response.Error?.Code == 404 ? Results.NotFound(response) : Results.Ok(response);
-});
+}).RequireAuthorization(OperatorPolicies.Admin);
 
 app.Run();
 

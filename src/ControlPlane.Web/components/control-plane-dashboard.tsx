@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/components/auth-gate";
 import { Activity as ActivityIcon, Check, ChevronDown, CircleAlert, Clock3, Copy,
   ChevronRight, MoreHorizontal, PanelRightClose, Play, RefreshCw, Search, Server, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -22,6 +23,7 @@ function relative(value: string) {
 /** Agent registry, live activity rail, command review, and RPC trace inspection. */
 export function ControlPlaneDashboard() {
   const { agents, activity, commands, loading, loadError, refresh } = useControlPlane();
+  const canRun = useAuth().can("commands.run");
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"agent" | "connected">("agent");
   const [agentFilter, setAgentFilter] = useState("");
@@ -93,7 +95,7 @@ export function ControlPlaneDashboard() {
   return <div className="agent-workspace">
     <div className={`workspace ${railOpen ? "with-rail" : ""}`}>
       <section className="registry" aria-labelledby="registry-title">
-        <div className="section-heading"><div><h1 id="registry-title">Agent registry</h1><p>Live Windows endpoints currently registered with this control plane.</p></div>
+        <div className="section-heading"><div><h1 id="registry-title">Endpoints</h1><p>Live Windows endpoints currently registered with this control plane.</p></div>
           {!railOpen && <button className="secondary-button" onClick={() => setRailOpen(true)}><ActivityIcon size={15} /> Show activity</button>}
         </div>
         <div className="registry-tools">
@@ -103,9 +105,9 @@ export function ControlPlaneDashboard() {
         </div>
 
         {loadError && <div className="inline-error" role="alert"><CircleAlert size={17} /><div><strong>Dashboard data is unavailable</strong><span>{loadError}</span></div><button onClick={() => void refresh()}>Retry</button></div>}
-        {loading ? <div className="skeleton-list" aria-label="Loading agents">{[1,2,3].map(i => <div className="skeleton-row" key={i} />)}</div> :
-        visibleAgents.length === 0 ? <div className="empty-state"><span className="empty-icon"><Server size={23} /></span><h2>{query ? "No matching agents" : "Waiting for endpoint agents"}</h2><p>{query ? "Try a different hostname, user, or agent ID." : "Start an endpoint service configured for this control plane. It will appear here as soon as it registers."}</p></div> :
-        <div className="agent-table-wrap"><table className="agent-table"><thead><tr><th>Agent</th><th>Host</th><th>User</th><th>Version</th><th>Connected</th><th>Last activity</th><th><span className="sr-only">Actions</span></th></tr></thead>
+        {loading ? <div className="skeleton-list" aria-label="Loading endpoints">{[1,2,3].map(i => <div className="skeleton-row" key={i} />)}</div> :
+        visibleAgents.length === 0 ? <div className="empty-state"><span className="empty-icon"><Server size={23} /></span><h2>{query ? "No matching endpoints" : "Waiting for endpoints"}</h2><p>{query ? "Try a different hostname, user, or agent ID." : "Start an endpoint service configured for this control plane. It will appear here as soon as it registers."}</p></div> :
+        <div className="agent-table-wrap"><table className="agent-table"><thead><tr><th>Endpoint</th><th>Host</th><th>User</th><th>Version</th><th>Connected</th><th>Last activity</th><th><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>{visibleAgents.map(agent => { const last = lastByAgent.get(agent.agentId); return <tr key={agent.agentId} tabIndex={0}
             onContextMenu={e => { e.preventDefault(); setOpenCommandGroup(undefined); setMenu({ x: e.clientX, y: e.clientY, agent }); }} onKeyDown={e => { if (e.key === "Enter") openReview(agent); }}>
             <td data-label="Agent"><span className="agent-identity"><span className="online-indicator" aria-label="Online" /><span><strong>{agent.agentId}</strong><small>{agent.machineName}</small></span></span></td>
@@ -151,7 +153,7 @@ export function ControlPlaneDashboard() {
         <p className="command-description">{selectedCommand.description}</p>
         <JsonBlock title="JSON-RPC request" value={{ jsonRpc: "2.0", id: "Generated when sent", method: selectedCommand.method, params: selectedCommand.defaultParams }} copied={copied === "request"} onCopy={() => copy("request", { jsonRpc: "2.0", method: selectedCommand.method, params: selectedCommand.defaultParams })} />
         {runError && <div className="command-error" role="alert"><CircleAlert size={16} />{runError}</div>}
-        <div className="drawer-actions"><button className="secondary-button" onClick={() => setSelectedAgent(undefined)}>Cancel</button><button className="primary-button" disabled={running} onClick={() => void execute()}>{running ? <><RefreshCw className="spin" size={15} /> Running…</> : <><Play size={15} /> Run command</>}</button></div>
+        <div className="drawer-actions"><button className="secondary-button" onClick={() => setSelectedAgent(undefined)}>Cancel</button>{!canRun && <span className="drawer-note">Only admins can run endpoint commands.</span>}<button className="primary-button" disabled={running || !canRun} onClick={() => void execute()}>{running ? <><RefreshCw className="spin" size={15} /> Running…</> : <><Play size={15} /> Run command</>}</button></div>
       </div>}
     </aside></>}
   </div>;

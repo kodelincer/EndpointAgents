@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowUp, Check, CheckCheck, Clock3, Info, Lightbulb, LoaderCircle, PanelRight, PencilLine, RotateCw, Search, ShieldCheck, X,
+  ArrowUp, Check, CheckCheck, Clock3, Copy, Info, Lightbulb, LoaderCircle, PanelRight, PencilLine, RotateCw, Search, ShieldCheck, Square, X,
 } from "lucide-react";
 import { host, HostError } from "./bridge";
 import {
@@ -10,7 +10,7 @@ import {
 import { RunLine } from "./RunLine";
 import type {
   ActionDecisionReceipt, ActionProposal, ChatDelta, ChatMessage, ConversationSummary, MessageReceipt,
-  ProgressEvent, TrayStatus,
+  ProgressEvent, StopReceipt, TrayStatus,
 } from "./types";
 
 type Filter = "all" | "active" | "resolved" | "closed";
@@ -50,7 +50,11 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
   const [listOpen, setListOpen] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [confirmNew, setConfirmNew] = useState(false);
+  const [notFixed, setNotFixed] = useState<string | null>(null);
   const [deciding, setDeciding] = useState<string | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const [finishNote, setFinishNote] = useState("");
+  const [copyMenu, setCopyMenu] = useState<{ x: number; y: number; text: string } | null>(null);
 
   const selectedRef = useRef<string | null>(null);
   const lastSequence = useRef(0);
@@ -79,6 +83,14 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
     for (let i = items.length - 1; i >= 0; i--) if (items[i].kind === "run") return items[i] as Extract<Item, { kind: "run" }>;
     return null;
   }, [items]);
+  // A request is in progress while a user message waits or is being worked on, or while a proposed
+  // action still waits for approval. Stop applies to exactly these.
+  // The conversation's own state (refreshed from the service) has the last word, so a message
+  // whose final state this page never saw cannot keep the button on screen.
+  const inProgress = (items.some((i) => i.kind === "message" && i.message.role === "User"
+    && (i.message.state === "Queued" || i.message.state === "Working")) || pendingAction !== null)
+    && (selected === null || selected.state === "Working" || selected.state === "AwaitingApproval");
+  const canStop = inProgress && !readOnly && selectedId !== null;
   const runningLabel = lastRun && !isTerminalStage(lastRun.events[lastRun.events.length - 1])
     ? progressLabel(lastRun.events[lastRun.events.length - 1]) : null;
 
@@ -97,7 +109,9 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
 
   const applyDelta = useCallback((delta: ChatDelta) => {
     setVisibleLimit(delta.visibleItemLimit || 30);
+    const changed = delta.messages.length + delta.actions.length + (delta.progressEvents?.length ?? 0) > 0;
     setItems((previous) => {
+      if (!changed) return previous;
       const next = [...previous];
       const index = new Map(next.map((item, i) => [item.key, i]));
       const upsert = (item: Item) => {
@@ -120,7 +134,21 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
             next[at] = { ...run, events: [...run.events, event].sort((a, b) => a.sequence - b.sequence) };
         }
       }
-      return next.sort((a, b) => a.order - b.order);
+      // The service sends a user message only while it is queued or working, so a message that
+      // finished never arrives again. Its run's final progress event settles it here instead.
+      const settled = new Map<string, ChatMessage["state"]>();
+      for (const event of delta.progressEvents ?? []) {
+        if (event.stage === "Completed") settled.set(event.runId, "Completed");
+        else if (event.stage === "Failed") settled.set(event.runId, "Failed");
+        else if (event.stage === "Cancelled") settled.set(event.runId, "Cancelled");
+      }
+      const result = settled.size === 0 ? next : next.map((item) => {
+        if (item.kind !== "message" || item.message.role !== "User" || !item.message.runId) return item;
+        const state = settled.get(item.message.runId);
+        return state && (item.message.state === "Queued" || item.message.state === "Working")
+          ? { ...item, message: { ...item.message, state } } : item;
+      });
+      return result.sort((a, b) => a.order - b.order);
     });
     const sequences = [
       delta.conversation.lastSequence,
@@ -196,6 +224,11 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
 
   useEffect(() => { if (selectedId) void syncChat(); }, [selectedId, syncChat]);
 
+  // A click on a pop-up opens the conversation it was about.
+  useEffect(() => host.on("navigate", (data: { conversationId?: string | null }) => {
+    if (data.conversationId && data.conversationId !== selectedRef.current) resetTimeline(data.conversationId);
+  }), [resetTimeline]);
+
   useEffect(() => {
     if (!selectedId) return;
     const s = summaries.find((x) => x.conversationId === selectedId);
@@ -211,12 +244,47 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
   // Keep the newest message in view unless the user scrolled up to read.
   useEffect(() => {
     const element = scroller.current;
-    if (element && stickToEnd.current) element.scrollTop = element.scrollHeight;
+    if (element && stickToEnd.current && !window.getSelection()?.toString()) element.scrollTop = element.scrollHeight;
   }, [items, selectedId]);
 
   useEffect(() => {
     if (active && !readOnly) composer.current?.focus();
   }, [active, selectedId, readOnly]);
+
+  // Right-click on selected text (or on a message, which selects it) offers Copy. The window has no
+  // browser context menu, and Ctrl+C keeps working as usual.
+  const openCopyMenu = (event: React.MouseEvent) => {
+    const selection = window.getSelection();
+    let text = selection?.toString() ?? "";
+    if (!text.trim()) {
+      const paragraph = (event.target as HTMLElement).closest(".bubble p");
+      if (!paragraph || !selection) return;
+      const range = document.createRange();
+      range.selectNodeContents(paragraph);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      text = selection.toString();
+    }
+    event.preventDefault();
+    setCopyMenu({ x: Math.min(event.clientX, window.innerWidth - 110), y: Math.min(event.clientY, window.innerHeight - 50), text });
+  };
+  const copySelection = async () => {
+    if (copyMenu) await host.call("clipboard.write", { text: copyMenu.text }).catch(() => undefined);
+    setCopyMenu(null);
+  };
+  useEffect(() => {
+    if (!copyMenu) return;
+    const close = () => setCopyMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", close);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", close);
+    };
+  }, [copyMenu]);
 
   // ---- actions --------------------------------------------------------------------------------
 
@@ -242,6 +310,19 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
     composer.current?.focus();
   };
 
+  // The user's own word that the answer did not help: goes to the helpdesk and the Problems page.
+  const reportNotFixed = async () => {
+    if (!activeConversation) return;
+    const conversationId = activeConversation.conversationId;
+    try {
+      await host.call("chat.not_fixed", { conversationId });
+      setNotFixed(conversationId);
+      setNotice("به تیم پشتیبانی خبر دادیم. همکاران ما این گفتگو را می‌بینند.");
+    } catch (error) {
+      setNotice(error instanceof HostError ? "پیام شما ثبت نشد. دوباره تلاش کنید." : String(error));
+    }
+  };
+
   const decide = async (action: ActionProposal, approved: boolean, typed?: string) => {
     setDeciding(action.actionId);
     setNotice(approved ? "در حال آغاز اقدام تأییدشده…" : "در حال ثبت تصمیم شما…");
@@ -263,6 +344,32 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
       setDeciding(null);
     }
   };
+
+  const stop = async () => {
+    const id = selectedRef.current;
+    if (!id || stopping) return;
+    setStopping(true);
+    setFinishNote("");
+    setNotice("در حال توقف درخواست…");
+    try {
+      const receipt = await host.call<StopReceipt>("chat.stop", { conversationId: id });
+      if (receipt.outcome === "FinishingOperation") setFinishNote(receipt.message);
+      // The service stopped every proposal still waiting for approval; it never sends those again.
+      setItems((list) => list.map((item) => item.kind === "action" && item.action.state === "Pending"
+        ? { ...item, action: { ...item.action, state: "Cancelled" as const } } : item));
+      setNotice(receipt.message);
+      await refreshList();
+      await syncChat();
+    } catch {
+      setNotice("درخواست متوقف نشد. ارتباط با سرویس را بررسی کنید و دوباره تلاش کنید.");
+    } finally {
+      setStopping(false);
+      composer.current?.focus();
+    }
+  };
+
+  // The "will finish first" note only makes sense while the request is still in progress.
+  useEffect(() => { if (!inProgress) setFinishNote(""); }, [inProgress]);
 
   const submit = async () => {
     const message = text.trim();
@@ -322,7 +429,8 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
   const headerState = !connected ? "در انتظار اتصال"
     : runningLabel ?? (selected ? conversationStateLabel[selected.state] : "گفتگوی تازه");
   const shownNotice = !connected ? DISCONNECTED
-    : readOnly ? "این گفتگو بسته شده است؛ برای درخواست تازه، گفتگوی جدید بسازید." : notice;
+    : readOnly ? "این گفتگو بسته شده است؛ برای درخواست تازه، گفتگوی جدید بسازید."
+    : finishNote && inProgress ? finishNote : notice;
 
   if (hidden) return null;
 
@@ -422,7 +530,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
           </button>
         </header>
 
-        <div className="timeline" ref={scroller}
+        <div className="timeline" ref={scroller} onContextMenu={openCopyMenu}
           onScroll={(e) => {
             const el = e.currentTarget;
             stickToEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 64;
@@ -464,6 +572,12 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
 
         <footer className="composer-area">
           {shownNotice && <p className="notice" role="status">{shownNotice}</p>}
+          {activeConversation && (activeConversation.state === "Answered" || activeConversation.state === "Resolved")
+            && notFixed !== activeConversation.conversationId && (
+            <div className="not-fixed-bar">
+              <button className="chip" disabled={!connected} onClick={() => void reportNotFixed()}>مشکلم حل نشد</button>
+            </div>
+          )}
           {readOnly ? (
             <div className="closed-bar">
               <span>این گفتگو بسته شده و فقط برای مشاهده است.</span>
@@ -482,6 +596,12 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
               {text.length > messageLimit * 0.75 && (
                 <span className="counter" data-full={text.length >= messageLimit || undefined}>{num(text.length)} از {num(messageLimit)}</span>
               )}
+              {canStop && (
+                <button className="stop" aria-label="توقف درخواست" title="توقف درخواست" disabled={!connected || stopping}
+                  onClick={() => void stop()}>
+                  {stopping ? <LoaderCircle className="spin" size={16} aria-hidden /> : <Square size={13} fill="currentColor" aria-hidden />}
+                </button>
+              )}
               <button className="send" aria-label="ارسال پیام" disabled={!connected || submitting || !text.trim()} onClick={() => submit()}>
                 {submitting ? <LoaderCircle className="spin" size={18} aria-hidden /> : <ArrowUp size={19} strokeWidth={2.2} aria-hidden />}
               </button>
@@ -491,7 +611,7 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
       </section>
 
       {/* details ----------------------------------------------------------------------------------- */}
-      <aside className="details" aria-label="جزئیات">
+      <aside className="details" aria-label="جزئیات" onContextMenu={openCopyMenu}>
         <h2>جزئیات گفتگو</h2>
         {selected ? (
           <dl className="facts">
@@ -511,6 +631,15 @@ export function ChatPage({ active, hidden, connected, status, messageLimit }: Pr
         </div>
         <WarmTip />
       </aside>
+
+      {copyMenu && (
+        <div className="copy-menu" role="menu" style={{ left: copyMenu.x, top: copyMenu.y }}
+          onPointerDown={(e) => e.stopPropagation()}>
+          <button role="menuitem" autoFocus onClick={() => void copySelection()}>
+            <Copy size={14} aria-hidden />کپی
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -545,6 +674,7 @@ function Bubble({ role, body, at, state }: { role: ChatMessage["role"]; body: st
           <time dateTime={at}>{time(at)}</time>
           {mine && (state === "Queued" ? <Clock3 size={13} aria-label="در صف" />
             : state === "Failed" ? <X size={13} aria-label="ناموفق" />
+            : state === "Cancelled" ? <X size={13} aria-label="متوقف شد" />
             : state === "Working" ? <Check size={13} aria-label="دریافت شد" />
             : <CheckCheck size={14} aria-label="بررسی شد" />)}
         </span>

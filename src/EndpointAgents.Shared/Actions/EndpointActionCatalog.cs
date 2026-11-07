@@ -1,0 +1,969 @@
+namespace EndpointAgents.Shared.Actions;
+
+/// <summary>Organisation standards an administrator sets in the dashboard environment map.</summary>
+public static class ActionSettings
+{
+    /// <summary>none, pac or server.</summary>
+    public const string ProxyMode = "proxy.mode";
+    public const string ProxyPacUrl = "proxy.pacUrl";
+    /// <summary>host:port</summary>
+    public const string ProxyServer = "proxy.server";
+    /// <summary>Semicolon list, e.g. "*.corp.local;&lt;local&gt;".</summary>
+    public const string ProxyBypass = "proxy.bypass";
+    /// <summary>Windows time zone id, e.g. "Iran Standard Time".</summary>
+    public const string StandardTimeZone = "time.standardZone";
+    /// <summary>Comma-separated SHA-1 thumbprints of the organisation's root CAs.</summary>
+    public const string RootCaThumbprints = "trust.rootThumbprints";
+    /// <summary>Comma-separated internal DNS suffixes; names under them are masked for the cloud model.</summary>
+    public const string InternalDnsSuffixes = "network.internalSuffixes";
+    /// <summary>"true" when DHCP hands out the right DNS servers, so hand-set DNS servers are a fault.</summary>
+    public const string DnsFromDhcp = "network.dnsFromDhcp";
+    /// <summary>"true" when office PCs get their address from DHCP, so a hand-set address is a fault.</summary>
+    public const string IpFromDhcp = "network.ipFromDhcp";
+    /// <summary>balanced, high or saver: the power plan the organisation wants.</summary>
+    public const string PowerPlan = "power.standardPlan";
+
+    /// <summary>The organisation's KMS server: a host name or IPv4 address (no port).</summary>
+    public const string KmsHost = "activation.kmsHost";
+    /// <summary>The KMS server's TCP port; 1688 when empty.</summary>
+    public const string KmsPort = "activation.kmsPort";
+
+    /// <summary>The organisation's NTP (time) servers for PCs outside a domain: host names or IPv4 addresses (no port), separated by commas, spaces or semicolons.</summary>
+    public const string NtpServer = "time.ntpServer";
+
+    public static IReadOnlyList<string> All { get; } =
+        [ProxyMode, ProxyPacUrl, ProxyServer, ProxyBypass, StandardTimeZone,
+         RootCaThumbprints, InternalDnsSuffixes, DnsFromDhcp, IpFromDhcp, PowerPlan, KmsHost, KmsPort,
+         NtpServer];
+}
+
+/// <summary>Reads the organisation NTP server list the same way on the server and the endpoint.</summary>
+public static class NtpSettings
+{
+    public const int MaxServers = 8;
+
+    /// <summary>
+    /// The list of valid host names and IPv4 addresses; null when any entry is invalid or there are
+    /// more than <see cref="MaxServers"/>. An empty or blank value gives an empty list.
+    /// </summary>
+    public static IReadOnlyList<string>? Parse(string? value)
+    {
+        var servers = new List<string>();
+        foreach (var entry in (value ?? "").Split([',', ';', ' ', '\t', '\r', '\n'],
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            // "0x9" and similar are w32tm flags, not servers: refuse them so "host,0x9" is not read as two hosts.
+            if (!EndpointActionValidator.IsValidHost(entry) || IsFlagLike(entry)) return null;
+            if (!servers.Contains(entry, StringComparer.OrdinalIgnoreCase)) servers.Add(entry);
+        }
+        return servers.Count > MaxServers ? null : servers;
+    }
+
+    private static bool IsFlagLike(string entry) =>
+        entry.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when at least one server is configured and the whole list is valid.</summary>
+    public static bool TryRead(IReadOnlyDictionary<string, string>? settings,
+        out IReadOnlyList<string> servers)
+    {
+        servers = [];
+        if (settings is null || !settings.TryGetValue(ActionSettings.NtpServer, out var value)
+            || Parse(value) is not { Count: > 0 } parsed)
+            return false;
+        servers = parsed;
+        return true;
+    }
+}
+
+/// <summary>Reads the organisation KMS setting the same way on the server and the endpoint.</summary>
+public static class KmsSettings
+{
+    public const int DefaultPort = 1688;
+
+    /// <summary>True when a valid host (and a valid port, if one is set) is configured.</summary>
+    public static bool TryRead(IReadOnlyDictionary<string, string>? settings,
+        out string host, out int port)
+    {
+        host = "";
+        port = DefaultPort;
+        if (settings is null || !settings.TryGetValue(ActionSettings.KmsHost, out var value)
+            || !EndpointActionValidator.IsValidHost(value?.Trim()))
+            return false;
+        if (settings.TryGetValue(ActionSettings.KmsPort, out var portText)
+            && !string.IsNullOrWhiteSpace(portText) && !TryParsePort(portText, out port))
+            return false;
+        host = value!.Trim();
+        return true;
+    }
+
+    public static bool TryParsePort(string? value, out int port) =>
+        int.TryParse(value?.Trim(), System.Globalization.NumberStyles.None,
+            System.Globalization.CultureInfo.InvariantCulture, out port)
+        && port is >= 1 and <= 65535;
+}
+
+/// <summary>The fixed notices a health rule can show in the Tray. The Persian text lives on the PC.</summary>
+public static class UserNotices
+{
+    public const string RestartNeeded = "restart-needed";
+    public const string DiskFull = "disk-full";
+    public const string DiskFailing = "disk-failing";
+
+    public static IReadOnlyList<ActionChoice> Choices { get; } =
+    [
+        new(RestartNeeded, "Please restart the PC"),
+        new(DiskFull, "Drive C: is almost full"),
+        new(DiskFailing, "The disk may fail; call the helpdesk")
+    ];
+}
+
+public static class ActionAreas
+{
+    public const string Network = "network";
+    public const string Domain = "domain";
+    public const string Printers = "printers";
+    public const string Drives = "drives";
+    public const string Browsers = "browsers";
+    public const string Office = "office";
+    public const string Health = "health";
+    public const string Desktop = "desktop";
+    public const string Software = "software";
+    public const string Devices = "devices";
+    public const string Activation = "activation";
+
+    public static IReadOnlyList<string> All { get; } =
+        [Network, Domain, Printers, Drives, Browsers, Office, Health, Desktop, Software, Devices,
+         Activation];
+}
+
+/// <summary>
+/// Every general endpoint action. Adding an action means: a definition here, an
+/// implementation on the endpoint (system or user side), a mention in a Hermes skill, and
+/// tests. The control plane builds the agent's action list, the kill switches and the
+/// dashboard's capabilities page from this list, so they never drift apart.
+/// </summary>
+public static class EndpointActionCatalog
+{
+    private const string AnyHostTarget = "Environment-map target id (see list_environment_targets).";
+
+    private static readonly string[] HostKinds =
+        [EnvironmentTargetKinds.Host, EnvironmentTargetKinds.WebApp,
+         EnvironmentTargetKinds.Share, EnvironmentTargetKinds.Printer];
+
+    /// <summary>Services the agent may look at.</summary>
+    public static IReadOnlyList<ActionChoice> ServiceChoices { get; } =
+    [
+        new("Spooler", "Print Spooler"),
+        new("W32Time", "Windows Time"),
+        new("BITS", "Background Intelligent Transfer"),
+        new("wuauserv", "Windows Update"),
+        new("WSearch", "Windows Search"),
+        new("Audiosrv", "Windows Audio"),
+        new("AudioEndpointBuilder", "Windows Audio Endpoint Builder"),
+        new("stisvc", "Windows Image Acquisition (scanners)"),
+        new("bthserv", "Bluetooth Support"),
+        new("Dnscache", "DNS Client"),
+        new("Dhcp", "DHCP Client"),
+        new("LanmanWorkstation", "Workstation (shared folders)"),
+        new("Netlogon", "Netlogon (domain sign-in)"),
+        new("WinDefend", "Microsoft Defender Antivirus"),
+        new("NlaSvc", "Network Location Awareness (network type)"),
+        new("mpssvc", "Windows Defender Firewall"),
+        new("RasMan", "Remote Access Connection Manager (VPN)")
+    ];
+
+    /// <summary>Services the agent may restart: harmless to restart while the user works.</summary>
+    public static IReadOnlyList<ActionChoice> RestartableServiceChoices { get; } =
+    [
+        new("Spooler", "Print Spooler"),
+        new("W32Time", "Windows Time"),
+        new("BITS", "Background Intelligent Transfer"),
+        new("wuauserv", "Windows Update"),
+        new("WSearch", "Windows Search"),
+        new("Audiosrv", "Windows Audio"),
+        new("AudioEndpointBuilder", "Windows Audio Endpoint Builder"),
+        new("stisvc", "Windows Image Acquisition (scanners)"),
+        new("bthserv", "Bluetooth Support"),
+        new("RasMan", "Remote Access Connection Manager (VPN)"),
+        new("NlaSvc", "Network Location Awareness (network type)")
+    ];
+
+    /// <summary>Office applications whose add-ins can be listed and turned off.</summary>
+    public static IReadOnlyList<ActionChoice> OfficeAppChoices { get; } =
+    [
+        new("outlook", "Outlook"),
+        new("word", "Word"),
+        new("excel", "Excel"),
+        new("powerpoint", "PowerPoint")
+    ];
+
+    public static IReadOnlyList<ActionChoice> AppChoices { get; } =
+    [
+        new("outlook", "Outlook"),
+        new("word", "Word"),
+        new("excel", "Excel"),
+        new("powerpoint", "PowerPoint"),
+        new("chrome", "Google Chrome"),
+        new("edge", "Microsoft Edge"),
+        new("firefox", "Firefox")
+    ];
+
+    public static IReadOnlyList<ActionChoice> BrowserChoices { get; } =
+    [
+        new("chrome", "Google Chrome"),
+        new("edge", "Microsoft Edge"),
+        new("firefox", "Firefox")
+    ];
+
+    public static IReadOnlyList<ActionChoice> EventAreaChoices { get; } =
+    [
+        new("crashes", "Application crashes and hangs"),
+        new("bluescreen", "Blue screens and unexpected shutdowns"),
+        new("disk", "Disk and file-system errors"),
+        new("network", "Network, DNS and DHCP errors"),
+        new("grouppolicy", "Group Policy errors"),
+        new("printing", "Printing errors"),
+        new("updates", "Windows Update failures"),
+        new("signin", "Sign-in and domain trust errors"),
+        new("drivers", "Driver and device warnings")
+    ];
+
+    public static IReadOnlyList<ActionChoice> LayoutChoices { get; } =
+    [
+        new("persian", "Persian (فارسی)"),
+        new("persian-standard", "Persian Standard"),
+        new("english-us", "English (US)")
+    ];
+
+    public static IReadOnlyList<EndpointActionDefinition> All { get; } = Build();
+
+    public static EndpointActionDefinition? Find(string? id) =>
+        id is null ? null : All.FirstOrDefault(item => item.Id == id);
+
+    private static ActionParameter Target(string description, params string[] kinds) =>
+        new("target", ActionParameterKind.Target, description, TargetKinds: kinds);
+
+    private static EndpointActionDefinition[] Build() =>
+    [
+        // ---------- Network ----------
+        new("network.status", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Network status", "وضعیت شبکه",
+            "Quick health of the connected network adapters: link, address type (DHCP, static, APIPA), gateway answer and DNS servers present.",
+            "Adapters with Connected, AddressKind, GatewayReachable, DnsServerCount; Summary with HasWorkingAdapter, HasApipaAddress, GatewayReachable.",
+            [], TimeoutSeconds: 20,
+            ExampleResult: """{"Summary":{"HasWorkingAdapter":true,"HasApipaAddress":false,"GatewayReachable":true}}"""),
+        new("network.triage", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Network triage to a target", "عیب‌یابی لایه‌ای شبکه",
+            "Walks the layers to one internal target and stops at the first broken one: adapter, IP address, gateway, DNS, TCP port, then HTTP(S) for web apps.",
+            "Layers in order with Passed and Detail; FirstFailedLayer (Adapter, Address, Gateway, Dns, Port, Http) or null when everything works.",
+            [Target(AnyHostTarget, EnvironmentTargetKinds.Host, EnvironmentTargetKinds.WebApp,
+                EnvironmentTargetKinds.Share, EnvironmentTargetKinds.Printer)],
+            TimeoutSeconds: 45,
+            ExampleResult: """{"FirstFailedLayer":"Dns","Layers":[{"Layer":"Adapter","Passed":true},{"Layer":"Address","Passed":true},{"Layer":"Gateway","Passed":true},{"Layer":"Dns","Passed":false,"Detail":"Name not found"}]}"""),
+        new("dns.resolve", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Resolve a name", "بررسی DNS یک نام",
+            "Resolves a target's name with Windows and separately asks each configured DNS server, then compares with the expected address from the environment map.",
+            "WindowsAnswer, PerServer answers, MatchesExpected, Disagreement (servers answer differently).",
+            [Target(AnyHostTarget, HostKinds)], TimeoutSeconds: 20),
+        new("net.test_port", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Test a TCP port", "تست پورت",
+            "Opens a TCP connection to a target on one of its listed ports and measures the time.",
+            "Reachable, ElapsedMs, Error.",
+            [Target(AnyHostTarget, EnvironmentTargetKinds.Host, EnvironmentTargetKinds.WebApp),
+             new("port", ActionParameterKind.Integer, "A port listed for this target.", Min: 1, Max: 65535)],
+            TimeoutSeconds: 15),
+        new("net.ping", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Ping a target", "پینگ",
+            "Sends four pings to a target.",
+            "Sent, Received, AverageMs.",
+            [Target(AnyHostTarget, HostKinds)], TimeoutSeconds: 15),
+        new("web.probe", ActionAreas.Network, ActionTier.Look, ActionRunAs.User,
+            "Open an internal web app", "بررسی وب‌اپ داخلی",
+            "Requests a web app as the signed-in user, through the user's proxy and Windows sign-in, without following more than five redirects.",
+            "StatusCode, Reachable, AuthenticationRequired, Certificate (Valid, Errors, ExpiresUtc), UsedProxy, ElapsedMs, Error.",
+            [Target(AnyHostTarget, EnvironmentTargetKinds.WebApp)], TimeoutSeconds: 30),
+        new("proxy.get", ActionAreas.Network, ActionTier.Look, ActionRunAs.User,
+            "Read proxy settings", "تنظیمات پروکسی",
+            "Reads the user's proxy settings and compares them with the organisation standard.",
+            "Enabled, Server, AutoConfigUrl, AutoDetect, Bypass, MatchesStandard.",
+            [], UsesSettings: [ActionSettings.ProxyMode, ActionSettings.ProxyPacUrl,
+                ActionSettings.ProxyServer, ActionSettings.ProxyBypass]),
+        new("hosts.check", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Check the hosts file", "بررسی فایل hosts",
+            "Reports whether the hosts file has entries beyond the Windows default, and whether any of them override an environment-map target.",
+            "EntryCount, OverridesTargets (target ids).",
+            []),
+        new("dns.flush", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Clear the DNS cache", "پاک کردن کش DNS",
+            "Clears Windows' DNS client cache so names are looked up again.",
+            "Done.", [], MaxPerHour: 5),
+        new("dhcp.renew", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Renew the IP address", "تمدید آدرس IP",
+            "Asks the DHCP server for a fresh address on every DHCP adapter. The connection is not dropped first.",
+            "Done; the verification shows the network status before and after.",
+            [], TimeoutSeconds: 60, Verify: new("network.status")),
+        new("net.register_dns", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Re-register in DNS", "ثبت دوباره در DNS",
+            "Re-registers this PC's name and address with the DNS server.",
+            "Done.", [], TimeoutSeconds: 30),
+        new("arp.clear", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Clear the ARP cache", "پاک کردن کش ARP",
+            "Clears the cached addresses of neighbouring devices.",
+            "Done.", []),
+        new("proxy.reset_to_standard", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.User,
+            "Reset proxy to the standard", "بازگرداندن پروکسی به استاندارد",
+            "Sets the user's proxy to the organisation standard. The old settings are saved so the helpdesk can undo it.",
+            "Done with the new settings, or NotNeeded.",
+            [], Verify: new("proxy.get"), UndoActionId: "proxy.restore",
+            UsesSettings: [ActionSettings.ProxyMode, ActionSettings.ProxyPacUrl,
+                ActionSettings.ProxyServer, ActionSettings.ProxyBypass]),
+
+        // ---------- Domain and sign-in ----------
+        new("domain.health", ActionAreas.Domain, ActionTier.Look, ActionRunAs.System,
+            "Domain health", "سلامت دامین",
+            "Checks the computer's trust with the domain (secure channel), finds a domain controller, tests its sign-in ports (88, 389, 445, 135), the clock difference to it, and when Group Policy last applied.",
+            "Joined, SecureChannelOk, DomainControllerFound, Ports, ClockOffsetSeconds, ClockOk (under 5 minutes), LastPolicyRefreshUtc, PolicyErrorsLast24h.",
+            [], TimeoutSeconds: 45),
+        new("time.status", ActionAreas.Domain, ActionTier.Look, ActionRunAs.System,
+            "Clock status", "وضعیت ساعت",
+            "Local time, time zone, the time service state and the clock difference to the domain controller, or to the organisation NTP server on a PC outside a domain.",
+            "LocalTime, TimeZone, MatchesStandardZone, TimeServiceState, ClockSource (domain, ntp or none), ClockOffsetSeconds (against that source), NtpConfigured, UsesOrganisationNtp, ClockOk.",
+            [], TimeoutSeconds: 20, UsesSettings: [ActionSettings.StandardTimeZone, ActionSettings.NtpServer]),
+        new("time.resync", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.System,
+            "Sync the clock", "همگام‌سازی ساعت",
+            "Starts the Windows Time service if needed and syncs the clock with the domain.",
+            "Done.", [], TimeoutSeconds: 45, Verify: new("time.status")),
+        new("time.correct", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.System,
+            "Correct the clock and date", "اصلاح ساعت و تاریخ",
+            "Corrects a wrong clock or date, even years off (a dead clock battery, a long power-off). A PC in a domain gets its time from Active Directory (a domain controller). A PC outside a domain uses the organisation NTP servers set in the control plane Settings (internal addresses and/or internet names such as time.windows.com). Large jumps are allowed for one sync only.",
+            "Done when the clock now agrees with the source, NotNeeded (already in sync), Blocked (no domain controller or no NTP server answers from this PC, or no NTP server is set outside a domain) or Failed. Data: ClockSource (domain or ntp), OffsetBeforeSeconds, OffsetAfterSeconds, LargeStepNeeded, LocalTime.",
+            [], TimeoutSeconds: 180, Verify: new("time.status"),
+            UsesSettings: [ActionSettings.NtpServer]),
+        new("gpo.refresh_computer", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.System,
+            "Refresh computer policy", "به‌روزرسانی سیاست‌های کامپیوتر",
+            "Re-applies computer Group Policy. Never signs the user out or restarts.",
+            "Done or Failed with the reason.", [], TimeoutSeconds: 150),
+        new("gpo.refresh_user", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.User,
+            "Refresh user policy", "به‌روزرسانی سیاست‌های کاربر",
+            "Re-applies the signed-in user's Group Policy (drive maps, printers, settings). Never signs the user out.",
+            "Done or Failed with the reason.", [], TimeoutSeconds: 150),
+        new("kerberos.purge", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.User,
+            "Renew sign-in tickets", "تمدید تیکت‌های ورود",
+            "Clears the user's Kerberos tickets so Windows gets fresh ones (fixes access denied right after a group or password change).",
+            "Done.", []),
+        new("credman.list", ActionAreas.Domain, ActionTier.Look, ActionRunAs.User,
+            "Saved Windows passwords", "رمزهای ذخیره‌شده ویندوز",
+            "Lists the user's saved Windows credentials (only which server they are for and when they were saved, never the secret).",
+            "Credentials with Ref, Kind, MatchesTarget, SavedUtc. Pass Ref to credman.remove.",
+            []),
+        new("credman.remove", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.User,
+            "Remove a stale saved password", "حذف رمز ذخیره‌شده قدیمی",
+            "Removes one saved Windows (domain) credential for a server, so the old password stops being tried.",
+            "Done or NotNeeded.",
+            [new("ref", ActionParameterKind.LocalItem, "Ref from credman.list.")]),
+
+        // ---------- Printers ----------
+        new("printer.list", ActionAreas.Printers, ActionTier.Look, ActionRunAs.User,
+            "Installed printers", "چاپگرهای نصب‌شده",
+            "Lists the user's printers: default, network or local, status, stuck jobs, and the matching environment-map printer.",
+            "Printers with Name, IsDefault, IsNetwork, Status, JobCount, ErrorJobs, MatchesTarget.",
+            []),
+        new("spooler.restart_and_clear", ActionAreas.Printers, ActionTier.SafeFix, ActionRunAs.System,
+            "Clear stuck print jobs", "پاک کردن صف چاپ",
+            "Stops the print service, deletes stuck print jobs for everyone on this PC, and starts it again.",
+            "Done with RemovedJobFiles.", [], TimeoutSeconds: 60,
+            Verify: new("services.status", new Dictionary<string, string> { ["service"] = "Spooler" })),
+        new("printer.set_default", ActionAreas.Printers, ActionTier.SafeFix, ActionRunAs.User,
+            "Set the default printer", "تنظیم چاپگر پیش‌فرض",
+            "Makes one of the user's installed printers the default.",
+            "Done or NotNeeded.",
+            [new("printer", ActionParameterKind.LocalItem, "Printer Name from printer.list.")],
+            UndoActionId: "printer.restore_default"),
+        new("printer.add", ActionAreas.Printers, ActionTier.SafeFix, ActionRunAs.User,
+            "Connect a network printer", "اتصال چاپگر شبکه",
+            "Connects a print-server printer from the environment map for the signed-in user.",
+            "Done, NotNeeded (already connected) or Failed with the Windows reason.",
+            [Target("Printer target id.", EnvironmentTargetKinds.Printer)], TimeoutSeconds: 120,
+            Verify: new("printer.list")),
+        new("printer.remove", ActionAreas.Printers, ActionTier.SafeFix, ActionRunAs.User,
+            "Remove a broken printer connection", "حذف اتصال چاپگر خراب",
+            "Removes one network printer connection of the user (local printers are never removed).",
+            "Done, NotNeeded or Blocked (not a network printer).",
+            [new("printer", ActionParameterKind.LocalItem, "Printer Name from printer.list.")],
+            TimeoutSeconds: 60),
+        new("printer.test_page", ActionAreas.Printers, ActionTier.SafeFix, ActionRunAs.User,
+            "Print a test page", "چاپ صفحه آزمایشی",
+            "Sends the Windows test page to one installed printer.",
+            "Done or Failed.",
+            [new("printer", ActionParameterKind.LocalItem, "Printer Name from printer.list.")],
+            MaxPerHour: 3),
+
+        // ---------- Shared drives and profile ----------
+        new("drives.list", ActionAreas.Drives, ActionTier.Look, ActionRunAs.User,
+            "Mapped drives", "درایوهای شبکه",
+            "Lists the user's mapped network drives, whether each is connected, and the matching environment-map share.",
+            "Drives with Letter, Connected, MatchesTarget; MissingStandardDrives (share target ids with a standard letter that are not mapped).",
+            []),
+        new("share.test", ActionAreas.Drives, ActionTier.Look, ActionRunAs.User,
+            "Test access to a shared folder", "تست دسترسی پوشه اشتراکی",
+            "Checks whether the user can reach and open a shared folder (never lists its contents).",
+            "ServerReachable (port 445), Accessible, Error (AccessDenied, NotFound, Unreachable).",
+            [Target("Share target id.", EnvironmentTargetKinds.Share)], TimeoutSeconds: 30),
+        new("drive.remap", ActionAreas.Drives, ActionTier.SafeFix, ActionRunAs.User,
+            "Map a shared drive", "اتصال درایو شبکه",
+            "Maps a share from the environment map to its standard letter. A different network drive on that letter is disconnected first; a local disk is never touched.",
+            "Done, NotNeeded or Failed with the Windows reason.",
+            [Target("Share target id with a drive letter.", EnvironmentTargetKinds.Share)],
+            TimeoutSeconds: 60, Verify: new("drives.list")),
+        new("profile.status", ActionAreas.Drives, ActionTier.Look, ActionRunAs.User,
+            "User profile status", "وضعیت پروفایل کاربر",
+            "Detects a temporary profile, folder redirection (Desktop, Documents on a server) and OneDrive known-folder backup.",
+            "TemporaryProfile, RedirectedFolders, OneDriveRunning, ProfileSizeGb.",
+            []),
+
+        // ---------- Browsers and certificates ----------
+        new("browser.inventory", ActionAreas.Browsers, ActionTier.Look, ActionRunAs.User,
+            "Browsers", "مرورگرها",
+            "Installed browsers and versions, the default browser, and whether each is open.",
+            "Browsers with Name, Version, Running; DefaultBrowser.",
+            []),
+        new("browser.clear_cache", ActionAreas.Browsers, ActionTier.SafeFix, ActionRunAs.User,
+            "Clear browser cache", "پاک کردن کش مرورگر",
+            "Clears only the cache of one browser (never passwords, history, bookmarks or cookies). The browser must be closed.",
+            "Done with FreedMb, or Blocked when the browser is open.",
+            [new("browser", ActionParameterKind.Choice, "Which browser.", Choices: BrowserChoices)],
+            TimeoutSeconds: 60),
+        new("cert.check_trust", ActionAreas.Browsers, ActionTier.Look, ActionRunAs.System,
+            "Organisation certificates", "گواهی‌های سازمان",
+            "Checks that the organisation's root certificates (from the environment map) are trusted on this PC.",
+            "Expected, Missing (thumbprints), Expired.",
+            [], UsesSettings: [ActionSettings.RootCaThumbprints]),
+
+        // ---------- Office ----------
+        new("outlook.status", ActionAreas.Office, ActionTier.Look, ActionRunAs.User,
+            "Outlook status", "وضعیت Outlook",
+            "Outlook profiles, data file sizes (OST/PST), cached mode and add-ins that are disabled or slow.",
+            "Running, ProfileCount, DataFiles (Kind, SizeGb, NearLimit), Addins (Name, LoadBehavior, Active).",
+            []),
+
+        // ---------- Health and Windows ----------
+        new("system.recent_changes", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "What changed recently", "تغییرات اخیر",
+            "Software installed or removed, Windows updates, driver installs, restarts, unexpected shutdowns and blue screens in the last days.",
+            "Changes ordered newest first with WhenUtc, Kind, Name.",
+            [new("days", ActionParameterKind.Integer, "How many days back (1-30).", Required: false, Min: 1, Max: 30)],
+            TimeoutSeconds: 45),
+        new("perf.snapshot", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Performance snapshot", "وضعیت کارایی",
+            "CPU, memory and system-disk use now, the busiest programs by name, uptime and number of startup programs.",
+            "CpuPercent, MemoryLoadPercent, SystemDriveFreeGb, TopByCpu, TopByMemory, UptimeDays, StartupPrograms.",
+            [], TimeoutSeconds: 30),
+        new("events.summary", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Error summary", "خلاصه خطاهای ویندوز",
+            "Counts recent Windows errors of one kind from fixed event sources (last 7 days), grouped, with one short sample each.",
+            "Groups with Source, EventId, Count, LastUtc, Sample.",
+            [new("area", ActionParameterKind.Choice, "Kind of errors.", Choices: EventAreaChoices)],
+            TimeoutSeconds: 45),
+        new("events.restart_reasons", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Why the PC restarted", "علت ری‌استارت شدن",
+            "Restarts and shutdowns from the System log, newest first: planned restarts with the program that asked and its reason (never the user), unexpected shutdowns, power loss and blue screens with their stop code. At most 20 events.",
+            "Events with WhenUtc, Kind (planned, unexpected, power-loss, bluescreen), Program, Reason; Unexpected count.",
+            [new("days", ActionParameterKind.Integer, "How many days back (1-30, default 14).", Required: false, Min: 1, Max: 30)],
+            TimeoutSeconds: 30),
+        new("events.app_errors", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Crashes of one program", "خطاهای یک برنامه",
+            "Crashes and hangs of one program the user names (for example outlook, winword, chrome) from the Application log, grouped by the module that failed. At most 50 events; no user names or paths.",
+            "Groups with Kind (crash or hang), Module, ExceptionCode, Count, LastUtc; Total.",
+            [new("app", ActionParameterKind.SearchText, "Program name such as outlook or winword."),
+             new("days", ActionParameterKind.Integer, "How many days back (1-7, default 1).", Required: false, Min: 1, Max: 7)],
+            TimeoutSeconds: 30),
+        new("services.status", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Service status", "وضعیت سرویس‌ها",
+            "State and start type of one support-relevant Windows service, or all of them.",
+            "Services with Name, State, StartType.",
+            [new("service", ActionParameterKind.Choice, "Service name; omit for all.", Required: false, Choices: ServiceChoices)]),
+        new("service.restart", ActionAreas.Health, ActionTier.SafeFix, ActionRunAs.System,
+            "Restart a service", "راه‌اندازی دوباره سرویس",
+            "Restarts one Windows service from a short list that is safe to restart while the user works.",
+            "Done with the new state.",
+            [new("service", ActionParameterKind.Choice, "Service name.", Choices: RestartableServiceChoices)],
+            TimeoutSeconds: 60,
+            Verify: new("services.status", PassSameArguments: true)),
+        new("windows_update.status", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Windows Update status", "وضعیت به‌روزرسانی ویندوز",
+            "Last installed update, recent failures and whether a restart is pending.",
+            "LastInstalledUtc, RecentFailures, RecentSuccesses, RestartPending.",
+            [], TimeoutSeconds: 45),
+        new("security.status", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Security status", "وضعیت امنیتی",
+            "Defender on, real-time protection, signature age, last scan; firewall per profile; BitLocker on the system drive (never keys).",
+            "Defender, Firewall, BitLocker.",
+            [], TimeoutSeconds: 30),
+        new("defender.quick_scan", ActionAreas.Health, ActionTier.SafeFix, ActionRunAs.System,
+            "Start a quick virus scan", "اسکن سریع ویروس",
+            "Starts a Microsoft Defender quick scan in the background.",
+            "Done (started).", [], MaxPerHour: 1),
+        new("devices.problems", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Device problems", "مشکلات سخت‌افزار",
+            "Devices that Windows reports with a problem (camera, audio, USB, display, Bluetooth).",
+            "Devices with Name, Class, ProblemCode, Problem.",
+            [], TimeoutSeconds: 30),
+        new("devices.rescan", ActionAreas.Health, ActionTier.SafeFix, ActionRunAs.System,
+            "Rescan hardware", "جستجوی دوباره سخت‌افزار",
+            "Asks Windows to detect hardware again (like Scan for hardware changes).",
+            "Done.", [], Verify: new("devices.problems")),
+        new("apps.find", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Find an installed program", "جستجوی برنامه نصب‌شده",
+            "Searches installed programs by name and reports versions.",
+            "Matches with Name, Version, Publisher, InstalledOn.",
+            [new("name", ActionParameterKind.SearchText, "Part of the program name.")]),
+        new("disk.cleanup_safe", ActionAreas.Health, ActionTier.SafeFix, ActionRunAs.System,
+            "Free disk space safely", "آزادسازی امن فضای دیسک",
+            "Deletes temporary files older than two days (Windows and the user's temp folders) and old error reports. Never the Recycle Bin, Downloads or documents.",
+            "Done with FreedMb and system drive FreeGbBefore/FreeGbAfter.",
+            [], TimeoutSeconds: 180, MaxPerHour: 2),
+
+        // ---------- Desktop and settings ----------
+        new("explorer.status", ActionAreas.Desktop, ActionTier.Look, ActionRunAs.User,
+            "Desktop and taskbar", "دسکتاپ و نوار وظیفه",
+            "Whether Explorer (desktop, taskbar, Start), search and the shell are running and responding.",
+            "Explorer (Running, Responding), StartMenu, Search.",
+            []),
+        new("explorer.restart", ActionAreas.Desktop, ActionTier.Disruptive, ActionRunAs.User,
+            "Restart the desktop", "راه‌اندازی دوباره دسکتاپ",
+            "Restarts Windows Explorer (desktop, taskbar, Start). Open folder windows close; programs keep running.",
+            "Done.", [], TimeoutSeconds: 30),
+        new("input.languages", ActionAreas.Desktop, ActionTier.Look, ActionRunAs.User,
+            "Keyboard languages", "زبان‌های صفحه‌کلید",
+            "Installed keyboard layouts (Persian, English) and the switch shortcut.",
+            "Layouts, HasPersian, HasEnglish, SwitchHotkey.",
+            []),
+        new("input.add_layout", ActionAreas.Desktop, ActionTier.SafeFix, ActionRunAs.User,
+            "Add a keyboard layout", "افزودن صفحه‌کلید",
+            "Adds the Persian or English keyboard layout for the user.",
+            "Done or NotNeeded.",
+            [new("layout", ActionParameterKind.Choice, "Layout.", Choices: LayoutChoices)],
+            Verify: new("input.languages")),
+        new("region.status", ActionAreas.Desktop, ActionTier.Look, ActionRunAs.User,
+            "Region and calendar", "تقویم و تنظیمات منطقه",
+            "Format locale, calendar (Persian/Gregorian), date format and number format of the user.",
+            "Locale, Calendar, ShortDate, DecimalSymbol.",
+            []),
+        new("timezone.set_standard", ActionAreas.Desktop, ActionTier.SafeFix, ActionRunAs.System,
+            "Set the standard time zone", "تنظیم منطقه زمانی استاندارد",
+            "Sets the PC's time zone to the organisation standard. The old zone is saved for undo.",
+            "Done or NotNeeded.",
+            [], Verify: new("time.status"), UndoActionId: "timezone.restore",
+            UsesSettings: [ActionSettings.StandardTimeZone]),
+        new("display.status", ActionAreas.Desktop, ActionTier.Look, ActionRunAs.User,
+            "Displays", "نمایشگرها",
+            "Connected monitors, resolution and which is primary; graphics adapter and driver date.",
+            "Monitors, Adapters.",
+            []),
+        new("media.status", ActionAreas.Desktop, ActionTier.Look, ActionRunAs.User,
+            "Camera, microphone and sound", "دوربین، میکروفون و صدا",
+            "Whether apps may use the camera and microphone (Windows privacy switches), and audio devices with their status.",
+            "Camera (AllowedForUser, BlockedByPolicy), Microphone, AudioDevices.",
+            []),
+        new("privacy.allow_camera_mic", ActionAreas.Desktop, ActionTier.SafeFix, ActionRunAs.User,
+            "Allow camera or microphone", "اجازه دوربین یا میکروفون",
+            "Turns on the user's Windows privacy switch for the camera and/or microphone. Never overrides an organisation policy.",
+            "Done, NotNeeded or Blocked (blocked by policy).",
+            [new("device", ActionParameterKind.Choice, "Which device.", Choices:
+                [new("camera", "Camera"), new("microphone", "Microphone"), new("both", "Both")])],
+            Verify: new("media.status")),
+        new("power.status", ActionAreas.Desktop, ActionTier.Look, ActionRunAs.System,
+            "Power and battery", "برق و باتری",
+            "Active power plan, battery charge and health (laptops).",
+            "PowerPlan, Battery (ChargePercent, Status, HealthPercent).",
+            []),
+        new("app.close", ActionAreas.Desktop, ActionTier.Disruptive, ActionRunAs.User,
+            "Close an app", "بستن برنامه",
+            "Asks one app to close normally (like clicking X). It is never forced; if it is still open after 20 seconds the user must close it.",
+            "Done, NotNeeded or Blocked (still open, maybe an unsaved document).",
+            [new("app", ActionParameterKind.Choice, "Which app.", Choices: AppChoices)],
+            TimeoutSeconds: 40),
+        new("reboot.schedule", ActionAreas.Desktop, ActionTier.Disruptive, ActionRunAs.System,
+            "Restart the PC", "راه‌اندازی دوباره کامپیوتر",
+            "Schedules a restart with a Windows warning to save work. Can be cancelled with reboot.cancel.",
+            "Done with RestartAtUtc.",
+            [new("minutes", ActionParameterKind.Choice, "Delay before the restart.", Choices:
+                [new("5", "In 5 minutes"), new("15", "In 15 minutes"), new("60", "In 1 hour")])],
+            MaxPerHour: 2),
+        new("reboot.cancel", ActionAreas.Desktop, ActionTier.SafeFix, ActionRunAs.System,
+            "Cancel a scheduled restart", "لغو راه‌اندازی دوباره",
+            "Cancels a restart scheduled by reboot.schedule.",
+            "Done or NotNeeded.", [], MaxPerHour: 5),
+
+        // ---------- Network adapters, system proxy and VPN ----------
+        new("network.adapters", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Network adapters", "کارت‌های شبکه",
+            "Lists the physical network adapters, including disabled and unplugged ones: wired or Wi-Fi, enabled, cable or radio connected, link speed, and driver version and date.",
+            "Adapters with Name, Description, Kind (Wired, WiFi, Other), Enabled, Connected, Status, SpeedMbps, DriverVersion, DriverDate; Summary with Disabled and Unplugged counts.",
+            [], TimeoutSeconds: 30),
+        new("network.adapter_enable", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Turn a network adapter on", "روشن کردن کارت شبکه",
+            "Enables one physical network adapter that network.adapters reported as disabled.",
+            "Done or NotNeeded; the verification shows the network status before and after.",
+            [new("adapter", ActionParameterKind.LocalItem, "Adapter Name from network.adapters.")],
+            TimeoutSeconds: 45, Verify: new("network.status")),
+        new("network.adapter_restart", ActionAreas.Network, ActionTier.Disruptive, ActionRunAs.System,
+            "Restart a network adapter", "راه‌اندازی دوباره کارت شبکه",
+            "Turns one physical network adapter off and on again. The connection drops for a few seconds.",
+            "Done; the verification shows the network status before and after.",
+            [new("adapter", ActionParameterKind.LocalItem, "Adapter Name from network.adapters.")],
+            TimeoutSeconds: 60, Verify: new("network.status")),
+        new("dns.reset_to_dhcp", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Use the DNS servers from DHCP", "استفاده از DNS خودکار",
+            "On adapters that get their address from DHCP but have DNS servers typed in by hand, removes the hand-typed servers so DHCP's are used. Runs only when the environment standards say DHCP gives the right DNS servers. The old servers are saved so the helpdesk can undo it.",
+            "Done with the adapters changed, NotNeeded, or Blocked when the standard is not set.",
+            [], TimeoutSeconds: 45, Verify: new("network.status"), UndoActionId: "dns.restore",
+            UsesSettings: [ActionSettings.DnsFromDhcp]),
+        new("proxy.system_get", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Read the system (WinHTTP) proxy", "پروکسی سیستمی",
+            "Reads the machine-wide WinHTTP proxy that Windows Update, Office updates and services use (separate from the browser proxy), and compares it with the organisation standard.",
+            "Direct, Server, Bypass, MatchesStandard.",
+            [], UsesSettings: [ActionSettings.ProxyMode, ActionSettings.ProxyServer,
+                ActionSettings.ProxyBypass]),
+        new("proxy.system_reset_to_standard", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Reset the system (WinHTTP) proxy", "اصلاح پروکسی سیستمی",
+            "Sets the WinHTTP proxy to the organisation standard: direct when the standard is no proxy or a PAC file, otherwise the standard server and bypass list. The old value is saved so the helpdesk can undo it.",
+            "Done or NotNeeded.",
+            [], Verify: new("proxy.system_get"), UndoActionId: "proxy.system_restore",
+            UsesSettings: [ActionSettings.ProxyMode, ActionSettings.ProxyServer,
+                ActionSettings.ProxyBypass]),
+        new("vpn.status", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "VPN status", "وضعیت VPN",
+            "For one company VPN from the environment map: is the Windows VPN connection defined or the client's service running, is it connected, can the VPN server be reached on its port, and the DNS servers and suffix on the VPN adapter while connected.",
+            "Type, ProfilePresent or ServiceState, Connected, ServerReachable, VpnAdapters (name, DnsSuffix, DnsServerCount), RasManState, RecentErrors.",
+            [Target("VPN target id.", EnvironmentTargetKinds.Vpn)], TimeoutSeconds: 30),
+        new("vpn.client_restart", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Restart the VPN client service", "راه‌اندازی دوباره سرویس VPN",
+            "Restarts the service of a company VPN client (FortiClient, Cisco Secure Client, GlobalProtect, OpenVPN, WireGuard and similar) as named in the environment map. The user connects again afterwards.",
+            "Done with the new service state.",
+            [Target("VPN target id of type client.", EnvironmentTargetKinds.Vpn)], TimeoutSeconds: 60,
+            Verify: new("vpn.status", PassSameArguments: true)),
+
+        // ---------- Software ----------
+        new("software.inventory", ActionAreas.Software, ActionTier.Look, ActionRunAs.System,
+            "Installed software", "نرم‌افزارهای نصب‌شده",
+            "Lists the installed applications (for all users and for the signed-in user) as Apps & features shows them. The control plane marks the ones the helpdesk allows to be removed.",
+            "Apps with Name, Version, Publisher, InstalledOn, Scope (Machine or User), Msi, Removable (environment-map app id or null), UninstallPackageId; Count.",
+            [new("name", ActionParameterKind.SearchText, "Optional part of the name to filter by.", Required: false)],
+            TimeoutSeconds: 45),
+        new("software.uninstall", ActionAreas.Software, ActionTier.ItApproval, ActionRunAs.System,
+            "Remove software", "حذف نرم‌افزار",
+            "Removes an application the helpdesk listed as removable, silently, when Windows Installer installed it. Waits until a helpdesk member approves it. Applications installed another way need the uninstall package named in the environment map.",
+            "Done with the removed entries and RestartRequired, NotNeeded (not installed), or Blocked (needs an uninstall package).",
+            [Target("Removable application id (environment map, kind app).", EnvironmentTargetKinds.App)],
+            TimeoutSeconds: 600, MaxPerHour: 3, Verify: new("software.inventory")),
+
+        // ---------- Devices and drivers ----------
+        new("drivers.inventory", ActionAreas.Devices, ActionTier.Look, ActionRunAs.System,
+            "Devices and drivers", "دستگاه‌ها و درایورها",
+            "Lists devices with a problem (or all printers, scanners, cameras, audio, Bluetooth, network, smart-card and USB devices) with their hardware IDs and current driver. The control plane marks devices whose model is in the driver catalog.",
+            "Devices with Name, Class, InstanceId, HardwareIds, ProblemCode, Problem, DriverProvider, DriverVersion, DriverDate, CatalogMatch (target id, model label, packageId) or null.",
+            [new("scope", ActionParameterKind.Choice, "Which devices.", Required: false,
+                Choices: [new("problems", "Only devices with a problem"), new("all", "Common peripheral classes")])],
+            TimeoutSeconds: 45),
+        new("device.enable", ActionAreas.Devices, ActionTier.SafeFix, ActionRunAs.System,
+            "Turn a device on", "فعال کردن دستگاه",
+            "Enables one device that drivers.inventory reported as disabled. Disks, display adapters, keyboards, mice, USB controllers and system devices are never touched.",
+            "Done or NotNeeded.",
+            [new("device", ActionParameterKind.LocalItem, "InstanceId from drivers.inventory.")],
+            TimeoutSeconds: 30, Verify: new("drivers.inventory")),
+        new("device.restart", ActionAreas.Devices, ActionTier.Disruptive, ActionRunAs.System,
+            "Restart a device", "راه‌اندازی دوباره دستگاه",
+            "Turns one device off and on again (a webcam, card reader, Bluetooth radio or dock device that stopped answering). Disks, display adapters, keyboards, mice, USB controllers and system devices are never touched.",
+            "Done, or Blocked when Windows needs a restart to do it.",
+            [new("device", ActionParameterKind.LocalItem, "InstanceId from drivers.inventory.")],
+            TimeoutSeconds: 60, Verify: new("drivers.inventory")),
+
+        // ---------- Windows and Office activation (organisation KMS) ----------
+        new("kms.check", ActionAreas.Activation, ActionTier.Look, ActionRunAs.System,
+            "Check the organisation KMS server", "بررسی سرور KMS سازمان",
+            "Checks that the helpdesk set the organisation KMS server and that this PC reaches it on its port, and reads whether Windows and Office are volume (KMS) editions, whether they are activated and whether they already point at the organisation server.",
+            "Configured, Reachable, ElapsedMs, Error; Windows (Found, VolumeClient, Licensed, LicenseStatus, UsesOrganisationKms, ErrorCode); Office (Found, Products with Name, VolumeClient, Licensed, LicenseStatus, UsesOrganisationKms, ErrorCode).",
+            [], TimeoutSeconds: 45, UsesSettings: [ActionSettings.KmsHost, ActionSettings.KmsPort],
+            ExampleResult: """{"Configured":true,"Reachable":true,"ElapsedMs":12,"Windows":{"Found":true,"VolumeClient":true,"Licensed":false,"LicenseStatus":5,"UsesOrganisationKms":false},"Office":{"Found":true,"Products":[{"Name":"Office 21, Office21ProPlus2021VL_KMS_Client_AE edition","VolumeClient":true,"Licensed":true,"LicenseStatus":1,"UsesOrganisationKms":true}]}}"""),
+        new("windows.kms_activate", ActionAreas.Activation, ActionTier.SafeFix, ActionRunAs.System,
+            "Activate Windows with the organisation KMS", "فعال‌سازی ویندوز با KMS سازمان",
+            "For a volume (KMS client) Windows: checks the organisation KMS server answers, points Windows at it and activates. Does nothing when Windows is already activated by that server; never installs or changes a product key.",
+            "Done when Windows is now activated, NotNeeded, Blocked (no KMS server set, server not reachable, or not a volume edition) or Failed with the activation error code.",
+            [], TimeoutSeconds: 120, Verify: new("kms.check"),
+            UsesSettings: [ActionSettings.KmsHost, ActionSettings.KmsPort]),
+        new("office.kms_activate", ActionAreas.Activation, ActionTier.SafeFix, ActionRunAs.System,
+            "Activate Office with the organisation KMS", "فعال‌سازی آفیس با KMS سازمان",
+            "For volume (KMS client) Office 2016 and later, including Click-to-Run volume installs: checks the organisation KMS server answers, points the Office licenses at it and activates them. Office apps can stay open. Never installs or changes a product key.",
+            "Done when every volume Office product is now activated, NotNeeded, Blocked (no KMS server set, server not reachable, or no volume Office) or Failed with the activation error codes.",
+            [], TimeoutSeconds: 180, Verify: new("kms.check"),
+            UsesSettings: [ActionSettings.KmsHost, ActionSettings.KmsPort]),
+
+        // ---------- Sound, printers, disk, restarts, groups ----------
+        new("audio.status", ActionAreas.Desktop, ActionTier.Look, ActionRunAs.User,
+            "Sound devices", "دستگاه‌های صدا",
+            "The user's speakers/headsets and microphones: which is the default, whether it is muted, and its volume.",
+            "Playback and Recording lists with Id, Name, IsDefault, Muted, VolumePercent; Summary.",
+            [], TimeoutSeconds: 20),
+        new("audio.unmute", ActionAreas.Desktop, ActionTier.SafeFix, ActionRunAs.User,
+            "Unmute sound", "قطع حالت بی‌صدا",
+            "Unmutes the default speaker and microphone and raises a volume under 10% to 50%.",
+            "Done with what changed, or NotNeeded.",
+            [new("device", ActionParameterKind.Choice, "Which side.", Required: false,
+                Choices: [new("both", "Speaker and microphone"), new("playback", "Speaker"), new("recording", "Microphone")])],
+            Verify: new("audio.status")),
+        new("audio.set_default", ActionAreas.Desktop, ActionTier.SafeFix, ActionRunAs.User,
+            "Choose the default sound device", "انتخاب دستگاه صدای پیش‌فرض",
+            "Makes one of the user's sound devices (for example the headset) the default for calls and media. The previous default is saved so the helpdesk can undo it.",
+            "Done or NotNeeded.",
+            [new("device", ActionParameterKind.LocalItem, "Device Id from audio.status.")],
+            Verify: new("audio.status"), UndoActionId: "audio.restore_default"),
+        new("printer.status", ActionAreas.Printers, ActionTier.Look, ActionRunAs.User,
+            "Printer details", "جزئیات چاپگر",
+            "One printer's driver, port, offline flag and the error the printer reports (paper jam, out of paper, toner low, door open, offline), and its stuck jobs.",
+            "Name, DriverName, PortKind, Offline, ErrorState, Jobs, ErrorJobs, IsNetwork, MatchesTarget.",
+            [new("printer", ActionParameterKind.LocalItem, "Printer Name from printer.list.")]),
+        new("disk.usage", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Disk space", "فضای دیسک",
+            "Free space on each fixed drive and the size of the places that usually fill it: temporary files, the recycle bin, the Windows Update download cache, and the user's Downloads folder (size only, never file names).",
+            "Drives with Letter, SizeGb, FreeGb, FreePercent; Places with Name and SizeMb; LowSpace.",
+            [], TimeoutSeconds: 60),
+        new("restart.pending", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Restart pending?", "نیاز به راه‌اندازی دوباره",
+            "Whether Windows is waiting for a restart (updates, installs, file renames) and how long the PC has been running.",
+            "Pending, Reasons, UptimeHours, LastBootUtc.",
+            []),
+        new("whoami.groups", ActionAreas.Domain, ActionTier.Look, ActionRunAs.User,
+            "User's groups", "گروه‌های کاربر",
+            "The groups in the user's current Windows sign-in token, so access problems after a group change can be explained (a new group needs a fresh sign-in).",
+            "User, Groups (names), GroupCount.",
+            []),
+
+        // ---------- Batch 2: network type, address, Wi-Fi, sites and intranet zones ----------
+        new("network.category", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Network type", "نوع شبکه",
+            "For each connected network: whether Windows treats it as Domain, Private or Public (Public turns on the strictest firewall rules and hides the PC), and whether it reaches the internet.",
+            "Networks with Name, Adapter, Category, Internet; OnDomainNetwork.",
+            [], TimeoutSeconds: 20),
+        new("network.set_private", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Mark the office network as private", "خصوصی کردن شبکه اداره",
+            "Changes networks Windows marked Public to Private on a PC that should be on the office network. Domain networks are never changed. The old type is saved so the helpdesk can undo it.",
+            "Done with the networks changed, or NotNeeded.",
+            [], TimeoutSeconds: 30, Verify: new("network.category"), UndoActionId: "network.set_public"),
+        new("ip.reset_to_dhcp", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Get the address from DHCP", "دریافت خودکار آدرس IP",
+            "On a wired or Wi-Fi adapter with a hand-typed IPv4 address, switches it back to DHCP. Runs only when the environment standards say office PCs use DHCP. The old address, mask and gateway are saved so the helpdesk can undo it.",
+            "Done with the adapter changed, NotNeeded, or Blocked when the standard is not set.",
+            [], TimeoutSeconds: 60, MaxPerHour: 2, Verify: new("network.status"), UndoActionId: "ip.restore",
+            UsesSettings: [ActionSettings.IpFromDhcp]),
+        new("network.stack_reset", ActionAreas.Network, ActionTier.ItApproval, ActionRunAs.System,
+            "Reset the network stack", "بازنشانی کامل تنظیمات شبکه",
+            "Resets Winsock and the TCP/IP settings to Windows defaults (what helps after malware or a broken VPN client). Hand-set addresses and DNS are lost and the PC must restart afterwards. Waits until a helpdesk member approves it.",
+            "Done with RestartRequired.",
+            [], TimeoutSeconds: 120, MaxPerHour: 1),
+        new("wifi.status", ActionAreas.Network, ActionTier.Look, ActionRunAs.System,
+            "Wi-Fi status", "وضعیت Wi-Fi",
+            "Whether the PC has Wi-Fi, whether the radio is on, which network it is connected to, the signal and band, and which Wi-Fi profiles are saved. Saved company networks from the environment map are marked.",
+            "HasWifi, RadioOn, Connected, Ssid, SignalPercent, RadioType, Authentication, Profiles, CompanyProfiles.",
+            [], TimeoutSeconds: 20),
+        new("wifi.connect_company", ActionAreas.Network, ActionTier.SafeFix, ActionRunAs.System,
+            "Connect to the company Wi-Fi", "اتصال به Wi-Fi سازمان",
+            "Connects to a company Wi-Fi network from the environment map, using the profile the organisation already deployed to the PC. No password is ever entered or sent.",
+            "Done, or Blocked when the profile is not on this PC.",
+            [Target("Company Wi-Fi id (environment map, kind wifi).", EnvironmentTargetKinds.Wifi)],
+            TimeoutSeconds: 40, Verify: new("wifi.status")),
+        new("site.check_access", ActionAreas.Browsers, ActionTier.Look, ActionRunAs.User,
+            "Check a work site", "بررسی سایت کاری",
+            "Opens one site from the organisation's allowed-sites list, as the user's browser would (same proxy), and reports whether it answers, how long it took, and whether a proxy or filter page answered instead.",
+            "Host, Reachable, StatusCode, Milliseconds, ViaProxy, LooksBlocked, Error.",
+            [Target("Allowed-site id (environment map, kind site).", EnvironmentTargetKinds.Site)],
+            TimeoutSeconds: 30),
+        new("zones.status", ActionAreas.Browsers, ActionTier.Look, ActionRunAs.User,
+            "Intranet zone status", "وضعیت ناحیهٔ اینترانت",
+            "For the organisation's internal web apps: whether each is in the Local intranet zone for this user (needed for automatic Windows sign-in) or set by policy.",
+            "Sites with Target, Zone (Intranet, Trusted, Internet), SetByPolicy.",
+            [], TimeoutSeconds: 20),
+        new("zones.add_company_site", ActionAreas.Browsers, ActionTier.SafeFix, ActionRunAs.User,
+            "Add an internal site to Local intranet", "افزودن سامانهٔ داخلی به اینترانت",
+            "Adds one internal web app from the environment map to the user's Local intranet zone, so Windows signs in to it automatically instead of asking for a password.",
+            "Done, NotNeeded, or Blocked when policy manages the zones.",
+            [Target("Internal web app id.", EnvironmentTargetKinds.WebApp)],
+            Verify: new("zones.status"), UndoActionId: "zones.remove_company_site"),
+
+        // ---------- Batch 2: updates, antivirus, disks, system files, startup, battery ----------
+        new("windows_update.reset_components", ActionAreas.Health, ActionTier.SafeFix, ActionRunAs.System,
+            "Reset Windows Update", "بازنشانی Windows Update",
+            "Stops the update services, sets the download cache (SoftwareDistribution) and catalog folder (catroot2) aside, and starts the services again, so Windows Update downloads cleanly. The previous copies are replaced each time.",
+            "Done with the services restarted.",
+            [], TimeoutSeconds: 180, MaxPerHour: 1, Verify: new("windows_update.status")),
+        new("windows_update.scan_now", ActionAreas.Health, ActionTier.SafeFix, ActionRunAs.System,
+            "Check for updates now", "بررسی به‌روزرسانی‌ها",
+            "Asks Windows Update to look for updates now, in the background.",
+            "Done when the scan was started.",
+            [], TimeoutSeconds: 30, MaxPerHour: 2),
+        new("defender.update_signatures", ActionAreas.Health, ActionTier.SafeFix, ActionRunAs.System,
+            "Update antivirus definitions", "به‌روزرسانی آنتی‌ویروس",
+            "Asks Microsoft Defender to download its latest definitions.",
+            "Done or Failed with Defender's exit code.",
+            [], TimeoutSeconds: 300, MaxPerHour: 2, Verify: new("security.status")),
+        new("defender.threats", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Recent threats found", "تهدیدهای پیداشده",
+            "Threats Microsoft Defender found in the last 30 days: name, severity, when, and whether Defender removed or quarantined them (file paths are not returned).",
+            "Threats with Name, Severity, DetectedUtc, Action, Resolved; Count.",
+            [], TimeoutSeconds: 30),
+        new("bitlocker.status", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "BitLocker status", "وضعیت BitLocker",
+            "Whether each fixed drive is encrypted with BitLocker and protection is on. Never reads or returns a recovery key.",
+            "Volumes with Drive, Protection (On, Off, Unknown), Encrypted, Method.",
+            [], TimeoutSeconds: 30),
+        new("disk.health", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Disk health", "سلامت دیسک",
+            "Each physical disk's type (SSD or HDD), size, the health Windows reports, and whether the disk itself predicts a failure (SMART).",
+            "Disks with Name, MediaType, SizeGb, Health, Operational; PredictsFailure (any disk's SMART warning); AnyWarning.",
+            [], TimeoutSeconds: 30),
+        new("system.file_check", ActionAreas.Health, ActionTier.SafeFix, ActionRunAs.System,
+            "Check and repair Windows files", "بررسی و تعمیر فایل‌های ویندوز",
+            "Starts the Windows system file checker (sfc /scannow) in the background. It takes 10-20 minutes; read the result with system.repair_status.",
+            "Done when started, NotNeeded when a check is already running.",
+            [], TimeoutSeconds: 30, MaxPerHour: 1),
+        new("system.image_repair", ActionAreas.Health, ActionTier.SafeFix, ActionRunAs.System,
+            "Repair the Windows image", "تعمیر تصویر ویندوز",
+            "Starts DISM /RestoreHealth in the background, which repairs the store system file checker copies from (it may download from Windows Update). It takes 10-30 minutes; read the result with system.repair_status, then run system.file_check.",
+            "Done when started, NotNeeded when a repair is already running.",
+            [], TimeoutSeconds: 30, MaxPerHour: 1),
+        new("system.repair_status", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "System file repair result", "نتیجهٔ تعمیر فایل‌های ویندوز",
+            "Whether the system file checker or DISM is still running, and the result of the last run of each from Windows' own logs.",
+            "FileCheck and ImageRepair, each with Running, LastResult (NoProblems, Repaired, CouldNotRepair, Failed, Unknown), FinishedUtc.",
+            [], TimeoutSeconds: 30),
+        new("battery.report", ActionAreas.Health, ActionTier.Look, ActionRunAs.System,
+            "Battery health", "سلامت باتری",
+            "For laptops: the battery's design capacity against its full charge today (wear), the charge cycle count when reported, and whether it is charging.",
+            "HasBattery, DesignMwh, FullChargeMwh, WearPercent, CycleCount, Charging, PluggedIn.",
+            [], TimeoutSeconds: 20),
+        new("power.set_plan_standard", ActionAreas.Health, ActionTier.SafeFix, ActionRunAs.System,
+            "Use the standard power plan", "برنامهٔ برق استاندارد",
+            "Switches the PC to the organisation's standard power plan (balanced, high performance or power saver). The old plan is saved so the helpdesk can undo it.",
+            "Done, NotNeeded, or Blocked when the standard is not set.",
+            [], Verify: new("power.status"), UndoActionId: "power.restore_plan",
+            UsesSettings: [ActionSettings.PowerPlan]),
+        new("startup.list", ActionAreas.Health, ActionTier.Look, ActionRunAs.User,
+            "Startup apps", "برنامه‌های شروع خودکار",
+            "Programs that start when the user signs in: for this user and for every user, enabled or turned off. Only names and publishers, never command lines.",
+            "Items with Name, Scope (User or Machine), Enabled, CanTurnOff; Count, EnabledCount.",
+            [], TimeoutSeconds: 20),
+        new("startup.disable", ActionAreas.Health, ActionTier.SafeFix, ActionRunAs.User,
+            "Turn off a startup app", "خاموش کردن شروع خودکار برنامه",
+            "Turns off one of the user's own startup apps the way Task Manager does (the program stays installed). Apps that start for every user are set by the helpdesk and are not changed. Undoable.",
+            "Done or NotNeeded.",
+            [new("item", ActionParameterKind.LocalItem, "Item Name from startup.list.")],
+            Verify: new("startup.list"), UndoActionId: "startup.enable"),
+        new("recyclebin.empty", ActionAreas.Health, ActionTier.Disruptive, ActionRunAs.User,
+            "Empty the recycle bin", "خالی کردن سطل بازیافت",
+            "Empties the user's recycle bin on every drive. Deleted files cannot be brought back afterwards, so the user must agree first.",
+            "Done with FreedMb, or NotNeeded.",
+            [], TimeoutSeconds: 120, MaxPerHour: 1),
+
+        // ---------- Batch 2: Office add-ins, Office repair, Outlook data file ----------
+        new("office.addins_list", ActionAreas.Office, ActionTier.Look, ActionRunAs.User,
+            "Office add-ins", "افزونه‌های Office",
+            "For one Office app: its COM add-ins, whether each loads at start, whether Office turned it off after a crash, and whether the user or the helpdesk installed it.",
+            "Addins with Id, Name, LoadsAtStart, Scope (User or Machine), CanTurnOff; DisabledByOfficeCount (add-ins Office itself turned off after a crash); Running.",
+            [new("app", ActionParameterKind.Choice, "Office app.", Choices: OfficeAppChoices)],
+            TimeoutSeconds: 20),
+        new("office.addin_disable", ActionAreas.Office, ActionTier.SafeFix, ActionRunAs.User,
+            "Turn off an Office add-in", "خاموش کردن افزونهٔ Office",
+            "Stops one of the user's Office add-ins from loading at start (it stays installed). Takes effect the next time the app opens. Add-ins installed for every user are not changed. Undoable.",
+            "Done, NotNeeded, or Blocked for machine-wide add-ins.",
+            [new("app", ActionParameterKind.Choice, "Office app.", Choices: OfficeAppChoices),
+             new("addin", ActionParameterKind.LocalItem, "Add-in Id from office.addins_list.")],
+            Verify: new("office.addins_list", PassSameArguments: true), UndoActionId: "office.addin_enable"),
+        new("office.quick_repair", ActionAreas.Office, ActionTier.Disruptive, ActionRunAs.System,
+            "Repair Office", "تعمیر Office",
+            "Runs Office's own Quick Repair (Click-to-Run Office only), silently. Every Office app is closed first, so the user must save their work and agree. Activation is not touched.",
+            "Done, or Blocked when Office is not a Click-to-Run installation.",
+            [], TimeoutSeconds: 600, MaxPerHour: 1),
+        new("outlook.rebuild_ost", ActionAreas.Office, ActionTier.Disruptive, ActionRunAs.User,
+            "Rebuild the Outlook mailbox file", "بازسازی فایل صندوق Outlook",
+            "With Outlook closed, renames one of the user's Outlook offline mailbox files (.ost) so Outlook downloads a fresh copy from the mail server at its next start. The old file is kept beside it. Never touches .pst archives.",
+            "Done with the file renamed, or Blocked while Outlook is open.",
+            [new("file", ActionParameterKind.LocalItem, "Data file name from outlook.status (an .ost file).")],
+            TimeoutSeconds: 30, MaxPerHour: 1),
+
+        // ---------- Health rules (never offered to the agent) ----------
+        new("notice.show", ActionAreas.Desktop, ActionTier.OperatorOnly, ActionRunAs.User,
+            "Show a notice to the user", "نمایش پیام به کاربر",
+            "Shows one fixed Persian notice next to the clock, such as \"please restart the PC\". The text is chosen from a fixed list on the PC; nothing else can be shown.",
+            "Done when the notice was shown.",
+            [new("notice", ActionParameterKind.Choice, "Which fixed notice.", Choices: UserNotices.Choices)],
+            TimeoutSeconds: 15, MaxPerHour: 2),
+
+        // ---------- Helpdesk-only undo actions (never offered to the agent) ----------
+        new("proxy.restore", ActionAreas.Network, ActionTier.OperatorOnly, ActionRunAs.User,
+            "Undo proxy reset", "بازگرداندن پروکسی قبلی",
+            "Restores the proxy settings saved by proxy.reset_to_standard.",
+            "Done.",
+            [new("enabled", ActionParameterKind.Choice, "Previous state.", Choices: [new("0", "Off"), new("1", "On")]),
+             new("server", ActionParameterKind.LocalItem, "Previous server.", Required: false),
+             new("autoConfigUrl", ActionParameterKind.LocalItem, "Previous PAC URL.", Required: false),
+             new("bypass", ActionParameterKind.LocalItem, "Previous bypass list.", Required: false)]),
+        new("printer.restore_default", ActionAreas.Printers, ActionTier.OperatorOnly, ActionRunAs.User,
+            "Undo default printer change", "بازگرداندن چاپگر پیش‌فرض قبلی",
+            "Makes the previous default printer the default again.",
+            "Done.",
+            [new("printer", ActionParameterKind.LocalItem, "Previous default printer.")]),
+        new("timezone.restore", ActionAreas.Desktop, ActionTier.OperatorOnly, ActionRunAs.System,
+            "Undo time zone change", "بازگرداندن منطقه زمانی قبلی",
+            "Sets the previous time zone again.",
+            "Done.",
+            [new("zone", ActionParameterKind.LocalItem, "Previous Windows time zone id.")]),
+        new("dns.restore", ActionAreas.Network, ActionTier.OperatorOnly, ActionRunAs.System,
+            "Undo DNS reset", "بازگرداندن DNS قبلی",
+            "Puts back the DNS servers dns.reset_to_dhcp removed.",
+            "Done.",
+            [new("servers", ActionParameterKind.LocalItem, "Previous servers per adapter: {setting-id}=ip,ip;...")]),
+        new("audio.restore_default", ActionAreas.Desktop, ActionTier.OperatorOnly, ActionRunAs.User,
+            "Undo default sound device change", "بازگرداندن دستگاه صدای قبلی",
+            "Makes the previous default sound device the default again.",
+            "Done.",
+            [new("device", ActionParameterKind.LocalItem, "Previous default device id.")]),
+        new("proxy.system_restore", ActionAreas.Network, ActionTier.OperatorOnly, ActionRunAs.System,
+            "Undo system proxy reset", "بازگرداندن پروکسی سیستمی قبلی",
+            "Restores the WinHTTP proxy saved by proxy.system_reset_to_standard.",
+            "Done.",
+            [new("server", ActionParameterKind.LocalItem, "Previous server, empty for direct.", Required: false),
+             new("bypass", ActionParameterKind.LocalItem, "Previous bypass list.", Required: false)]),
+        new("network.set_public", ActionAreas.Network, ActionTier.OperatorOnly, ActionRunAs.System,
+            "Undo network type change", "بازگرداندن نوع شبکه",
+            "Marks the networks network.set_private changed as Public again.",
+            "Done.",
+            [new("networks", ActionParameterKind.LocalItem, "Network names, separated by |.")]),
+        new("ip.restore", ActionAreas.Network, ActionTier.OperatorOnly, ActionRunAs.System,
+            "Undo DHCP address change", "بازگرداندن آدرس IP قبلی",
+            "Puts back the hand-set IPv4 address ip.reset_to_dhcp removed.",
+            "Done.",
+            [new("address", ActionParameterKind.LocalItem, "{setting-id}=ip/mask/gateway.")]),
+        new("zones.remove_company_site", ActionAreas.Browsers, ActionTier.OperatorOnly, ActionRunAs.User,
+            "Undo intranet zone change", "حذف سامانه از اینترانت",
+            "Removes the site zones.add_company_site added to the user's Local intranet zone.",
+            "Done.",
+            [new("host", ActionParameterKind.LocalItem, "Host name that was added.")]),
+        new("power.restore_plan", ActionAreas.Health, ActionTier.OperatorOnly, ActionRunAs.System,
+            "Undo power plan change", "بازگرداندن برنامهٔ برق قبلی",
+            "Makes the previous power plan active again.",
+            "Done.",
+            [new("plan", ActionParameterKind.LocalItem, "Previous power plan GUID.")]),
+        new("startup.enable", ActionAreas.Health, ActionTier.OperatorOnly, ActionRunAs.User,
+            "Undo startup app change", "روشن کردن دوبارهٔ شروع خودکار",
+            "Turns a startup app turned off by startup.disable back on.",
+            "Done.",
+            [new("item", ActionParameterKind.LocalItem, "Item name.")]),
+        new("office.addin_enable", ActionAreas.Office, ActionTier.OperatorOnly, ActionRunAs.User,
+            "Undo Office add-in change", "روشن کردن دوبارهٔ افزونه",
+            "Lets an Office add-in turned off by office.addin_disable load at start again.",
+            "Done.",
+            [new("app", ActionParameterKind.Choice, "Office app.", Choices: OfficeAppChoices),
+             new("addin", ActionParameterKind.LocalItem, "Add-in Id."),
+             new("loadBehavior", ActionParameterKind.LocalItem, "Previous LoadBehavior value.")])
+    ];
+}

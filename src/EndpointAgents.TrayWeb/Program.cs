@@ -58,7 +58,17 @@ internal static class Program
         app.DispatcherUnhandledException += (_, e) =>
         {
             TrayEventLogger.Error("خطای پیش‌بینی‌نشده رابط کاربری: " + e.Exception.Message);
+            TrayProblems.Report(e.Exception);
             e.Handled = true;
+        };
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            if (e.ExceptionObject is Exception exception) TrayProblems.Report(exception);
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            TrayProblems.Report(e.Exception);
+            e.SetObserved();
         };
         app.Exit += (_, _) => host?.Dispose();
         return app.Run();

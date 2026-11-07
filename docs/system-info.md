@@ -38,4 +38,5 @@ sections, resolves the run capability to one device) -> `AgentHub` -> Service ->
 A brand-new endpoint capability (something that is not a section of this report) is its
 own `IEndpointCommandHandler`, a `CommandCatalog` entry, an MCP tool in
 `EndpointSupportTools`, the Hermes `tools.include` entry and a skill, the same way.
-Anything that changes the PC must go through `propose_endpoint_action` and Tray consent.
+Small fixes and other checks are catalogued actions instead (see `docs/endpoint-actions.md`):
+they run through `run_endpoint_action` without an approval card, within their tier's rules.

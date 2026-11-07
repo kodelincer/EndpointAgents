@@ -31,7 +31,58 @@ isolation, Hermes, MCP, and rollout operations.
 | `https://<server>/api/files/office/catalog` | Remote | Hash-verified Office remediation catalog |
 | `https://<server>/api/files/office/{artifactId}` | Remote | One catalog-approved Office artifact |
 
+Operator routes for general actions (loopback dashboard only): `/api/capabilities`,
+`/api/actions/*` (settings, runs, undo, missing-action requests), `/api/environment/*`,
+`/api/incidents` and `/api/skills/*`. See `docs/endpoint-actions.md`.
+
 Port 5052 never serves dashboard HTML. Unknown frontend routes on the API return HTTP 404, while non-loopback requests to operator routes return HTTP 403.
+
+## Dashboard sign-in and roles
+
+Every operator route and the `dashboard-hub` need a signed-in operator (an HttpOnly, SameSite=Strict
+cookie from `POST /api/auth/sign-in`); anonymous calls get 401. Endpoint agents (device token), Hermes MCP
+(its own key), health checks and the remote artifact routes are unchanged. The dashboard calls the API on
+port 5052 of the same host name it was opened on, which keeps the cookie same-site.
+
+| Role | Can |
+| --- | --- |
+| Member | View everything, answer helpdesk conversations, take over, run read-only diagnostics |
+| Reviewer | Member, plus change feature-request status (and publish skills once the skill editor exists) |
+| Admin | Everything, plus endpoint commands, maintenance mode, device revoke, enrollment codes and the Operators page |
+
+First start: when the database has no operators, the API creates `admin` with a one-time password and
+writes it to `initial-admin-password.txt` next to the database (`.local\` in development,
+`C:\ProgramData\EndpointAgents\ControlPlane\` in production). The password is never logged. Signing in with
+it forces a new password; delete the file afterwards. Admins add operators on the Operators page, which shows
+each one-time password once.
+
+### Two kinds of accounts: local and Active Directory
+
+- **Local accounts** are created on the Operators page by an admin (one-time password). They always work,
+  even when the domain controller is down, so keep at least one local admin.
+- **Active Directory accounts** sign in with their normal domain password (`sara`, `CORP\sara` or
+  `sara@corp.example`). The control plane checks the password with the domain controller and never stores it.
+  An admin can add a domain user by name on the Operators page (choose "Active Directory user"), or members of
+  mapped groups are created automatically at their first sign-in. A name that has a local account is always
+  checked locally. A domain user's role is the one an admin gives on the Operators page; the group only
+  decides the starting role. Disable the account there to revoke access.
+
+Off by default. To turn it on, set in `appsettings.Production.json` (no password needed; the service's own
+domain identity is used for lookups):
+
+```json
+"ActiveDirectory": { "Server": "dc01.corp.example", "BaseDn": "DC=corp,DC=example" },
+"OperatorDirectory": { "Enabled": true, "Domain": "CORP",
+  "AdminGroup": "", "ReviewerGroup": "", "MemberGroup": "HelpdeskStaff" }
+```
+
+Empty groups mean only domain users added by name can sign in. Leave `ActiveDirectory:Enabled` as it is: that
+switch is for the agent's read-only account check, a separate feature using the same server and search base.
+
+Safety: PBKDF2-SHA256 (600k iterations) hashes; five wrong passwords for one name from one address lock it for
+15 minutes; disabling an account, changing its role or resetting its password ends its sessions at once.
+`POST /api/agent-enrollments` still works without sign-in for local scripts (loopback, no browser `Origin`),
+so `scripts\start-dev-stack.ps1` keeps enrolling; from a browser it needs an admin.
 
 ## Local development
 

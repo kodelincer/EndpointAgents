@@ -1,4 +1,5 @@
 using EndpointAgents.Core.Commands;
+using EndpointAgents.Platform.Windows.Actions;
 using EndpointAgents.Platform.Windows.EndpointInfo;
 using EndpointAgents.Platform.Windows;
 using EndpointAgents.Platform.Windows.Ibsng;
@@ -19,7 +20,29 @@ using System.Runtime.Versioning;
 // Use the generic host so the process can run interactively during development
 // and as a Windows Service in production.
 var builder = Host.CreateApplicationBuilder(args);
-builder.Logging.AddProvider(new EndpointActivityLoggerProvider());
+// This PC's own settings (control plane, keys, agent id) live outside the program folder, so a
+// self-update that brings a fresh appsettings.json keeps them.
+builder.Configuration.AddJsonFile(
+    EndpointAgents.Platform.Windows.Updates.AgentUpdatePaths.SiteSettingsPath, optional: true, reloadOnChange: false);
+builder.Configuration.AddEnvironmentVariables();
+builder.Configuration.AddCommandLine(args);
+// Problem reports wait in a small file until the control plane has them (ProblemReportWorker).
+var problems = new EndpointAgents.Shared.Problems.ProblemOutbox(EndpointAgents.Shared.Problems.ProblemPaths.ServiceOutbox);
+var agentVersion = builder.Configuration["ControlPlane:Version"] ?? ControlPlaneOptions.BuildVersion;
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    if (e.ExceptionObject is Exception exception)
+        problems.Add(EndpointAgents.Shared.Problems.ProblemText.FromException(
+            EndpointAgents.Shared.Problems.ProblemKinds.Crash, "Service", exception, agentVersion, DateTimeOffset.UtcNow), saveNow: true);
+};
+TaskScheduler.UnobservedTaskException += (_, e) =>
+{
+    problems.Add(EndpointAgents.Shared.Problems.ProblemText.FromException(
+        EndpointAgents.Shared.Problems.ProblemKinds.Crash, "Service", e.Exception, agentVersion, DateTimeOffset.UtcNow), saveNow: true);
+    e.SetObserved();
+};
+builder.Logging.AddProvider(new EndpointActivityLoggerProvider(problems, agentVersion));
+builder.Services.AddSingleton(problems);
 
 // Registers Windows Service lifetime integration; host.Run() starts the service
 // after all hosted services have been built.
@@ -160,7 +183,13 @@ builder.Services.AddSingleton<IEndpointCommandHandler, WindowsActivationStatusCo
 builder.Services.AddSingleton<IEndpointCommandHandler, WindowsActivationBugfixCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, WindowsHelloSampleCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, PackageRunCommandHandler>();
+builder.Services.AddSingleton<IEndpointCommandHandler, EndpointAgents.Platform.Windows.Software.CheckRequirementsCommandHandler>();
 builder.Services.AddSingleton<IEndpointCommandHandler, SystemInfoCommandHandler>();
+builder.Services.AddSingleton<IEndpointCommandHandler, EndpointAgents.Platform.Windows.Diagnostics.CollectLogsCommandHandler>();
+// General catalogued actions (EndpointActionCatalog): one RPC, fixed implementations only.
+builder.Services.AddSingleton<IEndpointCommandHandler, EndpointActionCommandHandler>();
+foreach (var action in EndpointActionSet.CreateSystemActions())
+    builder.Services.AddSingleton(action);
 
 // Read-only system.get_info sections; add a new ISystemInfoSection here to extend it.
 builder.Services.AddSingleton<ISystemInfoSection, NetworkInfoSection>();
@@ -173,9 +202,29 @@ builder.Services.AddSingleton<ISystemInfoSection, StorageInfoSection>();
 // the local IPC bridge can submit helpdesk requests through the same connection.
 builder.Services.AddSingleton<AgentWorker>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<AgentWorker>());
+builder.Services.AddOptions<EndpointAgents.Platform.Windows.Updates.AgentUpdateOptions>()
+    .Bind(builder.Configuration.GetSection(EndpointAgents.Platform.Windows.Updates.AgentUpdateOptions.SectionName));
+builder.Services.AddSingleton<EndpointAgents.Platform.Windows.Updates.AgentUpdateInstaller>();
+builder.Services.AddHostedService<AgentUpdateWorker>();
+builder.Services.AddHostedService<ProblemReportWorker>();
 builder.Services.AddHostedService<ServiceIpcServer>();
 
 var host = builder.Build();
+
+// The 24-hour watch after a self-update: a version that keeps crashing hands over to the
+// updater, which puts the previous version back.
+var updateStatePath = host.Services.GetRequiredService<
+    IOptions<EndpointAgents.Platform.Windows.Updates.AgentUpdateOptions>>().Value.StatePath;
+try
+{
+    if (EndpointAgents.Platform.Windows.Updates.AgentUpdateProbation.OnServiceStart(updateStatePath,
+            host.Services.GetRequiredService<IOptions<ControlPlaneOptions>>().Value.Version,
+            DateTimeOffset.UtcNow))
+        return;
+}
+catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+host.Services.GetRequiredService<IHostApplicationLifetime>().ApplicationStopped.Register(() =>
+    EndpointAgents.Platform.Windows.Updates.AgentUpdateProbation.OnServiceStop(updateStatePath));
 
 host.Run();
 
