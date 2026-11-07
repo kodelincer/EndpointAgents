@@ -344,8 +344,10 @@ public sealed class EnvironmentValidationTests
     [InlineData("activation.kmsPort", "-1", false)]
     [InlineData("time.ntpServer", "time.corp.local", true)]
     [InlineData("time.ntpServer", "172.16.0.2", true)]
+    [InlineData("time.ntpServer", "172.16.0.2, time.windows.com; pool.ntp.org", true)]
     [InlineData("time.ntpServer", "172.16.0.2:123", false)]
     [InlineData("time.ntpServer", "a.corp.local,0x9 b.corp.local", false)]
+    [InlineData("time.ntpServer", "a.x b.x c.x d.x e.x f.x g.x h.x i.x", false)]
     [InlineData("time.ntpServer", "time & calc", false)]
     public void SettingsAreValidated(string key, string value, bool valid) =>
         Assert.Equal(valid, ActionEndpoints.ValidateSetting(key, value) is null);
@@ -392,28 +394,34 @@ public sealed class EnvironmentValidationTests
 public sealed class TimeCorrectionTests
 {
     [Fact]
-    public void NtpSettingIsReadTheSameWayOnBothSides()
+    public void NtpListIsReadTheSameWayOnBothSides()
     {
         Assert.False(NtpSettings.TryRead(new Dictionary<string, string>(), out _));
+        Assert.False(NtpSettings.TryRead(new Dictionary<string, string>
+            { [ActionSettings.NtpServer] = "  " }, out _));
         Assert.True(NtpSettings.TryRead(new Dictionary<string, string>
-            { [ActionSettings.NtpServer] = " time.corp.local " }, out var host));
-        Assert.Equal("time.corp.local", host);
+            { [ActionSettings.NtpServer] = " 172.16.0.2 , time.windows.com;TIME.windows.com\npool.ntp.org " },
+            out var servers));
+        Assert.Equal(["172.16.0.2", "time.windows.com", "pool.ntp.org"], servers);
         Assert.False(NtpSettings.TryRead(new Dictionary<string, string>
             { [ActionSettings.NtpServer] = "time.corp.local,0x9" }, out _));
         Assert.False(NtpSettings.TryRead(new Dictionary<string, string>
-            { [ActionSettings.NtpServer] = "a b" }, out _));
+            { [ActionSettings.NtpServer] = "good.corp.local bad&name" }, out _));
+        Assert.Null(NtpSettings.Parse(string.Join(' ',
+            Enumerable.Range(1, NtpSettings.MaxServers + 1).Select(n => $"s{n}.corp.local"))));
     }
 
     [Fact]
-    public void SetNtpIsASafeFixThatRunsWithoutTheTrayAndUsesOnlyTheSetting()
+    public void CorrectIsASafeFixThatRunsWithoutTheTrayAndUsesOnlyTheSetting()
     {
-        var definition = EndpointActionCatalog.Find("time.set_ntp")!;
+        var definition = EndpointActionCatalog.Find("time.correct")!;
         Assert.Equal(ActionTier.SafeFix, definition.Tier);
         Assert.Equal(ActionRunAs.System, definition.RunAs);
         Assert.Empty(definition.Parameters);
         Assert.Equal([ActionSettings.NtpServer], definition.UsesSettings);
         Assert.Equal("time.status", definition.Verify!.ActionId);
         Assert.False(ActionRunner.NeedsApproval(definition, null));
+        Assert.Null(EndpointActionCatalog.Find("time.set_ntp"));
         Assert.Contains(ActionSettings.NtpServer,
             EndpointActionCatalog.Find("time.status")!.UsesSettings!);
     }

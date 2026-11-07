@@ -43,7 +43,7 @@ public static class EndpointActionSet
         new SystemRepairStatusAction(), new BatteryReportAction(), new PowerSetPlanStandardAction(),
         new PowerRestorePlanAction(), new OfficeQuickRepairAction(),
         new KmsCheckAction(), new WindowsKmsActivateAction(), new OfficeKmsActivateAction(),
-        new TimeSetNtpAction()
+        new TimeCorrectAction()
     ];
 
     /// <summary>Actions the Tray runs with the signed-in user's own token.</summary>

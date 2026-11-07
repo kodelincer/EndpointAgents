@@ -28,7 +28,7 @@ public static class ActionSettings
     /// <summary>The KMS server's TCP port; 1688 when empty.</summary>
     public const string KmsPort = "activation.kmsPort";
 
-    /// <summary>The organisation's NTP (time) server for PCs outside a domain: a host name or IPv4 address (no port).</summary>
+    /// <summary>The organisation's NTP (time) servers for PCs outside a domain: host names or IPv4 addresses (no port), separated by commas, spaces or semicolons.</summary>
     public const string NtpServer = "time.ntpServer";
 
     public static IReadOnlyList<string> All { get; } =
@@ -37,17 +37,40 @@ public static class ActionSettings
          NtpServer];
 }
 
-/// <summary>Reads the organisation NTP server setting the same way on the server and the endpoint.</summary>
+/// <summary>Reads the organisation NTP server list the same way on the server and the endpoint.</summary>
 public static class NtpSettings
 {
-    /// <summary>True when a valid host name or IPv4 address is configured.</summary>
-    public static bool TryRead(IReadOnlyDictionary<string, string>? settings, out string host)
+    public const int MaxServers = 8;
+
+    /// <summary>
+    /// The list of valid host names and IPv4 addresses; null when any entry is invalid or there are
+    /// more than <see cref="MaxServers"/>. An empty or blank value gives an empty list.
+    /// </summary>
+    public static IReadOnlyList<string>? Parse(string? value)
     {
-        host = "";
+        var servers = new List<string>();
+        foreach (var entry in (value ?? "").Split([',', ';', ' ', '\t', '\r', '\n'],
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            // "0x9" and similar are w32tm flags, not servers: refuse them so "host,0x9" is not read as two hosts.
+            if (!EndpointActionValidator.IsValidHost(entry) || IsFlagLike(entry)) return null;
+            if (!servers.Contains(entry, StringComparer.OrdinalIgnoreCase)) servers.Add(entry);
+        }
+        return servers.Count > MaxServers ? null : servers;
+    }
+
+    private static bool IsFlagLike(string entry) =>
+        entry.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>True when at least one server is configured and the whole list is valid.</summary>
+    public static bool TryRead(IReadOnlyDictionary<string, string>? settings,
+        out IReadOnlyList<string> servers)
+    {
+        servers = [];
         if (settings is null || !settings.TryGetValue(ActionSettings.NtpServer, out var value)
-            || !EndpointActionValidator.IsValidHost(value?.Trim()))
+            || Parse(value) is not { Count: > 0 } parsed)
             return false;
-        host = value!.Trim();
+        servers = parsed;
         return true;
     }
 }
@@ -310,11 +333,11 @@ public static class EndpointActionCatalog
             "Sync the clock", "همگام‌سازی ساعت",
             "Starts the Windows Time service if needed and syncs the clock with the domain.",
             "Done.", [], TimeoutSeconds: 45, Verify: new("time.status")),
-        new("time.set_ntp", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.System,
-            "Set the clock from the organisation time server", "تنظیم ساعت با سرور زمان سازمان",
-            "For a PC that is not in a domain: points the Windows Time service at the organisation NTP server and syncs the clock, even when the date is far off (a dead clock battery, a wrong date after a long power-off). Domain PCs keep taking time from the domain controller, so this does nothing for them.",
-            "Done when the clock now agrees with the server, NotNeeded (domain PC, or already set and in sync), Blocked (no NTP server set, or the server does not answer from this PC) or Failed.",
-            [], TimeoutSeconds: 90, Verify: new("time.status"),
+        new("time.correct", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.System,
+            "Correct the clock and date", "اصلاح ساعت و تاریخ",
+            "Corrects a wrong clock or date, even years off (a dead clock battery, a long power-off). A PC in a domain gets its time from Active Directory (a domain controller). A PC outside a domain uses the organisation NTP servers set in the control plane Settings (internal addresses and/or internet names such as time.windows.com). Large jumps are allowed for one sync only.",
+            "Done when the clock now agrees with the source, NotNeeded (already in sync), Blocked (no domain controller or no NTP server answers from this PC, or no NTP server is set outside a domain) or Failed. Data: ClockSource (domain or ntp), OffsetBeforeSeconds, OffsetAfterSeconds, LargeStepNeeded, LocalTime.",
+            [], TimeoutSeconds: 180, Verify: new("time.status"),
             UsesSettings: [ActionSettings.NtpServer]),
         new("gpo.refresh_computer", ActionAreas.Domain, ActionTier.SafeFix, ActionRunAs.System,
             "Refresh computer policy", "به‌روزرسانی سیاست‌های کامپیوتر",

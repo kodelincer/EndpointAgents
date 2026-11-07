@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { LogServerSection } from "@/components/log-server-settings";
 import {
-  getKmsSettings, getNtpSettings, kmsInputError, ntpInputError, saveKmsSettings, saveNtpSettings, testKmsServer, testNtpServer,
+  addNtpServer, getKmsSettings, getNtpSettings, internetNtpServers, kmsInputError, ntpInputError, saveKmsSettings, saveNtpSettings,
+  testKmsServer, testNtpServers,
   type KmsTestResult, type NtpTestResult
 } from "@/lib/capabilities";
 
@@ -16,10 +17,10 @@ function testText(result: KmsTestResult) {
 }
 
 function ntpTestText(result: NtpTestResult) {
-  if (!result.nameResolves) return `${result.host} does not resolve from the control-plane server.`;
-  if (!result.answers) return `${result.host} does not answer a time request (UDP 123) from the control-plane server.`;
+  if (!result.nameResolves) return `${result.host}: does not resolve from the control-plane server.`;
+  if (!result.answers) return `${result.host}: no answer to a time request (UDP 123) from the control-plane server.`;
   const offset = result.offsetSeconds ?? 0;
-  return `${result.host} answers (${result.milliseconds ?? 0} ms). This server's clock is ${Math.abs(offset)} s ${offset >= 0 ? "behind" : "ahead of"} it.`;
+  return `${result.host}: answers (${result.milliseconds ?? 0} ms). The control-plane server clock is ${Math.abs(offset)} s ${offset >= 0 ? "behind" : "ahead of"} it.`;
 }
 
 /** Organisation-wide settings: the KMS and NTP servers and, for admins, the outside log server. */
@@ -35,15 +36,16 @@ export function SettingsPage() {
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [test, setTest] = useState<KmsTestResult>();
-  const [ntpHost, setNtpHost] = useState("");
+  const [ntpServers, setNtpServers] = useState("");
+  const [ntpMax, setNtpMax] = useState(8);
   const [ntpConfigured, setNtpConfigured] = useState(false);
-  const [ntpTest, setNtpTest] = useState<NtpTestResult>();
+  const [ntpTest, setNtpTest] = useState<NtpTestResult[]>();
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const [kms, ntp] = await Promise.all([getKmsSettings(), getNtpSettings()]);
-      setNtpHost(ntp.host); setNtpConfigured(ntp.configured);
+      setNtpServers(ntp.servers); setNtpMax(ntp.maxServers); setNtpConfigured(ntp.configured);
       setHost(kms.host); setPort(kms.port); setDefaultPort(kms.defaultPort); setConfigured(kms.configured); setError(undefined);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The settings could not be loaded."); }
     finally { setLoading(false); }
@@ -51,7 +53,7 @@ export function SettingsPage() {
   useEffect(() => { const id = window.setTimeout(() => void refresh(), 0); return () => window.clearTimeout(id); }, [refresh]);
 
   const inputError = kmsInputError(host, port);
-  const ntpError = ntpInputError(ntpHost);
+  const ntpError = ntpInputError(ntpServers, ntpMax);
   const run = async (work: () => Promise<void>) => {
     setBusy(true);
     try { await work(); setError(undefined); }
@@ -64,11 +66,11 @@ export function SettingsPage() {
     await refresh();
   });
   const saveNtp = () => void run(async () => {
-    await saveNtpSettings(ntpHost);
-    setNotice(ntpHost.trim() ? "Time server saved. PCs outside a domain can now be set from it." : "Time server cleared.");
+    await saveNtpSettings(ntpServers);
+    setNotice(ntpServers.trim() ? "Time servers saved. PCs outside a domain now take their time from them." : "Time servers cleared.");
     await refresh();
   });
-  const checkNtp = () => void run(async () => { setNtpTest(undefined); setNtpTest(await testNtpServer(ntpHost)); });
+  const checkNtp = () => void run(async () => { setNtpTest(undefined); setNtpTest(await testNtpServers(ntpServers)); });
   const check = () => void run(async () => { setTest(undefined); setTest(await testKmsServer(host, port)); });
 
   return <div className="file-page">
@@ -106,17 +108,21 @@ export function SettingsPage() {
     </section>
 
     <section className="capability-group environment-editor" aria-labelledby="ntp-title">
-      <h2 id="ntp-title" className="wide"><Clock size={15} /> Time server (NTP) for correcting the clock and date</h2>
-      <p className="capability-note wide">When this is set, the agent can fix a wrong clock or date on a PC that is not in a domain: it points
-        Windows Time at this server and syncs, even when the date is years off (a dead clock battery). PCs in a domain keep taking their
-        time from the domain controller. The time zone standard is on the Environment page. {ntpConfigured ? "Status: set." : "Status: not set."}</p>
-      <label>NTP server<input value={ntpHost} dir="ltr" placeholder="time.corp.local or 172.16.0.2" disabled={!manage}
-        onChange={event => { setNtpHost(event.target.value); setNtpTest(undefined); setNotice(undefined); }} />
-        <small>Host name or IPv4 address, without a port. The PC must reach it on UDP 123.</small></label>
+      <h2 id="ntp-title" className="wide"><Clock size={15} /> Time servers (NTP) for correcting the clock and date</h2>
+      <p className="capability-note wide">When a user&apos;s clock or date is wrong, the agent can correct it. A PC in a domain takes its time from
+        Active Directory (its domain controller). A PC outside a domain uses the servers below, tried in order: an internal address and/or
+        internet names like the ones Windows offers. The time zone standard is on the Environment page. {ntpConfigured ? "Status: set." : "Status: not set."}</p>
+      <label className="wide">NTP servers<input value={ntpServers} dir="ltr" placeholder="172.16.0.2, time.windows.com" disabled={!manage}
+        onChange={event => { setNtpServers(event.target.value); setNtpTest(undefined); setNotice(undefined); }} />
+        <small>Host names or IPv4 addresses without ports, separated by commas (up to {ntpMax}). The PC must reach them on UDP 123.</small></label>
+      {manage && <div className="wide file-row-actions" aria-label="Add an internet time server">
+        {internetNtpServers.map(server => <button key={server} type="button" className="secondary-button" disabled={busy}
+          onClick={() => { setNtpServers(addNtpServer(ntpServers, server)); setNtpTest(undefined); setNotice(undefined); }}>+ {server}</button>)}
+      </div>}
       {ntpError && <p className="danger-text wide" role="alert">{ntpError}</p>}
-      {ntpTest && <p className={`wide ${ntpTest.answers ? "success-text" : "danger-text"}`} role="status">{ntpTestText(ntpTest)}</p>}
+      {ntpTest?.map(result => <p key={result.host} className={`wide ${result.answers ? "success-text" : "danger-text"}`} role="status">{ntpTestText(result)}</p>)}
       {manage ? <div className="wide file-row-actions">
-        <button className="secondary-button" disabled={busy || !ntpHost.trim() || !!ntpError} onClick={checkNtp}>
+        <button className="secondary-button" disabled={busy || !ntpServers.trim() || !!ntpError} onClick={checkNtp}>
           <PlugZap size={14} />Test from server</button>
         <button className="primary-button" disabled={busy || !!ntpError} onClick={saveNtp}><Save size={14} />Save</button>
       </div> : <p className="capability-note wide">Only an admin can change these settings.</p>}

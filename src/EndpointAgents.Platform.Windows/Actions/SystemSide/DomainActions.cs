@@ -142,12 +142,12 @@ public sealed class TimeStatusAction : IEndpointAction
         }
         // A PC outside a domain (or one that cannot find its controller) is checked against the
         // organisation NTP server when the helpdesk set one.
-        var ntpConfigured = NtpSettings.TryRead(invocation.Settings, out var ntpHost);
+        var ntpConfigured = NtpSettings.TryRead(invocation.Settings, out var ntpServers);
         if (offset is null && ntpConfigured)
         {
             source = "ntp";
-            offset = await SntpClient.ClockOffsetSecondsAsync(ntpHost, TimeSpan.FromSeconds(3),
-                cancellationToken);
+            if (await TimeSetup.FirstAnsweringAsync(ntpServers, cancellationToken) is var (_, ntpOffset))
+                offset = ntpOffset;
         }
         var service = DomainFacts.ServiceState("W32Time");
         bool? matches = standard is null ? null
@@ -166,7 +166,7 @@ public sealed class TimeStatusAction : IEndpointAction
                 ClockSource = source,
                 ClockOffsetSeconds = offset,
                 NtpConfigured = ntpConfigured,
-                UsesOrganisationNtp = ntpConfigured && TimeSetup.UsesNtpServer(ntpHost),
+                UsesOrganisationNtp = ntpConfigured && TimeSetup.UsesNtpServers(ntpServers),
                 ClockOk = clockOk
             });
     }

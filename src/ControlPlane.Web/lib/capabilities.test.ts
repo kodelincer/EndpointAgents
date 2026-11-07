@@ -68,17 +68,23 @@ describe("kms settings input", () => {
 });
 
 describe("ntp settings input", () => {
-  it("accepts a host name, an IPv4 address or nothing", async () => {
+  it("accepts host names and IPv4 addresses, one or several, or nothing", async () => {
     const { ntpInputError } = await import("./capabilities");
     expect(ntpInputError("172.16.0.2")).toBeUndefined();
-    expect(ntpInputError("time.corp.local")).toBeUndefined();
+    expect(ntpInputError("172.16.0.2, time.windows.com; pool.ntp.org")).toBeUndefined();
     expect(ntpInputError("")).toBeUndefined();
   });
-  it("rejects ports, options and commands", async () => {
+  it("rejects ports, options, commands and too many servers", async () => {
     const { ntpInputError } = await import("./capabilities");
-    expect(ntpInputError("time.corp.local:123")).toMatch(/host name/);
-    expect(ntpInputError("a.example,0x9 b.example")).toMatch(/host name/);
-    expect(ntpInputError("time & calc")).toMatch(/host name/);
-    expect(ntpInputError("300.1.1.1")).toMatch(/host name/);
+    expect(ntpInputError("time.corp.local:123")).toMatch(/host names/);
+    expect(ntpInputError("a.example,0x9 b&c")).toMatch(/host names/);
+    expect(ntpInputError("300.1.1.1")).toMatch(/host names/);
+    expect(ntpInputError("a.x b.x c.x", 2)).toMatch(/at most 2/);
+  });
+  it("adds an internet server once", async () => {
+    const { addNtpServer, ntpServerList } = await import("./capabilities");
+    expect(addNtpServer("172.16.0.2", "time.windows.com")).toBe("172.16.0.2, time.windows.com");
+    expect(addNtpServer("172.16.0.2, TIME.windows.com", "time.windows.com")).toBe("172.16.0.2, TIME.windows.com");
+    expect(ntpServerList("a, b;c  A")).toEqual(["a", "b", "c"]);
   });
 });

@@ -234,14 +234,30 @@ export const saveKmsSettings = (host: string, port: string) =>
 export const testKmsServer = (host: string, port: string) =>
   request<KmsTestResult>("/api/settings/kms/test", "POST", { host: host.trim(), port: port.trim() });
 
-export interface NtpSettings { host: string; configured: boolean }
+export interface NtpSettings { servers: string; maxServers: number; configured: boolean }
 export interface NtpTestResult { host: string; nameResolves: boolean; answers: boolean; offsetSeconds: number | null; milliseconds: number | null }
 
+/** Internet time servers Windows itself offers; admins can add them beside their internal server. */
+export const internetNtpServers = ["time.windows.com", "time.nist.gov", "pool.ntp.org"];
+
 export const getNtpSettings = () => request<NtpSettings>("/api/settings/ntp");
-export const saveNtpSettings = (host: string) =>
-  request<void>("/api/settings/ntp", "PUT", { host: host.trim() });
-export const testNtpServer = (host: string) =>
-  request<NtpTestResult>("/api/settings/ntp/test", "POST", { host: host.trim() });
+export const saveNtpSettings = (servers: string) =>
+  request<void>("/api/settings/ntp", "PUT", { servers: servers.trim() });
+export const testNtpServers = (servers: string) =>
+  request<NtpTestResult[]>("/api/settings/ntp/test", "POST", { servers: servers.trim() });
+
+/** Same split as the server: commas, semicolons, spaces or new lines; duplicates ignored. */
+export function ntpServerList(value: string): string[] {
+  const seen = new Set<string>(), list: string[] = [];
+  for (const entry of value.split(/[,;\s]+/).filter(Boolean))
+    if (!seen.has(entry.toLowerCase())) { seen.add(entry.toLowerCase()); list.push(entry); }
+  return list;
+}
+
+export function addNtpServer(value: string, server: string): string {
+  const list = ntpServerList(value);
+  return list.some(item => item.toLowerCase() === server) ? list.join(", ") : [...list, server].join(", ");
+}
 
 /** A DNS host name or IPv4 address, the same rule as the server. */
 function isHostName(name: string) {
@@ -250,9 +266,11 @@ function isHostName(name: string) {
     : name.length <= 253 && /^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$/.test(name);
 }
 
-export function ntpInputError(host: string): string | undefined {
-  const name = host.trim();
-  return name && !isHostName(name) ? "The NTP server must be a host name or IPv4 address, without a port." : undefined;
+export function ntpInputError(servers: string, max = 8): string | undefined {
+  const list = ntpServerList(servers);
+  if (list.some(name => !isHostName(name) || /^0x/i.test(name)))
+    return "The NTP servers must be host names or IPv4 addresses, without ports, separated by commas.";
+  return list.length > max ? `Use at most ${max} NTP servers.` : undefined;
 }
 
 /** Same rule as the server: a DNS host name or IPv4 address, and an optional port 1-65535. */

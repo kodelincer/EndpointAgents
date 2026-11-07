@@ -9,7 +9,7 @@ public sealed record SkillReviewRequest(int? Version, string? Note);
 public sealed record SkillLintRequest(string Name, string Description, string Body);
 public sealed record MissingActionRequest(string Summary, string? Details);
 public sealed record KmsSettingsInput(string? Host, string? Port);
-public sealed record NtpSettingsInput(string? Host);
+public sealed record NtpSettingsInput(string? Servers);
 
 /// <summary>
 /// Operator (loopback dashboard) routes for the capabilities page, the environment map,
@@ -220,17 +220,19 @@ public static partial class ActionEndpoints
             var values = await store.GetSettingsAsync(cancellationToken);
             return Results.Ok(new
             {
-                host = values.GetValueOrDefault(ActionSettings.NtpServer) ?? "",
+                servers = values.GetValueOrDefault(ActionSettings.NtpServer) ?? "",
+                maxServers = NtpSettings.MaxServers,
                 configured = NtpSettings.TryRead(values, out _)
             });
         });
         app.MapPut("/api/settings/ntp", async (NtpSettingsInput input, ActionStore store,
             CancellationToken cancellationToken) =>
         {
-            var values = new Dictionary<string, string?>
-                { [ActionSettings.NtpServer] = input.Host?.Trim() };
-            if (ValidateSetting(ActionSettings.NtpServer, input.Host) is { } error)
+            if (ValidateSetting(ActionSettings.NtpServer, input.Servers) is { } error)
                 return Results.BadRequest(new { message = error });
+            // Stored as one clean comma-separated list.
+            var values = new Dictionary<string, string?>
+                { [ActionSettings.NtpServer] = string.Join(", ", NtpSettings.Parse(input.Servers) ?? []) };
             await store.SaveSettingsAsync(values, cancellationToken);
             return Results.NoContent();
         })
@@ -238,11 +240,13 @@ public static partial class ActionEndpoints
         app.MapPost("/api/settings/ntp/test", async (NtpSettingsInput input,
             CancellationToken cancellationToken) =>
         {
-            if (string.IsNullOrWhiteSpace(input.Host))
-                return Results.BadRequest(new { message = "Enter the NTP server first." });
-            if (ValidateSetting(ActionSettings.NtpServer, input.Host) is { } error)
+            if (string.IsNullOrWhiteSpace(input.Servers))
+                return Results.BadRequest(new { message = "Enter at least one NTP server first." });
+            if (ValidateSetting(ActionSettings.NtpServer, input.Servers) is { } error)
                 return Results.BadRequest(new { message = error });
-            return Results.Ok(await ServerProbe.TestNtpAsync(input.Host.Trim(), cancellationToken));
+            var results = await Task.WhenAll((NtpSettings.Parse(input.Servers) ?? [])
+                .Select(server => ServerProbe.TestNtpAsync(server, cancellationToken)));
+            return Results.Ok(results);
         })
             .RequireAuthorization(OperatorPolicies.Admin);
 
@@ -422,8 +426,8 @@ public static partial class ActionEndpoints
                 "The KMS server must be a host name or IPv4 address, without a port.",
             ActionSettings.KmsPort when !KmsSettings.TryParsePort(value, out _) =>
                 "The KMS port must be a number from 1 to 65535.",
-            ActionSettings.NtpServer when !EndpointActionValidator.IsValidHost(value) =>
-                "The NTP server must be a host name or IPv4 address, without a port.",
+            ActionSettings.NtpServer when NtpSettings.Parse(value) is null =>
+                $"The NTP servers must be host names or IPv4 addresses, without ports, separated by commas (at most {NtpSettings.MaxServers}).",
             _ => null
         };
     }

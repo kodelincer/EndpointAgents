@@ -55,7 +55,7 @@ order: 5
 | --- | --- | --- |
 | سامانهٔ وب داخلی باز نمی‌شود | `network.triage`، `web.probe` | Built |
 | هشدار گواهی | `cert.check_trust` | Built |
-| ساعت اشتباه HTTPS را خراب می‌کند | `time.status`، `time.resync`، `time.set_ntp` | Built |
+| ساعت اشتباه HTTPS را خراب می‌کند | `time.status`، `time.resync`، `time.correct` | Built |
 | مرورگر کند است یا صفحه‌های قدیمی می‌آید | `browser.inventory`، `browser.clear_cache`، بستهٔ بازنشانی Chrome | Built |
 | سایت کاری در اینترنت (بانک، مالیات، سامانهٔ دولتی) باز نمی‌شود | `site.check_access` برای سایتی از فهرست **Allowed work sites** | Built |
 | فیلتر سازمان سایت را بسته است | `request_helpdesk_action` نوع `site-access` (Person) | Built |
