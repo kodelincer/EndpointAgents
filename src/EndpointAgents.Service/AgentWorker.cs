@@ -54,7 +54,14 @@ public sealed class AgentWorker : BackgroundService
     /// <param name="stoppingToken">Raised by the host when the service is stopping.</param>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _credential = await _credentialProvider.GetOrEnrollAsync(_agentId, stoppingToken);
+        try
+        {
+            _credential = await GetCredentialAsync(stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
         if (_credential is not null && _credential.AgentId != _agentId)
         {
             _agentId = _credential.AgentId;
@@ -104,6 +111,36 @@ public sealed class AgentWorker : BackgroundService
         finally
         {
             await ShutdownConnectionAsync();
+        }
+    }
+
+    /// <summary>
+    /// Reads the device credential, or enrolls with the one-time code. The control plane may be
+    /// unreachable when the PC starts (no network yet, server restarting), so this keeps trying
+    /// instead of ending the service; the Tray shows the reason meanwhile.
+    /// </summary>
+    private async Task<AgentDeviceCredential?> GetCredentialAsync(CancellationToken stoppingToken)
+    {
+        var delay = TimeSpan.FromSeconds(10);
+        while (true)
+        {
+            try
+            {
+                return await _credentialProvider.GetOrEnrollAsync(_agentId, stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _runtime.SetConnection(AgentConnectionStatus.Faulted, ex);
+                _logger.LogError(ex,
+                    "The device credential is not available (enrollment failed or the stored credential cannot be read). Retrying in {RetryDelay}.",
+                    delay);
+                await Task.Delay(delay, stoppingToken);
+                delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 300));
+            }
         }
     }
 

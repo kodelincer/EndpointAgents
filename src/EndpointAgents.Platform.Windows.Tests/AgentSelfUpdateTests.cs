@@ -240,4 +240,68 @@ public sealed class AgentSelfUpdateTests : IDisposable
         Assert.False(AgentUpdateProbation.OnServiceStart(statePath, "0.3.0", now.AddHours(25)));
         Assert.Equal(1, AgentUpdateState.Read(statePath)!.CrashesDuringProbation);
     }
+
+    [Fact]
+    public void APowerCutIsNotCountedAsACrash()
+    {
+        var statePath = Path.Combine(_root, "state.json");
+        var now = DateTimeOffset.UtcNow;
+        (State() with { Phase = AgentUpdatePhases.Succeeded, ProbationUntilUtc = now.AddHours(24), CleanStop = true })
+            .Write(statePath);
+        Assert.False(AgentUpdateProbation.OnServiceStart(statePath, "0.3.0", now, bootedAtUtc: now.AddHours(-5)));
+
+        // No normal stop, but Windows itself started after the last service start: the PC went down.
+        Assert.False(AgentUpdateProbation.OnServiceStart(statePath, "0.3.0", now.AddMinutes(30),
+            bootedAtUtc: now.AddMinutes(29)));
+        Assert.Equal(0, AgentUpdateState.Read(statePath)!.CrashesDuringProbation);
+
+        // No normal stop and Windows kept running: the service crashed.
+        Assert.False(AgentUpdateProbation.OnServiceStart(statePath, "0.3.0", now.AddMinutes(40),
+            bootedAtUtc: now.AddMinutes(29)));
+        Assert.Equal(1, AgentUpdateState.Read(statePath)!.CrashesDuringProbation);
+    }
+
+    [Fact]
+    public void AnUpdateTheUpdaterNeverFinishedIsFinishedByTheService()
+    {
+        var statePath = Path.Combine(_root, "state.json");
+        var started = DateTimeOffset.UtcNow;
+        (State() with { Phase = AgentUpdatePhases.AwaitingHealth, StartedAtUtc = started }).Write(statePath);
+
+        // While the updater can still be working, the service leaves the update alone.
+        Assert.Equal(AgentUpdateProbation.OrphanOutcome.None,
+            AgentUpdateProbation.RecoverOrphaned(statePath, "0.3.0", started.AddMinutes(5), connected: true));
+        // Another version is running: not this service's update to finish.
+        Assert.Equal(AgentUpdateProbation.OrphanOutcome.None,
+            AgentUpdateProbation.RecoverOrphaned(statePath, "0.2.0", started.AddHours(2), connected: true));
+        // Never connected and no updater on disk to roll back with: nothing is changed.
+        Assert.Equal(AgentUpdateProbation.OrphanOutcome.None,
+            AgentUpdateProbation.RecoverOrphaned(statePath, "0.3.0", started.AddHours(2), connected: false));
+        Assert.Equal(AgentUpdatePhases.AwaitingHealth, AgentUpdateState.Read(statePath)!.Phase);
+
+        // Long past the updater's deadline and connected: kept, reported, and watched for a day.
+        var later = started.AddHours(2);
+        Assert.Equal(AgentUpdateProbation.OrphanOutcome.Adopted,
+            AgentUpdateProbation.RecoverOrphaned(statePath, "0.3.0", later, connected: true));
+        var state = AgentUpdateState.Read(statePath)!;
+        Assert.Equal(AgentUpdatePhases.Succeeded, state.Phase);
+        Assert.Equal(later + AgentUpdateProbation.Probation, state.ProbationUntilUtc);
+        Assert.False(state.Reported);
+        Assert.Equal(AgentUpdateProbation.OrphanOutcome.None,
+            AgentUpdateProbation.RecoverOrphaned(statePath, "0.3.0", later.AddMinutes(1), connected: true));
+    }
+
+    [Fact]
+    public void CrashesOfAnUnfinishedUpdateAreCountedToo()
+    {
+        var statePath = Path.Combine(_root, "state.json");
+        var started = DateTimeOffset.UtcNow;
+        (State() with { Phase = AgentUpdatePhases.AwaitingHealth, StartedAtUtc = started, CleanStop = false })
+            .Write(statePath);
+
+        Assert.False(AgentUpdateProbation.OnServiceStart(statePath, "0.3.0", started.AddMinutes(1)));
+        Assert.Equal(0, AgentUpdateState.Read(statePath)!.CrashesDuringProbation); // the updater still watches
+        Assert.False(AgentUpdateProbation.OnServiceStart(statePath, "0.3.0", started.AddHours(1)));
+        Assert.Equal(1, AgentUpdateState.Read(statePath)!.CrashesDuringProbation);
+    }
 }

@@ -65,6 +65,7 @@ Every dashboard page and operator API needs a signed-in operator; anything not e
 - Admins can switch off any action, or change its limit, on **Capabilities** without a release.
 - **Maintenance mode** (admin) makes the control plane refuse new endpoint commands with HTTP 503 while keeping connections alive. It resets when the API restarts.
 - **Device revoke** (admin) invalidates one PC's token. Enrollment codes are one-time and short-lived (30 minutes by default).
+- **An enrolled PC's identity cannot be borrowed.** A connection without the device token cannot register under the ID of an enrolled (or revoked) PC, and an enrollment code cannot replace a PC that is still active: revoke the old device first, then enroll again.
 - Run limits for the agent itself: four concurrent conversations, one active run per conversation, a 15 minute run timeout, and a short conversation window sent to the model (`Hermes:MaxHistoryMessages`, 5 by default).
 - Anything outside the catalogue needs a proposal and the user's approval card in the Tray. A proposal is single-use, stored with exact parameters and expires after 10 minutes.
 

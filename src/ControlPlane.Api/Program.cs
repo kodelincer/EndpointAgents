@@ -83,6 +83,9 @@ builder.Services.AddOptions<HermesOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton<ChatStore>();
 builder.Services.AddHostedService<ChatRetentionWorker>();
+// One consistent copy of the database per day, so a damaged file does not cost every enrollment.
+builder.Services.Configure<DatabaseBackupOptions>(builder.Configuration.GetSection("Backup"));
+builder.Services.AddHostedService<DatabaseBackupWorker>();
 builder.Services.AddHermesHttpClient(builder.Configuration);
 builder.Services.AddHostedService<HermesRunWorker>();
 builder.Services.AddMcpServer()
@@ -309,10 +312,24 @@ app.MapPost("/api/agent-enrollments/redeem", async (EnrollmentRequest request,
     if (security.Value.RequireHttps && !context.Request.IsHttps)
         return Results.Json(new { message = "Endpoint enrollment requires HTTPS." },
             statusCode: StatusCodes.Status426UpgradeRequired);
-    var redemption = await store.RedeemEnrollmentAsync(request, cancellationToken);
-    return redemption is null
-        ? Results.BadRequest(new { message = "The enrollment code is invalid, expired, or used." })
-        : Results.Ok(redemption);
+    try
+    {
+        // Only the server itself (development scripts) may enroll over a device that is still
+        // active; from the network that would let one code take over another PC's identity.
+        var redemption = await store.RedeemEnrollmentAsync(request, cancellationToken,
+            allowReplacingActiveDevice: LoopbackRequestGuard.IsLoopback(
+                context.Connection.RemoteIpAddress));
+        return redemption is null
+            ? Results.BadRequest(new { message = "The enrollment code is invalid, expired, or used." })
+            : Results.Ok(redemption);
+    }
+    catch (DeviceAlreadyEnrolledException)
+    {
+        return Results.Conflict(new
+        {
+            message = "This device is already enrolled. Revoke it on the dashboard, then enroll again."
+        });
+    }
 }).AllowAnonymous();
 app.MapPost("/api/devices/{agentId}/revoke", async (string agentId, ChatStore store,
     AgentRegistry registry, CancellationToken cancellationToken) =>

@@ -219,7 +219,8 @@ try
 {
     if (EndpointAgents.Platform.Windows.Updates.AgentUpdateProbation.OnServiceStart(updateStatePath,
             host.Services.GetRequiredService<IOptions<ControlPlaneOptions>>().Value.Version,
-            DateTimeOffset.UtcNow))
+            DateTimeOffset.UtcNow,
+            bootedAtUtc: DateTimeOffset.UtcNow - TimeSpan.FromMilliseconds(Environment.TickCount64)))
         return;
 }
 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }

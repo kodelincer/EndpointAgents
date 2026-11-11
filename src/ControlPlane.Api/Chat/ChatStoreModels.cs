@@ -12,6 +12,13 @@ public sealed record EnrollmentRedemption(
 
 public sealed record EnrollmentRequest(string EnrollmentCode, string? AgentId, string MachineName);
 
+/// <summary>A valid enrollment code asked for a device id that is enrolled and not revoked.</summary>
+public sealed class DeviceAlreadyEnrolledException(string agentId)
+    : Exception($"Device {agentId} is already enrolled.")
+{
+    public string AgentId { get; } = agentId;
+}
+
 public sealed record ChatRunLease(
     string RunId,
     string ConversationId,

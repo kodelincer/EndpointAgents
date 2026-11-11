@@ -27,6 +27,7 @@ public sealed class ServiceIpcServer(
     // Each signed-in user keeps one Tray connection open, so leave room for several sessions
     // plus the short request/response calls.
     private const int MaxConnections = 32;
+    private static readonly TimeSpan RequestReadTimeout = TimeSpan.FromSeconds(10);
 
     private readonly object _submissionGate = new();
     private DateTimeOffset _lastSubmissionUtc = DateTimeOffset.MinValue;
@@ -96,9 +97,12 @@ public sealed class ServiceIpcServer(
         security.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
             PipeAccessRights.FullControl, AccessControlType.Allow));
+        // Users may only talk to the pipe. Full control would also let any user create a pipe
+        // instance of their own under this name (and pose as the service to another user's
+        // Tray) or change who may connect.
         security.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
-            PipeAccessRights.FullControl, AccessControlType.Allow));
+            PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize, AccessControlType.Allow));
 
         return NamedPipeServerStreamAcl.Create(ServiceIpcProtocol.PipeName,
             PipeDirection.InOut, MaxConnections, PipeTransmissionMode.Byte, PipeOptions.Asynchronous,
@@ -114,7 +118,21 @@ public sealed class ServiceIpcServer(
         ServiceIpcRequest? request = null;
         try
         {
-            var line = await ReadBoundedLineAsync(reader, cancellationToken);
+            // A caller that connects and then says nothing would hold one of the few pipe
+            // instances for ever; enough of them would lock every user out of the Tray.
+            string line;
+            using (var firstLine = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+            {
+                firstLine.CancelAfter(RequestReadTimeout);
+                try
+                {
+                    line = await ReadBoundedLineAsync(reader, firstLine.Token);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    throw new TimeoutException("The local IPC caller sent no request in time.");
+                }
+            }
             request = JsonSerializer.Deserialize<ServiceIpcRequest>(line)
                 ?? throw new InvalidDataException("The local IPC request was empty.");
             if (request.Method == ServiceIpcProtocol.AttachTrayMethod)

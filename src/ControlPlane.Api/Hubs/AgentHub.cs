@@ -47,8 +47,26 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
             && !await chatStore.IsDeviceActiveAsync(
                 authenticatedAgentId, Context.ConnectionAborted))
             throw new HubException("The endpoint device token was revoked.");
+        if (registration is null)
+            throw new HubException("The registration is invalid.");
+        // Everything in a registration is typed by the PC; keep it short and printable before
+        // it reaches the dashboard, the logs and the database.
+        registration = registration with
+        {
+            AgentId = Normalize(registration.AgentId, 64),
+            Hostname = Normalize(registration.Hostname, 255),
+            MachineName = Normalize(registration.MachineName, 255),
+            UserName = Normalize(registration.UserName, 256),
+            Version = Normalize(registration.Version, 40)
+        };
         if (!string.IsNullOrWhiteSpace(authenticatedAgentId))
             registration = registration with { AgentId = authenticatedAgentId };
+        else if (string.IsNullOrWhiteSpace(registration.AgentId))
+            throw new HubException("The registration has no agent id.");
+        // A connection without a device token may not call itself an enrolled PC: it would
+        // receive that PC's commands, and a revoked PC could simply come back without its token.
+        else if (await chatStore.IsDeviceEnrolledAsync(registration.AgentId, Context.ConnectionAborted))
+            throw new HubException("This device is enrolled; its device token is required.");
 
         await registry.MarkOnlineAsync(registration, Context.ConnectionId);
         if (!string.IsNullOrWhiteSpace(registration.Version))

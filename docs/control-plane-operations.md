@@ -217,6 +217,14 @@ events are durable in SQLite under
 `C:\ProgramData\EndpointAgents\ControlPlane`; completed conversation data is
 retained for 30 days by default.
 
+**Daily backup.** Once a day the API writes a complete copy of the database to
+`C:\ProgramData\EndpointAgents\ControlPlane\Backups\control-plane-yyyyMMdd.db`
+and keeps the newest 7 (`Backup:Enabled`, `Backup:Directory`, `Backup:KeepCopies`).
+The database holds every enrolled PC, the operator accounts and the settings, so
+copy that folder to another disk or server as well. To restore: stop the API
+service, replace `control-plane.db` with a copy (delete the `-wal` and `-shm`
+files beside it), and start the service. Backups are off in Development.
+
 ## Troubleshooting
 
 - **API reports a missing `wwwroot` directory:** rebuild after these separation changes; the API no longer requires `wwwroot` or `ControlPlane.Web\out`.

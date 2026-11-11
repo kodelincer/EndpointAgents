@@ -53,6 +53,8 @@ public sealed record AgentUpdateState
     public const int MaxCrashesDuringProbation = 3;
     /// <summary>False from service start until a normal stop, so a crash can be told from a reboot.</summary>
     public bool CleanStop { get; init; } = true;
+    /// <summary>When the service last started; a Windows start after it means the PC itself went down.</summary>
+    public DateTimeOffset? LastStartUtc { get; init; }
     /// <summary>True once the final result reached the control plane.</summary>
     public bool Reported { get; init; }
 
