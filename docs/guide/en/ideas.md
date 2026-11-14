@@ -42,6 +42,10 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | S | Offline fix menu in the Tray when the server can't be reached (no AI) | Helpdesk tools | 2 | Idea | 2026-11-14 |
 | T | Use Windows' and apps' own MCP tools behind our catalogued operations | AI agent | 4 | Idea (watch: Windows feature is in preview) | 2026-11-14 |
 | U | Use Windows' own built-in AI models on Copilot+ PCs (Phi Silica, text recognition, speech) in the Tray | AI agent | 4 | Idea | 2026-11-14 |
+| V | Local AI model on our own server for Hermes (backup or main, e.g. Foundry Local) | AI agent | 2 | Idea | 2026-11-14 |
+| W | Our own tiny problem-to-operation matching model, trained from Lessons (Mu-style) | AI agent | 3 | Idea | 2026-11-14 |
+| X | Catalogued "settings fixes" for everyday Windows settings | Helpdesk tools | 2 | Idea | 2026-11-14 |
+| Y | Health check: which Windows AI features are on (Recall, Copilot, agent features) | Proactive care | 3 | Idea | 2026-11-14 |
 
 Ideas A to L come from studying what the SCCM client and the Intune agent do (from Microsoft's public documentation only, never from their code), and what our system is still missing.
 
@@ -96,6 +100,12 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **Keeping the choices small (Reza, 2026-11-03):** IT members decide *what* is checked, never write code. A rule has only five answers to pick: which check (from a fixed list), which fix (from the fixed list for that check, or none), how often (daily or weekly, at a random minute so PCs do not run at once), which PCs (all, pilot or a group), and what to do when it fails (only report, fix by itself, or tell the user in the Tray). Every new rule starts in **only report** mode for a week, so IT sees how many PCs would be touched before any fix runs. Start with 5 rules; the list grows only when a new fixed check is built.
 - **Built (2026-11-03):** seven fixed checks, the five answers, a random minute per PC, the report-only first week, Tray messages and the pass/fixed/fail counts. See [Health rules](/docs/health/). Proxy, KMS expiry and "Tray not running" checks are still to build. Device groups (idea E) will replace typing PC names.
 
+### Y. Health check: which Windows AI features are on
+
+- **What:** a read-only, no-AI check that reports on each PC whether Windows' own AI features are on: Recall, Click to Do, the Copilot app, the Settings agent, and the "Experimental agentic features" switch (Agent Workspace). Shown on the Devices page, and as a health rule with the usual five answers (for example "report only" or "tell IT"). Turning a feature off would be a separate, catalogued operation an IT member approves.
+- **Why:** Recall takes screenshots of the screen and agent features let an AI act on the PC. Security may want to know where they are on, especially once newer PCs arrive. Microsoft offers policies for Recall, Click to Do and Paint AI even on Windows Pro.
+- **Idea from:** Windows local AI research, 2026-11-14.
+
 ### E. Device groups and pilot rings
 
 - **What:** groups by rule (AD OU, site or IP range from the Environment map, Windows 10 or 11, model) or by hand, and rings: Pilot first, then Everyone. Anything sent to many PCs needs a second person to approve it (the author cannot approve their own change).
@@ -132,6 +142,12 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **What:** when the Tray cannot reach the control plane (no network, server down), it shows a short menu of common fixes instead of the chat, for example "Fix my internet", "Fix printer", "Fix sound". Each button runs one approved offline operation from a small, signed list that the control plane sent to the PC in advance (for example reset network adapter, renew IP, flush DNS, restart print spooler). No AI is used, and the user picks the button, so only catalogued operations run. Every result is kept on the PC and sent to the dashboard when the connection comes back (see idea C, offline queue).
 - **Why:** network problems are a large share of helpdesk calls, and they are exactly the moment the chat cannot work. This keeps self-service working with no extra hardware, no model download and no token cost. A local AI model (idea R) can be added later if the menu proves too limited.
 - **Idea from:** Reza, 2026-11-14, after the Windows local AI research.
+
+### X. Catalogued "settings fixes" for everyday Windows settings
+
+- **What:** many calls are really "a setting is wrong": text too small, mouse pointer too small or too fast, wrong default speaker or microphone, sound muted, wrong keyboard layout or language, screen brightness, night light, wrong default printer, sleep too soon, notifications off. Add each as a small catalogued SafeFix operation with fixed values (for example text size 100/125/150%), a before/after check and undo. Hermes picks them from the user's words, exactly as Microsoft's Settings agent (Mu) maps a sentence to one setting.
+- **Why:** easy, safe wins that work on Windows 10 and 11 today, without any new hardware. Later the same operations can call Windows' own Settings tools (idea T).
+- **Idea from:** Windows local AI research, 2026-11-14 (Microsoft's Settings agent covers "hundreds of settings" this way, all undoable).
 
 ### O. Light, read-only event log checks
 
@@ -214,6 +230,21 @@ The user sees no difference. The gain is for us: Microsoft writes and maintains 
 - **Rules kept:** these models only help understand and describe the problem. They never choose or run fixes; Hermes and the catalogue still decide, and only catalogued operations run. They work only while the user chats, never in the background.
 - **Limits:** only on Copilot+ PCs (NPU 40+ TOPS) with Windows 11; our office PCs do not have them today. Persian support of these models is unclear and must be tested (OCR of English error text is the most promising part). Phi Silica needs an unlock token from Microsoft today; Microsoft says its successor, Aion Instruct, will not.
 - **Idea from:** Reza, 2026-11-14, after the Windows local AI research (`notes/windows-local-ai-research-2026-11.md` in the project files).
+
+### V. Local AI model on our own server for Hermes
+
+- **What:** run an open AI model on the organisation's own server and point Hermes at it, either as a **backup** when AvalAI is down or blocked, or as the **main** model for easy chats. Microsoft **Foundry Local** (GA since April 2026, free) does this with the same OpenAI-style API Hermes already uses; it runs on CPU, GPU or NPU, needs Windows 11 24H2 or Linux, and needs internet only for the first model download. Ollama or llama.cpp are other options.
+- **Why:** no per-token cost, chat text never leaves the organisation, and the helpdesk keeps working when the internet or AvalAI fails (sanctions included).
+- **Limits:** small models (for example Phi-4-mini, Qwen) are weaker than AvalAI's models, especially in Persian and in choosing tools; a server with a good GPU or plenty of RAM is needed. The first download may need the proxy.
+- **First step:** install it on a test server, copy the Hermes profile to use it, and run 10 real Persian helpdesk chats; compare quality, speed and tool choice with AvalAI before deciding.
+- **Idea from:** Windows local AI research, 2026-11-14 (the main recommendation of `notes/windows-local-ai-research-2026-11.md`).
+
+### W. Our own tiny problem-to-operation matching model (Mu-style)
+
+- **What:** Microsoft's Mu is a 330-million-parameter model that does one job: turn a sentence typed in Settings into one setting change, in under half a second on the PC. Microsoft showed that for a fixed list of actions, a tiny model trained on many examples (3.6 million sentences for hundreds of settings) is nearly as good as a model ten times bigger (about 74% vs 82% correct). Our job is the same shape: read a Persian problem and pick one catalogued operation. We could train our own tiny model from our own data: solved chats and their fixes from the **Lessons** page.
+- **How it would be used:** as a fast first guess before Hermes (fewer AvalAI tokens), in offline mode on the PC (ideas R and S), and to sort problems into categories for the dashboard. It may only suggest operations from our catalogue, so the safety rule is unchanged. A model this small might run on a normal office CPU (to be tested).
+- **Needs:** thousands of real solved chats (after the pilot), someone to build the training setup, and regular retraining when the catalogue changes.
+- **Idea from:** Reza, 2026-11-14, after reading Microsoft's Mu post (blogs.windows.com, 2025-06-23).
 
 ## Later
 
