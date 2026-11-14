@@ -387,3 +387,6 @@ FodyWeavers.xsd
 # First-start dashboard admin password, written next to the control-plane database
 initial-admin-password.txt
 .local/
+
+# Old or broken copies of the dashboard build cache
+src/ControlPlane.Web/.next*/
