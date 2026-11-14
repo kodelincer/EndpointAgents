@@ -40,6 +40,7 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | Q | Agent problem reports from pilot PCs | Before a wide rollout | 1 | Built 2026-11-04 | 2026-11-04 |
 | R | Use the PC's AI chip (NPU) when it has one | AI agent | 4 | Idea | 2026-11-14 |
 | S | Offline fix menu in the Tray when the server can't be reached (no AI) | Helpdesk tools | 2 | Idea | 2026-11-14 |
+| T | Use Windows' and apps' own MCP tools behind our catalogued operations | AI agent | 4 | Idea (watch: Windows feature is in preview) | 2026-11-14 |
 
 Ideas A to L come from studying what the SCCM client and the Intune agent do (from Microsoft's public documentation only, never from their code), and what our system is still missing.
 
@@ -159,6 +160,32 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **Why:** help keeps working when the network breaks (often the very problem the user has), chat text stays on the PC, fewer tokens are spent on AvalAI, and less load on the server.
 - **Limits:** today's office PCs have no NPU and many run Windows 10; small models are weaker in Persian and at choosing tools, so test quality first. Like all AI here, it runs only when a user chats, never in the background.
 - **Idea from:** Reza, 2026-11-14, after the Windows local AI research (`notes/windows-local-ai-research-2026-11.md` in the project files).
+
+### T. Use Windows' and apps' own MCP tools behind our catalogued operations
+
+**The picture.** An MCP *tool* is one item on a menu, for example `move_file`. A program that offers a menu is an *MCP server*. An AI agent is the customer: it reads the menu and orders one item; it never goes into the kitchen. Microsoft is adding a list of all menus to Windows 11, the **On-device Agent Registry (ODR)**. Windows itself and the apps installed on the PC can each put up a menu there, and any agent on the PC can find them.
+
+**What Windows offers (from Microsoft's public documentation, preview):**
+
+- **File Explorer connector** (tools Microsoft lists as examples): `search_files`, `get_directories`, `get_file_details`, `read_file`, `read_text_file` (also Office and PDF), `create_directory`, `create_text_file`, `edit_text_file`, `move_file` (move or rename), `zip_folder`, `unzip_folder`. It covers Documents, Desktop, Downloads, Music, Videos, Pictures and public folders, and the user or admin must allow file access.
+- **Settings connector**: Microsoft names it, but has not published its tool list yet. Its scope is the Settings app, so the likely areas (our guess) are display and text size, brightness, night light, sound and default speaker or microphone, Bluetooth and devices, mouse, keyboard and touchpad, default printer, Wi-Fi and network, power and sleep, language and keyboard layout, date and time, notifications and Focus, accessibility, and default apps.
+
+**What other installed apps could offer (our guesses, nothing announced):** any app can publish its own menu. For example: Outlook `repair_mail_profile`, `rebuild_search_index`; Office `quick_repair`; a printer driver `clear_print_queue`, `print_test_page`; a VPN client `reconnect`, `show_status`; an antivirus `update_definitions`, `quick_scan`; a browser `clear_cache`, `reset_settings`. The app maker writes and maintains the fix, so it fits that app's version better than our own code can.
+
+**How apps publish a menu (Microsoft docs):** an MSIX-packaged app declares an MCP server in its manifest and Windows registers it on install and removes it on uninstall. Other servers can be added by hand with `odr.exe mcp add`, and `odr.exe list` shows what is there. By default each server runs contained, in a separate Windows session under a separate agent account, without direct access to the user's files, settings or credentials; production servers must be signed with a trusted certificate. Admins control which agent may use which server through Windows Settings and Intune, and interactions can be logged.
+
+**How we would use it (keeping our rules):**
+
+1. **No free ordering.** Hermes never sees the Windows menus. It still only sees our catalogue.
+2. **A new kind of catalogued operation, "Windows connector step":** an operation in our catalogue may name exactly one fixed server, one fixed tool and fixed or validated inputs, for example `Settings / set_text_size / 125%`. The endpoint service calls that one tool and nothing else. An IT member adds it to the catalogue like any other operation, with tests, kill switch and limits.
+3. **Look before we build:** a read-only, no-AI inventory check lists which MCP servers and tools each PC has (`odr list`). The dashboard shows them, so IT can see what Windows and the installed apps offer across the fleet and choose which tools are worth turning into catalogued operations.
+4. **Fallback:** where the connector is missing (Windows 10, older Windows 11, an app without MCP), the same operation keeps using our own code. The user sees no difference.
+
+**Why:** less fix code for us to write and maintain, fixes that keep working when Windows or an app changes, and a clear audit trail on both sides.
+
+**Limits:** preview only; needs a recent Windows 11 build (Microsoft's pages say build 26220.7262 or later); nothing on Windows 10; Microsoft's admin controls assume Intune, which we do not use; the Settings tool list is not public yet. Revisit when it is generally available.
+
+- **Idea from:** Reza, 2026-11-14, after the Windows local AI research (`notes/windows-local-ai-research-2026-11.md` in the project files). Sources: learn.microsoft.com/windows/ai/mcp/overview, /mcp/file-connector, /mcp/servers/mcp-containment, /mcp/odr-tool.
 
 ## Later
 
