@@ -39,6 +39,7 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | P | Network OS installation for new PCs | Later | 4 | Idea | 2026-11-03 |
 | Q | Agent problem reports from pilot PCs | Before a wide rollout | 1 | Built 2026-11-04 | 2026-11-04 |
 | R | Use the PC's AI chip (NPU) when it has one | AI agent | 4 | Idea | 2026-11-14 |
+| S | Offline fix menu in the Tray when the server can't be reached (no AI) | Helpdesk tools | 2 | Idea | 2026-11-14 |
 
 Ideas A to L come from studying what the SCCM client and the Intune agent do (from Microsoft's public documentation only, never from their code), and what our system is still missing.
 
@@ -123,6 +124,12 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **What:** one catalogued action that zips a fixed list of our own logs and filtered Windows event logs, masks them and uploads them to the case.
 - **Why:** the helpdesk often needs logs and should not have to ask the user to find them.
 - **Idea from:** the Intune "Collect diagnostics" remote action.
+
+### S. Offline fix menu in the Tray when the server can't be reached (no AI)
+
+- **What:** when the Tray cannot reach the control plane (no network, server down), it shows a short menu of common fixes instead of the chat, for example "Fix my internet", "Fix printer", "Fix sound". Each button runs one approved offline operation from a small, signed list that the control plane sent to the PC in advance (for example reset network adapter, renew IP, flush DNS, restart print spooler). No AI is used, and the user picks the button, so only catalogued operations run. Every result is kept on the PC and sent to the dashboard when the connection comes back (see idea C, offline queue).
+- **Why:** network problems are a large share of helpdesk calls, and they are exactly the moment the chat cannot work. This keeps self-service working with no extra hardware, no model download and no token cost. A local AI model (idea R) can be added later if the menu proves too limited.
+- **Idea from:** Reza, 2026-11-14, after the Windows local AI research.
 
 ### O. Light, read-only event log checks
 
