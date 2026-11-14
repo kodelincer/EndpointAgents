@@ -48,23 +48,23 @@ port 5052 of the same host name it was opened on, which keeps the cookie same-si
 | --- | --- |
 | Member | View everything, answer helpdesk conversations, take over, run read-only diagnostics |
 | Reviewer | Member, plus change feature-request status (and publish skills once the skill editor exists) |
-| Admin | Everything, plus endpoint commands, maintenance mode, device revoke, enrollment codes and the Operators page |
+| Admin | Everything, plus endpoint commands, maintenance mode, device revoke, enrollment codes and the Dashboard users page |
 
 First start: when the database has no operators, the API creates `admin` with a one-time password and
 writes it to `initial-admin-password.txt` next to the database (`.local\` in development,
 `C:\ProgramData\EndpointAgents\ControlPlane\` in production). The password is never logged. Signing in with
-it forces a new password; delete the file afterwards. Admins add operators on the Operators page, which shows
+it forces a new password; delete the file afterwards. Admins add operators on the Dashboard users page, which shows
 each one-time password once.
 
 ### Two kinds of accounts: local and Active Directory
 
-- **Local accounts** are created on the Operators page by an admin (one-time password). They always work,
+- **Local accounts** are created on the Dashboard users page by an admin (one-time password). They always work,
   even when the domain controller is down, so keep at least one local admin.
 - **Active Directory accounts** sign in with their normal domain password (`sara`, `CORP\sara` or
   `sara@corp.example`). The control plane checks the password with the domain controller and never stores it.
-  An admin can add a domain user by name on the Operators page (choose "Active Directory user"), or members of
+  An admin can add a domain user by name on the Dashboard users page (choose "Active Directory user"), or members of
   mapped groups are created automatically at their first sign-in. A name that has a local account is always
-  checked locally. A domain user's role is the one an admin gives on the Operators page; the group only
+  checked locally. A domain user's role is the one an admin gives on the Dashboard users page; the group only
   decides the starting role. Disable the account there to revoke access.
 
 Off by default. To turn it on, set in `appsettings.Production.json` (no password needed; the service's own

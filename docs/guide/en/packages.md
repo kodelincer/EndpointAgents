@@ -35,7 +35,7 @@ You need the repository and the .NET 10 SDK on your admin PC. Run these from the
 5. **Test.** `scripts\test-bat-playbook.ps1 -Package <folder> -Execute` should end with `Status: Ready` and `Run state: Completed`.
 6. **Pin and sign.** `scripts\test-bat-playbook.ps1 -Package <folder> -Fix -Sign`. `-Fix` writes the current hashes into `package.json`; use it only after reviewing what changed.
 7. **Publish.** Copy the whole folder into the server's `C:\ProgramData\EndpointAgents\ControlPlane\FileRepository\packages\` (an administrator-only folder). No restart is needed.
-8. **Pilot.** Refresh **Packages**, check the status is Ready, run it on one test PC, then on a few users. If the agent needs a rule for choosing between packages, edit the `repair-packages` skill.
+8. **Pilot.** Refresh **Packages and files**, check the status is Ready, run it on one test PC, then on a few users. If the agent needs a rule for choosing between packages, edit the `repair-packages` skill.
 
 ### Rules for the playbook
 
@@ -44,7 +44,7 @@ You need the repository and the .NET 10 SDK on your admin PC. Run these from the
 - `timeoutSeconds`: 30 to 3600. `send` answers are at most 64 characters and never secrets.
 - An **EXE** must carry a valid vendor (Authenticode) signature, and `file.publisher` pins the exact signer subject. Endpoints refuse it unless Windows verifies that signature.
 
-## Statuses on the Packages page
+## Statuses on the Packages and files page
 
 | Status | Meaning |
 | --- | --- |
@@ -99,7 +99,7 @@ nobody can change it later without breaking the signature.
 3. A missing runtime that the catalog has (a package with `provides`) is installed first.
 4. **Approval.** Every install waits on the Approvals page, where the card shows each
    requirement the PC passed. An admin can switch a package to "No approval needed" on the
-   Packages page. Chrome, the Persian fonts, Foxit Reader, Adobe Connect and Photos start on
+   Packages and files page. Chrome, the Persian fonts, Foxit Reader, Adobe Connect and Photos start on
    that list. Licensed software can never be on it.
 5. The PC checks the requirements again, installs silently, and checks it really is
    installed. Exit 3010 or 1641 means "worked, restart needed"; 1618 means another install

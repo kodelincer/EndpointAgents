@@ -7,6 +7,7 @@ import { roleName } from "@/lib/auth";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useControlPlane } from "@/lib/control-plane-context";
+import { pageName as name } from "@/lib/pages";
 import type { ConnectionState } from "@/lib/types";
 
 function statusLabel(state: ConnectionState) {
@@ -58,33 +59,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const groups: NavGroup[] = [
     { title: "Monitor", items: [
-      { href: "/", label: "Overview", icon: LayoutDashboard, exact: true },
-      { href: "/agents/", label: "Endpoints", icon: Waypoints },
-      { href: "/devices/", label: "Devices", icon: MonitorSmartphone },
-      { href: "/health/", label: "Health rules", icon: HeartPulse },
-      ...(can("problems.view") ? [{ href: "/problems/", label: "Problems", icon: Siren }] : [])
+      { href: "/", label: name("/"), icon: LayoutDashboard, exact: true },
+      { href: "/agents/", label: name("/agents/"), icon: Waypoints },
+      { href: "/devices/", label: name("/devices/"), icon: MonitorSmartphone },
+      { href: "/health/", label: name("/health/"), icon: HeartPulse },
+      ...(can("problems.view") ? [{ href: "/problems/", label: name("/problems/"), icon: Siren }] : [])
     ] },
-    { title: "Support", items: [
-      { href: "/support/", label: "Helpdesk", icon: LifeBuoy, count: supportRequests.length },
-      { href: "/approvals/", label: "Approvals", icon: ClipboardCheck },
-      { href: "/feature-requests/", label: "Feature requests", icon: Lightbulb },
-      { href: "/lessons/", label: "Lessons", icon: GraduationCap }
+    { title: "Helpdesk", items: [
+      { href: "/support/", label: name("/support/"), icon: LifeBuoy, count: supportRequests.length },
+      { href: "/approvals/", label: name("/approvals/"), icon: ClipboardCheck },
+      { href: "/feature-requests/", label: name("/feature-requests/"), icon: Lightbulb },
+      { href: "/lessons/", label: name("/lessons/"), icon: GraduationCap }
     ] },
     { title: "Agent setup", items: [
-      { href: "/skills/", label: "Skills", icon: Sparkles },
-      { href: "/capabilities/", label: "Capabilities", icon: BookOpen },
-      { href: "/environment/", label: "Environment", icon: MapIcon },
-      { href: "/files/", label: "Packages", icon: Package }
+      { href: "/skills/", label: name("/skills/"), icon: Sparkles },
+      { href: "/capabilities/", label: name("/capabilities/"), icon: BookOpen },
+      { href: "/environment/", label: name("/environment/"), icon: MapIcon },
+      { href: "/files/", label: name("/files/"), icon: Package }
     ] },
     { title: "Administration", items: [
-      { href: "/settings/", label: "Settings", icon: SettingsIcon },
+      { href: "/settings/", label: name("/settings/"), icon: SettingsIcon },
       ...(can("users.manage") ? [
-        { href: "/operators/", label: "Operators", icon: ShieldCheck },
-        ...(can("devices.manage") ? [{ href: "/agent-updates/", label: "Agent updates", icon: CloudDownload }] : [])
+        { href: "/operators/", label: name("/operators/"), icon: ShieldCheck },
+        ...(can("devices.manage") ? [{ href: "/agent-updates/", label: name("/agent-updates/"), icon: CloudDownload }] : [])
       ] : [])
     ] },
     { title: "Help", items: [
-      { href: "/docs/", label: "User manual", icon: BookMarked }
+      { href: "/docs/", label: name("/docs/"), icon: BookMarked }
     ] }
   ];
   const current = groups.flatMap(group => group.items).find(item => isActive(path, item));
@@ -128,7 +129,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <div className="topbar-status">
           <span className={`connection-state ${connection}`}><span className="state-dot" />{statusLabel(connection)}</span>
-          <span className="topbar-divider" /><span>{agents.length} endpoint{agents.length === 1 ? "" : "s"} online</span>
+          <span className="topbar-divider" /><span>{agents.length} PC{agents.length === 1 ? "" : "s"} online</span>
           <button className="icon-button" onClick={() => void refresh()} aria-label="Refresh control-plane data" title="Refresh"><RefreshCw size={16} /></button>
           <button ref={menuButton} className="menu-button" onClick={() => setDrawerOpen(true)} aria-label="Open menu"
             aria-expanded={drawerOpen} aria-controls="sidebar"><Menu size={18} /></button>

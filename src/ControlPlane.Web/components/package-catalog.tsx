@@ -6,6 +6,8 @@ import { getPackageInventory } from "@/lib/control-plane";
 import { acceptedRiskLines, describeRun, describeStep, finishRules, packageCompatibility, packageStatus } from "@/lib/packages";
 import { cannotSkipApproval, getNoApproval, installLines, isInstallPackage, requirementLines, setNoApproval } from "@/lib/software";
 import type { BatPackage, PackageInventory } from "@/lib/types";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 
 /** Read-only operator view of FileRepository\packages and why each package is or is not offered. */
 export function PackageCatalog() {
@@ -46,10 +48,10 @@ export function PackageCatalog() {
 
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="packages-title">
-      <div><div className="file-heading-mark"><Package size={17} /></div><div><h1 id="packages-title">Packages</h1>
-        <p>Reviewed BAT, EXE, MSI, MSIX and ZIP files with their playbooks. Only Ready packages are offered to endpoints; general packages run without asking the user. Install packages wait for an approval unless you switch it off.</p></div></div>
+      <div><div className="file-heading-mark"><Package size={17} /></div><div><h1 id="packages-title">{pageName("/files/")}</h1></div></div>
       <button className="secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
     </section>
+    <PageIntro route="/files/" />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} /><div><strong>Packages are unavailable</strong><span>{error}</span></div><button onClick={() => void refresh()}>Retry</button></div>}
 

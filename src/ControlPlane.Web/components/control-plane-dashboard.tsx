@@ -8,6 +8,8 @@ import { commandGroup } from "@/lib/commands";
 import { runCommand } from "@/lib/control-plane";
 import { useControlPlane } from "@/lib/control-plane-context";
 import type { Activity, Agent, CommandDefinition, RpcRequest } from "@/lib/types";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 
 function time(value: string) {
   return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
@@ -95,9 +97,10 @@ export function ControlPlaneDashboard() {
   return <div className="agent-workspace">
     <div className={`workspace ${railOpen ? "with-rail" : ""}`}>
       <section className="registry" aria-labelledby="registry-title">
-        <div className="section-heading"><div><h1 id="registry-title">Endpoints</h1><p>Live Windows endpoints currently registered with this control plane.</p></div>
+        <div className="section-heading"><div><h1 id="registry-title">{pageName("/agents/")}</h1></div>
           {!railOpen && <button className="secondary-button" onClick={() => setRailOpen(true)}><ActivityIcon size={15} /> Show activity</button>}
         </div>
+        <PageIntro route="/agents/" />
         <div className="registry-tools">
           <label className="search-field"><Search size={16} /><span className="sr-only">Search agents</span>
             <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search agent, host, or user" /></label>

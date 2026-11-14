@@ -13,7 +13,7 @@ The agent has three kinds of building blocks. They have different jobs, and none
 A **skill** is a short text file (`SKILL.md`) that tells the agent how to handle one kind of problem: what to check, what to try first, when to ask the user, when to escalate. Hermes picks a skill by its one-line description, so descriptions should contain the phrases users really write.
 
 - Reviewed skills for Office, Windows, network, printing, shared drives, sign-in, slow PCs, desktop apps and repair packages are in `deploy/hermes/skills`.
-- Helpdesk-written skills are created on the **Skills** page and published as `hd-<name>` skills.
+- Helpdesk-written skills are created on the **Agent skills** page and published as `hd-<name>` skills.
 - A skill only **orders** existing tools. It cannot add a tool, an action or a permission. The control plane and the Hermes allow-list decide what is possible; if a skill says otherwise, the call is refused.
 
 ## 2. Tools: what the agent can call
@@ -56,7 +56,7 @@ To add a package, see [Adding and signing packages](/docs/packages/).
 
 ## Organisation knowledge
 
-Every site is different. An `ORGANIZATION.md` file on the control-plane server can tell the agent about this site (layout, services, support rules, quirks), and the agent reads it at the start of a conversation. It is background only: it never adds a permission, internal names are masked before the cloud model sees them, and it must not contain passwords. Live facts such as servers, printers and outages belong on the **Environment** page, not in the file. The template and review rules are in `docs/organization-knowledge.md`.
+Every site is different. An `ORGANIZATION.md` file on the control-plane server can tell the agent about this site (layout, services, support rules, quirks), and the agent reads it at the start of a conversation. It is background only: it never adds a permission, internal names are masked before the cloud model sees them, and it must not contain passwords. Live facts such as servers, printers and outages belong on the **Company resources** page, not in the file. The template and review rules are in `docs/organization-knowledge.md`.
 
 ## After you change a skill or SOUL
 

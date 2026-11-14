@@ -22,12 +22,12 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | # | Idea | Group | Priority | Status | Since |
 | --- | --- | --- | --- | --- | --- |
 | A | Agent self-update and daily self-check | Before a wide rollout | 1 | Self-update built 2026-11-03; self-check is an idea | 2026-11-02 |
-| B | Stored inventory and a Devices page | Before a wide rollout | 1 | Idea | 2026-11-02 |
+| B | Stored inventory and a PC inventory page | Before a wide rollout | 1 | Idea | 2026-11-02 |
 | C | Offline queue, both ways | Before a wide rollout | 1 | Idea | 2026-11-02 |
 | D | Health rules: fix problems before users call | Proactive care | 2 | Idea | 2026-11-02 |
 | E | Device groups and pilot rings | Proactive care | 2 | Idea | 2026-11-02 |
 | F | Required deployments of catalog software | Software | 3 | Idea | 2026-11-02 |
-| G | Collect diagnostics | Helpdesk tools | 3 | Built 2026-11-04 (Get logs on the Problems page) | 2026-11-02 |
+| G | Collect diagnostics | Helpdesk tools | 3 | Built 2026-11-04 (Get logs on the Agent errors page) | 2026-11-02 |
 | H | Fleet questions | Helpdesk tools | 3 | Idea | 2026-11-02 |
 | I | Endpoint analytics | Later | 4 | Idea | 2026-11-02 |
 | J | Peer sharing of large packages | Later | 4 | Idea | 2026-11-02 |
@@ -58,11 +58,11 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **Idea from:** SCCM automatic client upgrade and its daily client health check.
 - **Built (2026-11-03):** the self-update, with pilot PCs, update hours, no update during a chat or a repair, and going back to the previous version by itself when the new one does not connect or keeps crashing. See [Updating the endpoint agent](/docs/updates/). The daily self-check is still an idea, and it must use fixed checks only, no AI.
 
-### B. Stored inventory and a Devices page
+### B. Stored inventory and a PC inventory page
 
-- **What (recommended design, 2026-11-03): "keep, don't schedule".** The PC does not collect a full inventory on a timer. Whenever a tool reads facts from a PC (during a chat, or when an IT member opens the PC), the control plane stores the answer in its database with the time it was read. The next time the same fact is needed and the stored copy is fresh enough (for example 7 days for hardware, 1 day for installed software), the control plane gives the stored copy and does not ask the PC at all. The only regular message is the small one the agent already sends when it connects (version, Windows build, last boot, free disk). A **Devices** page shows the stored facts with their age, and an IT member can press **Refresh** for one PC.
-- **Why:** today inventory is read only during a chat and then thrown away. This way the AI gets short, ready answers (fewer tokens), the PCs do no extra work, and IT still has a Devices page. Nothing here uses AI.
-- **Built (2026-11-03):** kept facts for Windows, domain, hardware, disks, installed programs, drivers, disk health and BitLocker (network facts are never kept), the Devices page with **Read now**, and the agent gets a fresh stored answer instead of asking the PC.
+- **What (recommended design, 2026-11-03): "keep, don't schedule".** The PC does not collect a full inventory on a timer. Whenever a tool reads facts from a PC (during a chat, or when an IT member opens the PC), the control plane stores the answer in its database with the time it was read. The next time the same fact is needed and the stored copy is fresh enough (for example 7 days for hardware, 1 day for installed software), the control plane gives the stored copy and does not ask the PC at all. The only regular message is the small one the agent already sends when it connects (version, Windows build, last boot, free disk). A **PC inventory** page shows the stored facts with their age, and an IT member can press **Refresh** for one PC.
+- **Why:** today inventory is read only during a chat and then thrown away. This way the AI gets short, ready answers (fewer tokens), the PCs do no extra work, and IT still has a PC inventory page. Nothing here uses AI.
+- **Built (2026-11-03):** kept facts for Windows, domain, hardware, disks, installed programs, drivers, disk health and BitLocker (network facts are never kept), the PC inventory page with **Read now**, and the agent gets a fresh stored answer instead of asking the PC.
 - **Idea from:** SCCM hardware and software inventory.
 
 ### C. Offline queue, both ways
@@ -75,15 +75,15 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 
 - **Built (2026-11-04):** see [Problems and log server](/docs/problems/). Also built beyond the idea: reports carry the PC model and Windows version, and a row says when a problem is "only" on one of them; forwarding works with Splunk, Graylog and Syslog.
 
-- **What:** every PC sends the control plane a short report when something goes wrong in *our own* agent, and a **Problems** page on the dashboard shows them grouped, so the team knows what to fix in the next version. A report is sent for: a crash of the service, the Tray or the updater (with where in our code it broke); an error our code logs; an operation or package that failed or timed out (operation name, package name and version, return code, how long it ran); a health rule check that could not run; and an update that was rolled back. Each report carries the agent version, the PC name, Windows 10 or 11 and its build, and the time.
+- **What:** every PC sends the control plane a short report when something goes wrong in *our own* agent, and a **Agent errors** page on the dashboard shows them grouped, so the team knows what to fix in the next version. A report is sent for: a crash of the service, the Tray or the updater (with where in our code it broke); an error our code logs; an operation or package that failed or timed out (operation name, package name and version, return code, how long it ran); a health rule check that could not run; and an update that was rolled back. Each report carries the agent version, the PC name, Windows 10 or 11 and its build, and the time.
 - **How it is kept small:** the same problem is sent once with a counter ("this happened 37 times since 09:10"), not 37 times. The PC keeps unsent reports in a small file (at most 2 MB, the oldest are dropped first) and sends them when it connects again, so nothing is lost when the network or the control plane is down. At most 50 reports per PC per hour. The control plane keeps reports for 90 days.
 - **Private data:** every message is cleaned on the PC before it is sent (user names, folders, e-mail addresses and share paths are cut, with the same cleaner the event log tools use). Never sent: chat text, passwords, file contents, the user's documents.
-- **The Problems page:** one row per kind of problem (same error at the same place in the code), with how many PCs and which versions have it, first and last seen. Filters by version, PC and kind. A row can be marked **Fixed in version X**; if it comes back on that version or later, it opens again by itself. A row can be copied as text for a developer.
+- **The Agent errors page:** one row per kind of problem (same error at the same place in the code), with how many PCs and which versions have it, first and last seen. Filters by version, PC and kind. A row can be marked **Fixed in version X**; if it comes back on that version or later, it opens again by itself. A row can be copied as text for a developer.
 - **No AI:** collecting, grouping and showing reports uses no AI at all, so it costs no tokens.
 - **PCs that cannot report:** a crashed or removed agent sends nothing, so the page also lists PCs that have gone quiet for more than a day and PCs stuck on an old version.
 - **Failed installs:** before the agent is running there is nobody to send a report, so the installer itself sends one short "install failed at step X" message (or leaves a log file that can be collected).
 - **The control plane cannot fill up:** besides the 90 days, the reports have a hard size limit (for example 500 MB); when it is reached the oldest reports are deleted first, so logs can never fill the disk or stop the server. Reports live in their own database file, not in the main one, so a flood of reports cannot slow down chats and actions, and the PC limit is checked on the server too. For 100 PCs with the counters and the hourly cap this is expected to stay at a few tens of MB.
-- **Optional log server (Reza, 2026-11-04):** in **Settings** an admin can add an outside log server. The control plane (not each PC) then also sends a copy of every report there, in a standard format (Syslog, or JSON over HTTP such as Graylog GELF or Seq), so any common log server works and only the server needs a firewall rule. Reports are already cleaned on the PC before this. If the log server is down, the control plane keeps a small, limited queue and drops the oldest copies; it never waits for it. The Problems page stays on the control plane for the short grouped view; the log server is for long keeping and searching. Not needed for the first pilot.
+- **Optional log server (Reza, 2026-11-04):** in **Organisation settings** an admin can add an outside log server. The control plane (not each PC) then also sends a copy of every report there, in a standard format (Syslog, or JSON over HTTP such as Graylog GELF or Seq), so any common log server works and only the server needs a firewall rule. Reports are already cleaned on the PC before this. If the log server is down, the control plane keeps a small, limited queue and drops the oldest copies; it never waits for it. The Agent errors page stays on the control plane for the short grouped view; the log server is for long keeping and searching. Not needed for the first pilot.
 - **Related ideas:** the full cleaned logs of one PC on request is idea G (Collect diagnostics); installing on a few PCs first is idea E and the pilot PCs of the self-update. A user saying "this did not fix it" is already recorded as an unsolved chat for the Helpdesk tab.
 - **Builds on what exists:** the PC already writes its own events to a local journal (`service-events.jsonl`, `tray-events.jsonl`) and the Windows event log, and the self-update already counts crashes in its first 24 hours and reports rollbacks to the **Agent updates** page. This idea adds the sending, the counting and the page; it does not replace them.
 - **Why:** for a pilot on about 100 PCs, nobody should have to wait for a user to call to learn that a version is broken, and developers need the exact place and version of an error to fix it.
@@ -102,7 +102,7 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 
 ### Y. Health check: which Windows AI features are on
 
-- **What:** a read-only, no-AI check that reports on each PC whether Windows' own AI features are on: Recall, Click to Do, the Copilot app, the Settings agent, and the "Experimental agentic features" switch (Agent Workspace). Shown on the Devices page, and as a health rule with the usual five answers (for example "report only" or "tell IT"). Turning a feature off would be a separate, catalogued operation an IT member approves.
+- **What:** a read-only, no-AI check that reports on each PC whether Windows' own AI features are on: Recall, Click to Do, the Copilot app, the Settings agent, and the "Experimental agentic features" switch (Agent Workspace). Shown on the PC inventory page, and as a health rule with the usual five answers (for example "report only" or "tell IT"). Turning a feature off would be a separate, catalogued operation an IT member approves.
 - **Why:** Recall takes screenshots of the screen and agent features let an AI act on the PC. Security may want to know where they are on, especially once newer PCs arrive. Microsoft offers policies for Recall, Click to Do and Paint AI even on Windows Pro.
 - **Idea from:** Windows local AI research, 2026-11-14.
 
@@ -131,7 +131,7 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 
 ### G. Collect diagnostics
 
-- **Built (2026-11-04):** **Get logs** on the Problems page, for admins; see [Problems and log server](/docs/problems/). The zip is downloaded from the Problems page rather than attached to a case.
+- **Built (2026-11-04):** **Get logs** on the Agent errors page, for admins; see [Problems and log server](/docs/problems/). The zip is downloaded from the Agent errors page rather than attached to a case.
 
 - **What:** one catalogued action that zips a fixed list of our own logs and filtered Windows event logs, masks them and uploads them to the case.
 - **Why:** the helpdesk often needs logs and should not have to ask the user to find them.
@@ -166,10 +166,10 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 
 ### N. Supervised learning from solved problems
 
-- **What:** after each solved chat, the control plane writes a short "lesson" (symptom, what was tried, what fixed it), without AI where possible. Lessons wait in a **Lessons** queue on the dashboard. An IT member reads them and chooses: turn it into a skill change, edit it, or drop it. Only approved lessons ever reach Hermes, as a reviewed skill update with a version, and every change can be undone. All lessons are kept for later analysis (which problems come back, which fixes work best).
+- **What:** after each solved chat, the control plane writes a short "lesson" (symptom, what was tried, what fixed it), without AI where possible. Lessons wait in a **Lessons from chats** queue on the dashboard. An IT member reads them and chooses: turn it into a skill change, edit it, or drop it. Only approved lessons ever reach Hermes, as a reviewed skill update with a version, and every change can be undone. All lessons are kept for later analysis (which problems come back, which fixes work best).
 - **Why:** the agent gets better from real tickets, but people stay in control, and nothing changes the agent by itself.
 - **Idea from:** Reza, 2026-11-03.
-- **Built (2026-11-03):** the **Lessons** page. A lesson is written a few minutes after a chat is marked solved, from the chat's first message and the steps that ran (no AI). Reviewers choose **Start skill draft** (opens the Skills page with that chat; the draft is checked, published and can be rolled back there), **Keep** or **Drop**. All lessons stay, and the top of the page counts which fixes solved the most chats.
+- **Built (2026-11-03):** the **Lessons from chats** page. A lesson is written a few minutes after a chat is marked solved, from the chat's first message and the steps that ran (no AI). Reviewers choose **Start skill draft** (opens the Agent skills page with that chat; the draft is checked, published and can be rolled back there), **Keep** or **Drop**. All lessons stay, and the top of the page counts which fixes solved the most chats.
 
 ### R. Use the PC's AI chip (NPU) when it has one
 
@@ -241,7 +241,7 @@ The user sees no difference. The gain is for us: Microsoft writes and maintains 
 
 ### W. Our own tiny problem-to-operation matching model (Mu-style)
 
-- **What:** Microsoft's Mu is a 330-million-parameter model that does one job: turn a sentence typed in Settings into one setting change, in under half a second on the PC. Microsoft showed that for a fixed list of actions, a tiny model trained on many examples (3.6 million sentences for hundreds of settings) is nearly as good as a model ten times bigger (about 74% vs 82% correct). Our job is the same shape: read a Persian problem and pick one catalogued operation. We could train our own tiny model from our own data: solved chats and their fixes from the **Lessons** page.
+- **What:** Microsoft's Mu is a 330-million-parameter model that does one job: turn a sentence typed in Settings into one setting change, in under half a second on the PC. Microsoft showed that for a fixed list of actions, a tiny model trained on many examples (3.6 million sentences for hundreds of settings) is nearly as good as a model ten times bigger (about 74% vs 82% correct). Our job is the same shape: read a Persian problem and pick one catalogued operation. We could train our own tiny model from our own data: solved chats and their fixes from the **Lessons from chats** page.
 - **How it would be used:** as a fast first guess before Hermes (fewer AvalAI tokens), in offline mode on the PC (ideas R and S), and to sort problems into categories for the dashboard. It may only suggest operations from our catalogue, so the safety rule is unchanged. A model this small might run on a normal office CPU (to be tested).
 - **Needs:** thousands of real solved chats (after the pilot), someone to build the training setup, and regular retraining when the catalogue changes.
 - **Idea from:** Reza, 2026-11-14, after reading Microsoft's Mu post (blogs.windows.com, 2025-06-23).

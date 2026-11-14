@@ -9,7 +9,7 @@ catalogued actions. It never runs commands it writes itself: every action is fix
 
 1. **One catalogue.** `src/EndpointAgents.Shared/Actions/EndpointActionCatalog.cs` defines
    every action: id, area, tier, where it runs, parameters, limit, verification and undo.
-   The agent's tools, the dashboard's Capabilities page, the kill switches and the
+   The agent's tools, the dashboard's Agent actions page, the kill switches and the
    endpoint's own validation all read it.
 2. **Tiers decide the rules.**
 
@@ -41,7 +41,7 @@ catalogued actions. It never runs commands it writes itself: every action is fix
    `endpoint_system_info` also masks IP addresses unless
    `Privacy:ShareIpAddressesWithAgent` is `true` in appsettings.
 9. **Kill switch and limits.** Every action can be switched off or given another hourly
-   limit on the Capabilities page, without a release.
+   limit on the Agent actions page, without a release.
 10. **Audit.** Every run is stored (`action_runs`), written to the conversation's helpdesk
     timeline and to the tool audit; fixes are also recorded as repair attempts so the
     agent never repeats one in a conversation.
@@ -103,7 +103,7 @@ Software the users may install is the set of install packages (`problem` startin
 ## Approvals
 
 Dashboard → Approvals (every operator role). The agent's ItApproval requests, the actions
-an admin switched to "Needs IT approval" on the Capabilities page, and packages whose
+an admin switched to "Needs IT approval" on the Agent actions page, and packages whose
 `problem` starts with `uninstall-` or whose manifest has `requiresApproval: true` wait here,
 with the user, the PC, the item and the agent's reason. **Approve and run** runs it at once
 through the same checks (switches, limits, before/after); **Decline** takes an optional note
@@ -118,7 +118,7 @@ the chat too.
 
 ## Who can do what
 
-Every page needs a signed-in operator. Members read the Capabilities page, approve or
+Every page needs a signed-in operator. Members read the Agent actions page, approve or
 decline requests, draft and submit skills and declare incidents. Reviewers also publish, send back, retire and roll
 back skills, and undo fixes from Recent runs. Admins also change the environment map,
 the standards and the action switches and limits.
@@ -142,7 +142,7 @@ the standards and the action switches and limits.
 
 ## Helpdesk skills
 
-Helpdesk members write skills on the Skills page: a name, a one-line description (Hermes
+Helpdesk members write skills on the Agent skills page: a name, a one-line description (Hermes
 picks skills by it, so include the phrases users write) and the steps. **Check** lints the
 draft: unknown tools or action ids, helpdesk-only actions, command-like text, wording that
 reads like a permission, missing "ask the user" or escalation steps, IP addresses or UNC
@@ -163,7 +163,7 @@ The program name for `events.app_errors` is matched in code, never put into the 
 
 ## Health rules
 
-Scheduled health rules (dashboard **Health rules**, `ControlPlane.Api/Health`) run Look actions
+Scheduled health rules (dashboard **Automatic checks**, `ControlPlane.Api/Health`) run Look actions
 through `ActionRunner` with source `HealthRule`, judge the answer with fixed code in
 `HealthCheckCatalog`, and after the report-only week may run one of that check's SafeFix
 actions or `notice.show`. `notice.show` is OperatorOnly (never offered to the agent); only health

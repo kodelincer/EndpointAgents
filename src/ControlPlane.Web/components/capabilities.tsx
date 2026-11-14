@@ -4,6 +4,7 @@ import { BookOpen, CircleAlert, Languages, ListChecks, RefreshCw, RotateCcw, Sea
 import Link from "next/link";
 import { useAuth } from "@/components/auth-gate";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { PageIntro, localName } from "@/components/page-intro";
 import { areaText, filterActions, getActionRuns, getCapabilities, groupByArea, requestMissingAction,
   saveActionSetting, successRate, tierText, undoActionRun, type ActionInfo, type ActionRun, type Capabilities,
   type Language } from "@/lib/capabilities";
@@ -82,9 +83,7 @@ export function CapabilitiesPage() {
   return <div className="file-page" dir={fa ? "rtl" : "ltr"} lang={language}>
     <section className="file-heading" aria-labelledby="capabilities-title">
       <div><div className="file-heading-mark"><BookOpen size={17} /></div><div>
-        <h1 id="capabilities-title">{fa ? "توانایی‌های سیستم" : "Capabilities"}</h1>
-        <p>{fa ? "هر کاری که عامل پشتیبانی می‌تواند روی کامپیوتر کاربر انجام دهد. این صفحه از فهرست زنده ساخته می‌شود؛ برای نوشتن مهارت از آن استفاده کنید."
-          : "Everything the support agent can do on a user's PC, generated from the live catalogue. Use it to write skills."}</p></div></div>
+        <h1 id="capabilities-title">{localName("/capabilities/", language)}</h1></div></div>
       <div className="capability-heading-actions">
         <button className="secondary-button" onClick={() => setLanguage(fa ? "en" : "fa")}>
           <Languages size={15} />{fa ? "English" : "فارسی"}</button>
@@ -92,6 +91,7 @@ export function CapabilitiesPage() {
           <RefreshCw className={loading ? "spin" : ""} size={15} />{fa ? "تازه‌سازی" : "Refresh"}</button>
       </div>
     </section>
+    <PageIntro route="/capabilities/" language={language} />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} />
       <div><strong>{fa ? "خطا" : "Something went wrong"}</strong><span>{error}</span></div>

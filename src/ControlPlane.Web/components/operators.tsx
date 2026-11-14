@@ -3,6 +3,8 @@
 import { Check, CircleAlert, Copy, KeyRound, RefreshCw, ShieldCheck, UserPlus, UserRoundX, UserRoundCheck, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 import { addDirectoryOperator, createOperator, getAuthOptions, listOperators, ROLES, updateOperator,
   type OperatorAccount, type OperatorRole } from "@/lib/auth";
 
@@ -63,8 +65,7 @@ export function Operators() {
   return <div className="file-page operators-page">
     <section className="file-heading" aria-labelledby="operators-title">
       <div><div className="file-heading-mark"><ShieldCheck size={17} /></div><div>
-        <h1 id="operators-title">Operators</h1>
-        <p>Who can sign in to this dashboard, and what their role lets them do.</p></div></div>
+        <h1 id="operators-title">{pageName("/operators/")}</h1></div></div>
       <div className="operators-actions">
         <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>
           <RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
@@ -72,6 +73,7 @@ export function Operators() {
           <UserPlus size={15} />Add operator</button>
       </div>
     </section>
+    <PageIntro route="/operators/" />
 
     <dl className="role-ledger">
       {ROLES.map(item => <div key={item.role}>

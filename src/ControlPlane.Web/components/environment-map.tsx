@@ -3,6 +3,8 @@
 import { CircleAlert, Map as MapIcon, Plus, RefreshCw, Save, Siren, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 import { createIncident, deleteTarget, getEnvironmentSettings, getIncidents, getTargets, parseNumberList,
   parseTextList, saveEnvironmentSettings, saveTarget, setIncidentStatus, suggestId, targetDetailFields,
   type EnvironmentTarget, type Incident } from "@/lib/capabilities";
@@ -82,13 +84,11 @@ export function EnvironmentMap() {
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="environment-title">
       <div><div className="file-heading-mark"><MapIcon size={17} /></div><div>
-        <h1 id="environment-title">Environment</h1>
-        <p>Internal web apps, shares, printers, servers and VPNs the agent may test or connect to; the software that may be removed and the
-          device models with approved drivers; the organisation&apos;s standards; and known outages.
-          The agent sees only ids and labels; addresses stay on this server.</p></div></div>
+        <h1 id="environment-title">{pageName("/environment/")}</h1></div></div>
       <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>
         <RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
     </section>
+    <PageIntro route="/environment/" />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} />
       <div><strong>Not saved</strong><span>{error}</span></div><button onClick={() => setError(undefined)}>Dismiss</button></div>}

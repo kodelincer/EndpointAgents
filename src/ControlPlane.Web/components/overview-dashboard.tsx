@@ -6,6 +6,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { DailyColumns, Legend, RankedBars, SegmentedBar, Sparkline, SuccessMeter, type Series } from "@/components/overview-charts";
 import { ago, compact, dayTotal, getOverview, percent, RANGE_CHOICES, type OverviewSnapshot } from "@/lib/overview";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 
 const rangeKey = "cp.overview.days";
 
@@ -63,8 +65,7 @@ export function OverviewDashboard() {
 
   return <div className="ov-dashboard">
     <section className="overview-heading" aria-labelledby="overview-title">
-      <div><h1 id="overview-title">Overview</h1>
-        <p>How the PCs, the support agent and the helpdesk are doing, counted from the control-plane database.</p></div>
+      <div><h1 id="overview-title">{pageName("/")}</h1></div>
       <div className="ov-toolbar">
         <div className="ov-range" role="group" aria-label="Time range">
           {RANGE_CHOICES.map(value => <button key={value} type="button" aria-pressed={days === value}
@@ -75,6 +76,7 @@ export function OverviewDashboard() {
         <span className="last-check">{data ? `Updated ${ago(data.generatedAtUtc)}` : "Loading"}</span>
       </div>
     </section>
+    <PageIntro route="/" />
 
     {error && <div className="inline-error overview-error" role="alert"><CircleAlert size={17} /><div>
       <strong>The overview numbers are unavailable</strong><span>{error}</span></div>

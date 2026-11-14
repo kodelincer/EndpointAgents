@@ -3,6 +3,8 @@
 import { CircleAlert, HeartPulse, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 import {
   createHealthRule, deleteHealthRule, describeRule, getHealthChecks, getHealthResults, getHealthRules,
   onFailureText, parseMachines, reportOnlyDaysLeft, setHealthRuleEnabled,
@@ -48,14 +50,13 @@ export function HealthRules() {
 
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="health-title">
-      <div><div className="file-heading-mark"><HeartPulse size={17} /></div><div><h1 id="health-title">Health rules</h1>
-        <p>Checks that run on their own on every online PC, daily or weekly, to fix problems before users call.
-          You pick five answers from fixed lists; nothing is scripted and no AI is used. Every new rule only reports for its first week.</p></div></div>
+      <div><div className="file-heading-mark"><HeartPulse size={17} /></div><div><h1 id="health-title">{pageName("/health/")}</h1></div></div>
       <div className="file-row-actions">
         {admin && <button className="primary-button" onClick={() => setAdding(!adding)}><Plus size={15} />New rule</button>}
         <button className="secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
       </div>
     </section>
+    <PageIntro route="/health/" />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} /><div><strong>Health rules</strong><span>{error}</span></div><button onClick={() => setError(undefined)}>Close</button></div>}
 

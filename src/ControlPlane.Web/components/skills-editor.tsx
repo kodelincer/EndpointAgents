@@ -5,6 +5,8 @@ import { CheckCircle2, CircleAlert, Download, FilePlus2, History, MessageSquareT
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 import { draftFromConversation, getSkill, getSkills, getSkillTemplate, issueCounts, lintSkill, publishSkill,
   rejectSkill, retireSkill, saveSkillDraft, skillDownloadUrl, skillStatusText, submitSkill, type HelpdeskSkill,
   type SkillDetail, type SkillDraft, type SkillIssue, type SkillStats } from "@/lib/capabilities";
@@ -67,11 +69,10 @@ export function SkillsEditor() {
   return <div className="file-page skills-page">
     <section className="file-heading" aria-labelledby="skills-title">
       <div><div className="file-heading-mark"><Sparkles size={17} /></div><div>
-        <h1 id="skills-title">Skills</h1>
-        <p>Teach the agent a new problem using the actions on the Capabilities page. Write a draft, check it, submit it;
-          a reviewer publishes it into Hermes. A skill only orders existing actions; it can never add one.</p></div></div>
+        <h1 id="skills-title">{pageName("/skills/")}</h1></div></div>
       <button className="secondary-button" onClick={() => void refresh()}><RefreshCw size={15} />Refresh</button>
     </section>
+    <PageIntro route="/skills/" />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} />
       <div><strong>Not done</strong><span>{error}</span></div><button onClick={() => setError(undefined)}>Dismiss</button></div>}

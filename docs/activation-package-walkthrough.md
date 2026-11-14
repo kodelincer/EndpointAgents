@@ -91,7 +91,7 @@ with `Run state: Completed`.
 
 ## 6. Check the dashboard
 
-Open http://127.0.0.1:3000, go to **Packages**, and refresh. The package must show
+Open http://127.0.0.1:3000, go to **Packages and files**, and refresh. The package must show
 **Ready**. If it doesn't, the row says exactly what to fix. No restart is needed.
 
 ## 7. Tell the agent to try it
@@ -121,7 +121,7 @@ Close the old Hermes window first; the second command runs in the new window.
 3. The agent checks activation, runs your package, and asks «آیا مشکل شما حل شد؟».
 4. Answer «نه» to watch the fallback: it runs the next repair in the Try order, and when
    none is left it hands the case to the helpdesk.
-5. In the dashboard **Helpdesk** tab, open the conversation. The timeline shows each
+5. In the dashboard **User chats** tab, open the conversation. The timeline shows each
    repair tried and its result; "Raw trace" holds the endpoint's full response, including
    the BAT's output tail when it failed.
 

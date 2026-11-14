@@ -14,15 +14,15 @@ A skill grants nothing. It cannot add a tool, an action or a permission, and it 
 
 | You want to know | Where to look |
 | --- | --- |
-| Every action the agent can run, its tier and its parameters | **Capabilities → Actions** |
-| The tools the agent can call | **Capabilities → Agent tools** |
+| Every action the agent can run, its tier and its parameters | **Agent actions → Actions** |
+| The tools the agent can call | **Agent actions → Agent tools** |
 | Which common tickets already have an action | [Common tickets and what handles them](/docs/catalog/) |
-| The lists the agent may pick from (servers, printers, apps to remove, device models, VPNs) | **Environment**, see [Setting up your site](/docs/setup/) |
+| The lists the agent may pick from (servers, printers, apps to remove, device models, VPNs) | **Company resources**, see [Setting up your site](/docs/setup/) |
 | How the agent behaves in general | [How the agent uses skills, tools and packages](/docs/agent/) |
 
 ## The shape of a skill
 
-A skill has three parts you fill in on the **Skills** page:
+A skill has three parts you fill in on the **Agent skills** page:
 
 1. **Name**: lowercase English letters, digits and dashes, for example `vpn-after-password-change`. It is published as `hd-<name>`.
 2. **When to use** (one line, up to 400 characters): the problems it is for, written the way users write them, in Persian too. Hermes picks a skill by this line, so a vague line means the skill is never chosen.
@@ -101,7 +101,7 @@ The skills `software-install`, `drivers-devices` and `vpn-support` in `deploy/he
 
    | Message | Meaning |
    | --- | --- |
-   | Unknown tool or action | The name is wrong or does not exist. Copy the exact id from the Capabilities page. |
+   | Unknown tool or action | The name is wrong or does not exist. Copy the exact id from the Agent actions page. |
    | Helpdesk only | You named an OperatorOnly (undo) action. |
    | Looks like a command | The agent cannot run commands. Use actions instead. |
    | Reads like a permission | Skill text never grants permission. Reword it as an instruction. |
@@ -110,11 +110,11 @@ The skills `software-install`, `drivers-devices` and `vpn-support` in `deploy/he
 
 2. **Submit** for review. Members draft; **reviewers** (a senior member or an admin) publish, send back, retire or roll back.
 3. **Publish** writes the skill into the Hermes skills folder when `HelpdeskSkills:PublishPath` is set; otherwise download `SKILL.md` and copy it into the folder by hand, then restart the Hermes gateway.
-4. **Watch the results.** The Skills page shows how often each skill was used. Read escalated conversations on **Helpdesk**: they show which skill should be better or which action is missing.
+4. **Watch the results.** The Agent skills page shows how often each skill was used. Read escalated conversations on **User chats**: they show which skill should be better or which action is missing.
 
 ## When the action you need does not exist
 
-Do not work around it in the skill. Record it: the user-facing path is the **Feature requests** page (the agent logs requests users make) and the **Missing an action?** form on **Capabilities → Actions**. Developers add actions; you then update the skill to use them.
+Do not work around it in the skill. Record it: the user-facing path is the **Feature requests** page (the agent logs requests users make) and the **Missing an action?** form on **Agent actions → Actions**. Developers add actions; you then update the skill to use them.
 
 Common tickets that are planned but not built yet are listed in [Common tickets and what handles them](/docs/catalog/).
 

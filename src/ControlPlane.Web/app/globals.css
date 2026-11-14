@@ -1163,3 +1163,18 @@ body { background: var(--canvas); -webkit-font-smoothing: antialiased; }
 .app-shell.collapsed .sidebar .nav-link { padding: 0; }
 @media (max-width: 1024px) { .app-shell.collapsed .sidebar .nav-group ul::before { left: 18px; } .app-shell.collapsed .sidebar .nav-link { padding: 0 8px 0 6px; } }
 @media (prefers-reduced-motion: reduce) { .sidebar .nav-group ul::before { animation: none; } .sidebar .nav-link svg { transition: none; } }
+
+/* Page intro: what the page is for, who uses it, what you can do ------------- */
+.page-intro { display: grid; grid-template-columns: 1.3fr 1fr 1.3fr; gap: 0; margin: -8px 0 24px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); }
+.page-intro-item { padding: 12px 16px; min-width: 0; }
+.page-intro-item + .page-intro-item { border-inline-start: 1px solid var(--line); }
+.page-intro-label { display: block; margin-bottom: 4px; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+.page-intro p, .page-intro ul { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.5; }
+.page-intro ul { padding-inline-start: 16px; list-style: disc; }
+.page-intro li + li { margin-top: 2px; }
+.registry .page-intro, .ov-dashboard .page-intro { margin-top: 0; }
+@media (max-width: 900px) {
+  .page-intro { grid-template-columns: 1fr; }
+  .page-intro-item + .page-intro-item { border-inline-start: 0; border-top: 1px solid var(--line); }
+}
+.file-heading h2 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.015em; }

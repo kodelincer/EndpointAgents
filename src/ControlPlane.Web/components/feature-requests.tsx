@@ -7,6 +7,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getFeatureRequests, setFeatureRequestStatus } from "@/lib/control-plane";
 import { featureRequestCounts, featureStatuses } from "@/lib/feature-requests";
 import type { FeatureRequest } from "@/lib/types";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 
 /** Requests users made for abilities the support agent does not have yet. */
 export function FeatureRequests() {
@@ -54,11 +56,11 @@ export function FeatureRequests() {
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="features-title">
       <div><div className="file-heading-mark"><Lightbulb size={17} /></div><div>
-        <h1 id="features-title">Feature requests</h1>
-        <p>Things users asked for that the support agent cannot do yet. Each was saved only after the user agreed.</p></div></div>
+        <h1 id="features-title">{pageName("/feature-requests/")}</h1></div></div>
       <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>
         <RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
     </section>
+    <PageIntro route="/feature-requests/" />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} />
       <div><strong>Feature requests are unavailable</strong><span>{error}</span></div>

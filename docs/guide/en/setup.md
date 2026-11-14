@@ -1,14 +1,14 @@
 ---
 title: Setting up your site
-summary: What the helpdesk fills in so the agent can work: the Environment lists, approvals, install and driver packages, and a first-week checklist.
+summary: What the helpdesk fills in so the agent can work: the Company resources lists, approvals, install and driver packages, and a first-week checklist.
 order: 6
 ---
 
 # Setting up your site
 
-The agent only picks from lists you keep. A skill says "use the printer", and the **Environment** page says which printers exist. This page lists what to fill in, in a sensible order.
+The agent only picks from lists you keep. A skill says "use the printer", and the **Company resources** page says which printers exist. This page lists what to fill in, in a sensible order.
 
-## The Environment page
+## The Company resources page
 
 | List | What you enter | What the agent can then do |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ Where to find a hardware ID: on a PC with the device attached, Device Manager �
 Some requests should never run without a person. They wait on the **Approvals** page:
 
 - Software removal (`software.uninstall`) and any package whose `problem` starts with `uninstall-` or whose manifest has `requiresApproval: true`.
-- Any other fix an admin switched to **Needs IT approval** on **Capabilities → Actions**.
+- Any other fix an admin switched to **Needs IT approval** on **Agent actions → Actions**.
 
 Each request shows the user, the PC, the item and the agent's reason. **Approve and run** runs it at once through the same checks as any other action (kill switch, hourly limit, before and after). **Decline** takes a note that the user sees. Either way the user gets a short message in their chat, and the decision is recorded with your name.
 
@@ -58,19 +58,19 @@ Windows still refuses a driver whose own signature is invalid, on top of the pac
 
 ## First-week checklist
 
-1. Sign in as `admin`, set a new password, delete `initial-admin-password.txt`, and create personal accounts on **Operators**.
-2. Fill in **Environment**: your top servers and web apps, printers and shares, then the standards.
+1. Sign in as `admin`, set a new password, delete `initial-admin-password.txt`, and create personal accounts on **Dashboard users**.
+2. Fill in **Company resources**: your top servers and web apps, printers and shares, then the standards.
 3. Add your VPN or VPNs, your company Wi-Fi networks, and the internet sites people need for work.
 4. Add the software people may ask to remove (start with two or three) and the device models you own (printers, scanners, card readers).
 5. Create install packages for the five applications users ask for most, and a driver package for your most common printer.
 6. Run `scripts\sync-hermes-profile.ps1`, restart Hermes, and open a chat from the Tray on your own PC.
 7. Try the three scenarios end to end: an internal site that does not open, a printer problem, a software removal request (watch it arrive on **Approvals**).
-8. Read the first escalated conversations on **Helpdesk** and write or edit skills for what the agent missed, using [Writing skills](/docs/skills/).
+8. Read the first escalated conversations on **User chats** and write or edit skills for what the agent missed, using [Writing skills](/docs/skills/).
 
 ## Keeping it healthy
 
 - Review **Feature requests** weekly. They show which operations to ask for next.
-- Look at **Capabilities → Recent runs** after changes; reviewers can undo a fix from there.
+- Look at **Agent actions → Recent runs** after changes; reviewers can undo a fix from there.
 - Declare an **Incident** as soon as a server or the link is down, so users are told it is known.
 - After any change to a reviewed skill or `SOUL.md` in the repository, run `scripts\sync-hermes-profile.ps1` again.
 - Read [Security and hardening](/docs/security/) before you move from testing to production.

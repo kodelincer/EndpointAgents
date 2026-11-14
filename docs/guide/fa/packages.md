@@ -35,7 +35,7 @@ FileRepository\packages\<id>\
 5. **آزمایش کنید.** `scripts\test-bat-playbook.ps1 -Package <folder> -Execute` باید با `Status: Ready` و `Run state: Completed` تمام شود.
 6. **هش بزنید و امضا کنید.** `scripts\test-bat-playbook.ps1 -Package <folder> -Fix -Sign`. `-Fix` هش‌های فعلی را در `package.json` می‌نویسد؛ فقط بعد از بررسی آنچه تغییر کرده استفاده کنید.
 7. **منتشر کنید.** کل پوشه را در `C:\ProgramData\EndpointAgents\ControlPlane\FileRepository\packages\` روی سرور کپی کنید (پوشه‌ای فقط برای مدیر). راه‌اندازی دوباره لازم نیست.
-8. **آزمایش میدانی.** صفحهٔ **Packages** را تازه کنید، وضعیت Ready را ببینید، اول روی یک کامپیوتر آزمایشی و بعد روی چند کاربر اجرا کنید. اگر عامل برای انتخاب بین بسته‌ها قاعده می‌خواهد، مهارت `repair-packages` را ویرایش کنید.
+8. **آزمایش میدانی.** صفحهٔ **Packages and files** را تازه کنید، وضعیت Ready را ببینید، اول روی یک کامپیوتر آزمایشی و بعد روی چند کاربر اجرا کنید. اگر عامل برای انتخاب بین بسته‌ها قاعده می‌خواهد، مهارت `repair-packages` را ویرایش کنید.
 
 ### قواعد playbook
 
@@ -44,7 +44,7 @@ FileRepository\packages\<id>\
 - `timeoutSeconds`: ۳۰ تا ۳۶۰۰. پاسخ‌های `send` حداکثر ۶۴ نویسه‌اند و هرگز راز نیستند.
 - **EXE** باید امضای معتبر فروشنده (Authenticode) داشته باشد و `file.publisher` دقیقاً موضوع امضاکننده را ثابت می‌کند. اگر ویندوز آن امضا را تأیید نکند، کامپیوتر فایل را رد می‌کند.
 
-## وضعیت‌ها در صفحهٔ Packages
+## وضعیت‌ها در صفحهٔ Packages and files
 
 | وضعیت | معنی |
 | --- | --- |

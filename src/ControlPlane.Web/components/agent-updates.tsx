@@ -3,6 +3,8 @@
 import { CircleAlert, CloudDownload, RefreshCw, Save } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 import { deviceState, getAgentUpdates, saveAgentUpdateSettings, summarize, targetFor,
   type AgentUpdateOverview, type AgentUpdateSettings, type DeviceUpdateState } from "@/lib/agent-updates";
 
@@ -78,14 +80,11 @@ export function AgentUpdates() {
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="agent-updates-title">
       <div><div className="file-heading-mark"><CloudDownload size={17} /></div><div>
-        <h1 id="agent-updates-title">Agent updates</h1>
-        <p>Choose which endpoint agent version the PCs run. Build and sign a version with
-          <code> scripts\new-agent-update.ps1 -Sign</code>, try it on a few pilot PCs, then set it for everyone.
-          A PC updates itself when nobody is chatting and no repair runs, and goes back to its previous version by
-          itself if the new one does not connect or keeps crashing. No AI is involved.</p></div></div>
+        <h1 id="agent-updates-title">{pageName("/agent-updates/")}</h1></div></div>
       <button className="secondary-button" onClick={() => { setLoading(true); void refresh(); }} disabled={loading}>
         <RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
     </section>
+    <PageIntro route="/agent-updates/" />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} />
       <div><strong>Agent updates are unavailable</strong><span>{error}</span></div>

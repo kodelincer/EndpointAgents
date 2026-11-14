@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { getLessons, outcomeLine, patchLesson, skillDraftHref, statusText, type LessonPage, type LessonStatus } from "@/lib/lessons";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 
 const tabs: (LessonStatus | undefined)[] = ["New", "Drafted", "Kept", "Dropped", undefined];
 
@@ -38,11 +40,10 @@ export function Lessons() {
   const lessons = page?.lessons ?? [];
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="lessons-title">
-      <div><div className="file-heading-mark"><GraduationCap size={17} /></div><div><h1 id="lessons-title">Lessons</h1>
-        <p>Every solved chat leaves a short lesson: what the user said, what was tried and what fixed it, written without AI.
-          A reviewer decides: start a skill draft from it, keep it for analysis, or drop it. Nothing changes the agent until a skill is published on the Skills page, and every skill version can be rolled back.</p></div></div>
+      <div><div className="file-heading-mark"><GraduationCap size={17} /></div><div><h1 id="lessons-title">{pageName("/lessons/")}</h1></div></div>
       <button className="secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
     </section>
+    <PageIntro route="/lessons/" />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} /><div><strong>Lessons</strong><span>{error}</span></div><button onClick={() => setError(undefined)}>Close</button></div>}
 
