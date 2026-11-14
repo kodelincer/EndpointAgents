@@ -103,6 +103,7 @@ export interface ChatDelta {
   actions: ActionProposal[];
   progressEvents?: ProgressEvent[] | null;
   visibleItemLimit: number;
+  queuePosition?: number | null;
 }
 
 export interface MessageReceipt {

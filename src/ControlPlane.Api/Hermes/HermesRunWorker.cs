@@ -10,6 +10,7 @@ namespace ControlPlane.Api.Hermes;
 
 public sealed class HermesRunWorker(
     ChatStore store,
+    HermesQueue queue,
     DashboardPublisher dashboard,
     IHttpClientFactory httpClientFactory,
     IOptions<HermesOptions> options,
@@ -28,13 +29,27 @@ public sealed class HermesRunWorker(
         }
 
         logger.LogInformation("Hermes run processing enabled with a limit of {RunLimit}.",
-            _options.MaxConcurrentRuns);
+            queue.Current.MaxParallelRuns);
+        var nextExpiryCheck = DateTimeOffset.MinValue;
         while (!stoppingToken.IsCancellationRequested)
         {
             _activeRuns.RemoveWhere(task => task.IsCompleted);
             try
             {
-                while (_activeRuns.Count < _options.MaxConcurrentRuns)
+                if (DateTimeOffset.UtcNow >= nextExpiryCheck)
+                {
+                    nextExpiryCheck = DateTimeOffset.UtcNow.AddSeconds(15);
+                    var expired = await store.ExpireWaitingRunsAsync(DateTimeOffset.UtcNow
+                        .AddMinutes(-queue.Current.MaxWaitMinutes), stoppingToken);
+                    if (expired > 0)
+                        logger.LogWarning(
+                            "{Count} requests waited too long in the Hermes queue and were answered as busy.",
+                            expired);
+                }
+
+                // Read every pass so an admin change applies without a restart; lowering the
+                // limit lets running requests finish and only holds back new ones.
+                while (_activeRuns.Count < queue.Current.MaxParallelRuns)
                 {
                     var lease = await store.LeaseNextRunAsync(_options.MaxHistoryMessages,
                         TimeSpan.FromSeconds(_options.RunTimeoutSeconds + 60), stoppingToken);

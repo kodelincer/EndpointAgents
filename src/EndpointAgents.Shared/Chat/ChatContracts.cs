@@ -205,4 +205,7 @@ public sealed record ChatDelta(
     IReadOnlyList<ChatRunProgressEvent>? ProgressEvents = null)
 {
     public int VisibleItemLimit { get; init; } = 30;
+
+    // 1-based place in the control plane's Hermes queue while a request waits; null otherwise.
+    public int? QueuePosition { get; init; }
 }

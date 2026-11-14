@@ -134,3 +134,9 @@ export function parseYesNo(text: string): boolean | null {
   if (negative.has(normalized)) return false;
   return null;
 }
+
+/** Where a waiting request stands in the support queue, or "" when it is not waiting. */
+export function queueLabel(position?: number | null): string {
+  if (!position || position < 1) return "";
+  return position === 1 ? "نوبت بعدی با شماست" : `${faNumber.format(position - 1)} نفر جلوتر از شما در صف هستند`;
+}

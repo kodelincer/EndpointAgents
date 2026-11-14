@@ -36,6 +36,15 @@ only its own sequence delta while its chat view is visible.
   running rows are safely re-queued during ControlPlane startup.
 - Four concurrent conversations by default, with one active run per
   conversation and a fifteen-minute run timeout.
+- A request queue in front of Hermes, owned by ControlPlane; Hermes never sees
+  it. The dashboard Settings tab (`/api/settings/hermes-queue`, loopback only)
+  sets max parallel requests to Hermes (default `Hermes:MaxConcurrentRuns`),
+  max queue length (default 50) and max waiting time (default 10 minutes).
+  Changes are stored in SQLite and apply without a restart. When the queue is
+  full, or the user already has a request waiting, the Tray message is refused
+  with a short Persian note and nothing is saved. A request that waits too long
+  gets a polite Persian busy reply. While waiting, the chat delta carries the
+  request's place in line and the Tray shows it.
 - A unique Hermes session per run. ControlPlane supplies the bounded
   conversation history and removes the Hermes session after reconciliation, so
   Hermes is not the conversation store.

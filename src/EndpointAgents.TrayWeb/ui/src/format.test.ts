@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isRtl, isTerminalStage, parseYesNo, progressLabel } from "./format";
+import { isRtl, isTerminalStage, parseYesNo, progressLabel, queueLabel } from "./format";
 import type { ProgressEvent } from "./types";
 
 const event = (stage: ProgressEvent["stage"], extra: Partial<ProgressEvent> = {}): ProgressEvent => ({
@@ -75,5 +75,13 @@ describe("faceFor", () => {
   it("sleeps when paused and waits while checking", () => {
     expect(faceFor(status("Paused", "Running"))).toBe("sleepy");
     expect(faceFor(status("Checking", "StartPending", false))).toBe("neutral");
+  });
+});
+describe("queueLabel", () => {
+  it("names the place in line only while waiting", () => {
+    expect(queueLabel(null)).toBe("");
+    expect(queueLabel(0)).toBe("");
+    expect(queueLabel(1)).toBe("نوبت بعدی با شماست");
+    expect(queueLabel(3)).toBe("۲ نفر جلوتر از شما در صف هستند");
   });
 });

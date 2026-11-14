@@ -4,6 +4,7 @@ import { CircleAlert, Clock, KeyRound, PlugZap, RefreshCw, Save, Settings as Set
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { LogServerSection } from "@/components/log-server-settings";
+import { HermesQueueSection } from "@/components/queue-settings";
 import {
   addNtpServer, getKmsSettings, getNtpSettings, internetNtpServers, kmsInputError, ntpInputError, saveKmsSettings, saveNtpSettings,
   testKmsServer, testNtpServers,
@@ -23,7 +24,7 @@ function ntpTestText(result: NtpTestResult) {
   return `${result.host}: answers (${result.milliseconds ?? 0} ms). The control-plane server clock is ${Math.abs(offset)} s ${offset >= 0 ? "behind" : "ahead of"} it.`;
 }
 
-/** Organisation-wide settings: the KMS and NTP servers and, for admins, the outside log server. */
+/** Organisation-wide settings: the KMS and NTP servers and, for admins, the AI request queue and the outside log server. */
 export function SettingsPage() {
   const { can } = useAuth();
   const manage = can("environment.manage");
@@ -128,6 +129,7 @@ export function SettingsPage() {
       </div> : <p className="capability-note wide">Only an admin can change these settings.</p>}
     </section>
 
+    {can("users.manage") && <HermesQueueSection />}
     {can("users.manage") && <LogServerSection />}
   </div>;
 }
