@@ -41,6 +41,7 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | R | Use the PC's AI chip (NPU) when it has one | AI agent | 4 | Idea | 2026-11-14 |
 | S | Offline fix menu in the Tray when the server can't be reached (no AI) | Helpdesk tools | 2 | Idea | 2026-11-14 |
 | T | Use Windows' and apps' own MCP tools behind our catalogued operations | AI agent | 4 | Idea (watch: Windows feature is in preview) | 2026-11-14 |
+| U | Use Windows' own built-in AI models on Copilot+ PCs (Phi Silica, text recognition, speech) in the Tray | AI agent | 4 | Idea | 2026-11-14 |
 
 Ideas A to L come from studying what the SCCM client and the Intune agent do (from Microsoft's public documentation only, never from their code), and what our system is still missing.
 
@@ -201,6 +202,18 @@ The user sees no difference. The gain is for us: Microsoft writes and maintains 
 **Limits:** preview only; needs a recent Windows 11 build (Microsoft's pages say build 26220.7262 or later); nothing on Windows 10; Microsoft's admin controls assume Intune, which we do not use; the Settings tool list is not public yet. Revisit when it is generally available.
 
 - **Idea from:** Reza, 2026-11-14, after the Windows local AI research (`notes/windows-local-ai-research-2026-11.md` in the project files). Sources: learn.microsoft.com/windows/ai/mcp/overview, /mcp/file-connector, /mcp/servers/mcp-containment, /mcp/odr-tool.
+
+### U. Use Windows' own built-in AI models on Copilot+ PCs in the Tray
+
+- **What:** Copilot+ PCs already come with small Microsoft AI models that run on the AI chip (NPU), offline, at no cost. Apps can use them through the **Windows AI APIs**. On a PC that has them, the Tray could use them as helpers, while PCs without them work exactly as today:
+  - **Phi Silica (small text model):** tidy up the user's message before it goes to Hermes (for example turn a long, messy description into a short summary), suggest a problem category, or write the short "what happened" line for the helpdesk when a problem is escalated.
+  - **Text recognition (OCR):** the user takes a picture of an error window with a Tray button; the text of the error ("0x80070005 access denied", "Outlook can't connect") is read on the PC and added to the chat, so Hermes sees the real error instead of a guess. The picture itself never leaves the PC.
+  - **Speech to text:** the user describes the problem by voice instead of typing.
+  - **Image description:** describe a screenshot in words for the chat history.
+- **How it differs from idea R:** R runs **our own** small model (for example with Foundry Local). U only **borrows the models Windows already has**: nothing to download, nothing to update, Microsoft maintains them.
+- **Rules kept:** these models only help understand and describe the problem. They never choose or run fixes; Hermes and the catalogue still decide, and only catalogued operations run. They work only while the user chats, never in the background.
+- **Limits:** only on Copilot+ PCs (NPU 40+ TOPS) with Windows 11; our office PCs do not have them today. Persian support of these models is unclear and must be tested (OCR of English error text is the most promising part). Phi Silica needs an unlock token from Microsoft today; Microsoft says its successor, Aion Instruct, will not.
+- **Idea from:** Reza, 2026-11-14, after the Windows local AI research (`notes/windows-local-ai-research-2026-11.md` in the project files).
 
 ## Later
 
