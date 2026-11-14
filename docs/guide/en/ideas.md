@@ -38,6 +38,7 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | O | Light, read-only event log checks | Helpdesk tools | 2 | Idea | 2026-11-03 |
 | P | Network OS installation for new PCs | Later | 4 | Idea | 2026-11-03 |
 | Q | Agent problem reports from pilot PCs | Before a wide rollout | 1 | Built 2026-11-04 | 2026-11-04 |
+| R | Use the PC's AI chip (NPU) when it has one | AI agent | 4 | Idea | 2026-11-14 |
 
 Ideas A to L come from studying what the SCCM client and the Intune agent do (from Microsoft's public documentation only, never from their code), and what our system is still missing.
 
@@ -144,6 +145,13 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 - **Why:** the agent gets better from real tickets, but people stay in control, and nothing changes the agent by itself.
 - **Idea from:** Reza, 2026-11-03.
 - **Built (2026-11-03):** the **Lessons** page. A lesson is written a few minutes after a chat is marked solved, from the chat's first message and the steps that ran (no AI). Reviewers choose **Start skill draft** (opens the Skills page with that chat; the draft is checked, published and can be rolled back there), **Keep** or **Drop**. All lessons stay, and the top of the page counts which fixes solved the most chats.
+
+### R. Use the PC's AI chip (NPU) when it has one
+
+- **What:** newer "Copilot+" PCs have an AI chip (NPU, 40+ TOPS). When a PC has one, the Tray could run a small local model (for example through Microsoft Foundry Local) for easy chats: understanding the problem, simple answers, and choosing a fix while the network or the server is down. Hard cases still go to Hermes on the server. The local model may only pick from a small, signed list of catalogued operations that the control plane sent in advance, and results are reported to the dashboard when the PC is back online. PCs without an NPU keep working exactly as today.
+- **Why:** help keeps working when the network breaks (often the very problem the user has), chat text stays on the PC, fewer tokens are spent on AvalAI, and less load on the server.
+- **Limits:** today's office PCs have no NPU and many run Windows 10; small models are weaker in Persian and at choosing tools, so test quality first. Like all AI here, it runs only when a user chats, never in the background.
+- **Idea from:** Reza, 2026-11-14, after the Windows local AI research (`notes/windows-local-ai-research-2026-11.md` in the project files).
 
 ## Later
 
