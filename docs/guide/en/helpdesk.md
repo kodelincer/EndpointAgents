@@ -25,7 +25,7 @@ A conversation shows the messages, every tool call and repair attempt in a timel
 When the agent hands over, the row shows a one-line **reason**, a short **summary** (what was checked and tried, what the user said) and every attempt. Work like this:
 
 1. Read the summary and the attempts so you do not repeat a repair that already failed.
-2. Check **Recent runs** on the Capabilities (agent actions) page if a fix changed a user setting; reviewers can undo some of them.
+2. Check **Recent runs** on the Capabilities page if a fix changed a user setting; reviewers can undo some of them.
 3. Take over (below) and talk to the user, or run a read-only diagnostic from the conversation.
 4. Set the status to **Resolved** when the problem is gone.
 
@@ -52,7 +52,7 @@ Do not confuse the two hand-overs:
 - **Escalation**: the system supports this, but the agent could not fix it. A person helps the user now.
 - **Feature request**: the system cannot do this yet. It is saved for the development team.
 
-If you see a repeated need while working, use **Missing an action?** on the Capabilities (agent actions) page. It records the gap for the development team.
+If you see a repeated need while working, use **Missing an action?** on the Capabilities page. It records the gap for the development team.
 
 ## Outages (incidents)
 
@@ -73,7 +73,7 @@ A skill never grants a power. If it needs one the agent does not have, ask for i
 
 | Role | Persian name | Can |
 | --- | --- | --- |
-| Member | کارشناس پشتیبانی | Answer and take over conversations, run read-only diagnostics, declare incidents, draft and submit skills, read the Capabilities (agent actions) page |
+| Member | کارشناس پشتیبانی | Answer and take over conversations, run read-only diagnostics, declare incidents, draft and submit skills, read the Capabilities page |
 | Reviewer | کارشناس ارشد | Everything above, plus triage feature requests, publish, send back, retire and roll back skills, and undo fixes from Recent runs |
 | Admin | مدیر سیستم | Everything, plus the environment map, action switches and limits, endpoint commands, maintenance mode, device revoke, enrollment codes and operator accounts |
 

@@ -8,11 +8,11 @@ order: 8
 
 The agent fixes everyday problems (network, internal web apps, printers, shared drives, sign-in, slow PCs, desktop and apps) by combining small **actions**. An action is fixed code that ships with the product. The agent only picks an action ID and values from lists; it never writes a command.
 
-The live list, with every switch and limit, is the **Capabilities (agent actions)** page. This topic explains the rules behind it.
+The live list, with every switch and limit, is the **Capabilities** page. This topic explains the rules behind it.
 
 ## One catalogue
 
-`EndpointActionCatalog` (in `src/EndpointAgents.Shared/Actions`) defines every action: ID, area, tier, where it runs, parameters, limit, verification and undo. The agent's tools, the Capabilities (agent actions) page, the kill switches and the endpoint's own validation all read the same catalogue, so they cannot disagree.
+`EndpointActionCatalog` (in `src/EndpointAgents.Shared/Actions`) defines every action: ID, area, tier, where it runs, parameters, limit, verification and undo. The agent's tools, the Capabilities page, the kill switches and the endpoint's own validation all read the same catalogue, so they cannot disagree.
 
 ## Tiers
 
@@ -21,7 +21,7 @@ The live list, with every switch and limit, is the **Capabilities (agent actions
 | **Look** | Reads facts only | Runs freely. Default limit 30 per hour per PC. |
 | **SafeFix** | Small, reversible fix | Runs without asking, with no Tray card. Default 3 per hour. Checked before and after. |
 | **Disruptive** | Interrupts the user (restart the desktop or PC, close an app) | Needs `userConfirmed=true`, which the agent sets only after the user said yes in the chat ("now" or "later"). Default 2 per hour. |
-| **ItApproval** | Needs a helpdesk member's yes (removing software) | The request waits on the **Approvals** page; it runs as soon as a member approves it, and the user sees the result in the chat. Admins can also mark any SafeFix or Disruptive action "Needs IT approval" on the Capabilities (agent actions) page. Default 3 per hour. |
+| **ItApproval** | Needs a helpdesk member's yes (removing software) | The request waits on the **Approvals** page; it runs as soon as a member approves it, and the user sees the result in the chat. Admins can also mark any SafeFix or Disruptive action "Needs IT approval" on the Capabilities page. Default 3 per hour. |
 | **OperatorOnly** | Undo steps | Never offered to the agent. The helpdesk runs them from Recent runs. |
 
 Pick the lowest tier that fits when you add an action. A fix that changes a user setting should say how to undo itself.
@@ -50,12 +50,12 @@ Actions use Windows APIs, WMI, the service controller and event logs. The few ex
 ## Proof and undo
 
 - A fix with a verification check runs its Look action before and after, and the result shows both. The agent then asks the user whether the problem is solved.
-- Fixes that change a user setting store the previous values. A reviewer can undo them from **Capabilities (agent actions), Recent runs**.
+- Fixes that change a user setting store the previous values. A reviewer can undo them from **Capabilities, Recent runs**.
 - Every run is stored, appears on the conversation timeline and in the tool audit. Fixes are also recorded as repair attempts, so the agent never repeats one in the same conversation.
 
 ## Switches and limits
 
-Admins can switch any action off, or set another hourly limit, on the Capabilities (agent actions) page. It takes effect at once, with no release. Switched-off actions disappear from the list the agent sees. The control plane re-checks every call: tier, switch, hourly limit, user confirmation, parameters and targets.
+Admins can switch any action off, or set another hourly limit, on the Capabilities page. It takes effect at once, with no release. Switched-off actions disappear from the list the agent sees. The control plane re-checks every call: tier, switch, hourly limit, user confirmation, parameters and targets.
 
 ## Environment map
 

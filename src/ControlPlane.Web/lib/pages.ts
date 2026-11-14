@@ -12,7 +12,7 @@ export type PageInfo = {
   who: string;
   /** The main things you can do here, one short line each. */
   actions: string[];
-  /** Persian text, only for pages that have a Persian view (Capabilities (agent actions), User manual). */
+  /** Persian text, only for pages that have a Persian view (Capabilities, User manual). */
   fa?: Omit<PageInfo, "fa">;
 };
 
@@ -78,12 +78,12 @@ export const PAGES = {
     actions: ["Write and check a draft", "Submit it for review, publish it or retire it", "Roll back to an earlier version"]
   },
   "/capabilities/": {
-    name: "Capabilities (agent actions)",
+    name: "Capabilities",
     purpose: "The full list of things the support agent is allowed to do on a user's PC, built from the live catalogue.",
     who: "Everyone reads. Admins switch actions on or off. Reviewers can undo a recent fix.",
     actions: ["See every action, its risk level and its limits", "Read how to write a skill", "Check recent runs and undo one if needed"],
     fa: {
-      name: "Capabilities (کارهای عامل)",
+      name: "Capabilities",
       purpose: "فهرست کامل کارهایی که عامل پشتیبانی اجازه دارد روی کامپیوتر کاربر انجام دهد؛ از فهرست زنده ساخته می‌شود.",
       who: "همه می‌خوانند. مدیر کارها را روشن یا خاموش می‌کند. کارشناس ارشد می‌تواند یک تعمیر اخیر را برگرداند.",
       actions: ["دیدن هر کار، سطح خطر و سقف آن", "خواندن روش نوشتن مهارت", "دیدن اجراهای اخیر و برگرداندن در صورت نیاز"]

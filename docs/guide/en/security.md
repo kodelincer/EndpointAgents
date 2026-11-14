@@ -25,7 +25,7 @@ Tools such as SCCM ("Run Scripts") and Intune ("platform scripts") let an admini
 
 This system has no such feature, on purpose. Nobody can type a new command and run it on a PC: not the AI agent, not a helpdesk member, not an admin. A PC runs only two kinds of work:
 
-- **Fixed operations from the catalogue.** Each one is written and tested in the product's code (for example "clear the DNS cache" or "restart the print spooler"), takes only typed parameters, and appears on the **Capabilities (agent actions)** page where an admin can switch it off.
+- **Fixed operations from the catalogue.** Each one is written and tested in the product's code (for example "clear the DNS cache" or "restart the print spooler"), takes only typed parameters, and appears on the **Capabilities** page where an admin can switch it off.
 - **Packages the administrator signed.** A BAT or EXE file that a person reviewed, signed with the company's package key and pinned by its hash. If one byte changes, the PC refuses to run it.
 
 What this means in practice:
@@ -62,7 +62,7 @@ Every dashboard page and operator API needs a signed-in operator; anything not e
 
 - Tiers decide whether the user must say yes (Disruptive) and whether the agent may run an action at all (OperatorOnly).
 - Hourly limits per PC and action stop loops. Defaults are 30 for Look, 3 for SafeFix and 2 for Disruptive.
-- Admins can switch off any action, or change its limit, on **Capabilities (agent actions)** without a release.
+- Admins can switch off any action, or change its limit, on **Capabilities** without a release.
 - **Maintenance mode** (admin) makes the control plane refuse new endpoint commands with HTTP 503 while keeping connections alive. It resets when the API restarts.
 - **Device revoke** (admin) invalidates one PC's token. Enrollment codes are one-time and short-lived (30 minutes by default).
 - **An enrolled PC's identity cannot be borrowed.** A connection without the device token cannot register under the ID of an enrolled (or revoked) PC, and an enrollment code cannot replace a PC that is still active: revoke the old device first, then enroll again.

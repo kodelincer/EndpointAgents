@@ -57,7 +57,7 @@ Three rules hold at every step:
 | **HelpDesk (user chats)** | Read live conversations, take over, see escalated cases. |
 | **Approvals** | Approve or decline the requests that wait for a helpdesk member, such as removing software. |
 | **Feature requests** | Triage things users asked for that the system cannot do yet. |
-| **Capabilities (agent actions)** | The live list of everything the agent can do, with switches and limits. |
+| **Capabilities** | The live list of everything the agent can do, with switches and limits. |
 | **Agent Skills** | Write, check, submit and publish the instructions the agent follows. |
 | **Company resources** | Describe your servers, printers, shares and standards, and declare outages. |
 | **Dashboard users** | Admins manage accounts and roles. |

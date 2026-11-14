@@ -9,7 +9,7 @@ catalogued actions. It never runs commands it writes itself: every action is fix
 
 1. **One catalogue.** `src/EndpointAgents.Shared/Actions/EndpointActionCatalog.cs` defines
    every action: id, area, tier, where it runs, parameters, limit, verification and undo.
-   The agent's tools, the dashboard's Capabilities (agent actions) page, the kill switches and the
+   The agent's tools, the dashboard's Capabilities page, the kill switches and the
    endpoint's own validation all read it.
 2. **Tiers decide the rules.**
 
@@ -41,7 +41,7 @@ catalogued actions. It never runs commands it writes itself: every action is fix
    `endpoint_system_info` also masks IP addresses unless
    `Privacy:ShareIpAddressesWithAgent` is `true` in appsettings.
 9. **Kill switch and limits.** Every action can be switched off or given another hourly
-   limit on the Capabilities (agent actions) page, without a release.
+   limit on the Capabilities page, without a release.
 10. **Audit.** Every run is stored (`action_runs`), written to the conversation's helpdesk
     timeline and to the tool audit; fixes are also recorded as repair attempts so the
     agent never repeats one in a conversation.
@@ -103,7 +103,7 @@ Software the users may install is the set of install packages (`problem` startin
 ## Approvals
 
 Dashboard → Approvals (every operator role). The agent's ItApproval requests, the actions
-an admin switched to "Needs IT approval" on the Capabilities (agent actions) page, and packages whose
+an admin switched to "Needs IT approval" on the Capabilities page, and packages whose
 `problem` starts with `uninstall-` or whose manifest has `requiresApproval: true` wait here,
 with the user, the PC, the item and the agent's reason. **Approve and run** runs it at once
 through the same checks (switches, limits, before/after); **Decline** takes an optional note
@@ -118,7 +118,7 @@ the chat too.
 
 ## Who can do what
 
-Every page needs a signed-in operator. Members read the Capabilities (agent actions) page, approve or
+Every page needs a signed-in operator. Members read the Capabilities page, approve or
 decline requests, draft and submit skills and declare incidents. Reviewers also publish, send back, retire and roll
 back skills, and undo fixes from Recent runs. Admins also change the environment map,
 the standards and the action switches and limits.

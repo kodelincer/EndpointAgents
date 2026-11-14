@@ -21,7 +21,7 @@ order: 11
 | **Approvals** | Requests that wait for a helpdesk member: removing software, uninstall packages, and fixes an admin marked "Needs IT approval". **Approve and run** runs it at once; **Decline** takes a note the user sees. | Members and above |
 | **Lessons from chats** | Every solved chat leaves a short lesson (what the user said, what was tried, what fixed it), written without AI. A reviewer starts a skill draft from it, keeps it for analysis, or drops it; only a skill a reviewer publishes reaches the agent. The top shows which fixes solved the most chats. | Everyone reads, reviewers decide |
 | **Feature requests** | Things users asked for that the system cannot do yet: New, Planned, Done, Declined. | Reviewers and above |
-| **Capabilities (agent actions)** | Four tabs: **Actions** (switches and limits, admins change them), **Agent tools**, **Writing a skill**, **Recent runs** (reviewers can undo a fix). | Everyone reads |
+| **Capabilities** | Four tabs: **Actions** (switches and limits, admins change them), **Agent tools**, **Writing a skill**, **Recent runs** (reviewers can undo a fix). | Everyone reads |
 | **Agent Skills** | Draft, check, submit, publish, retire and roll back skills. | Members draft, reviewers publish |
 | **Company resources** | Three tabs: **Targets** (servers, web apps, printers, shares, plus **Removable software**, the **Driver catalog** of device models, and **Company VPNs**), **Standards** (DNS suffixes, proxy, time zone, root CAs) and **Incidents**. | Everyone declares incidents, admins edit the rest |
 | **Organisation settings** | The organisation **KMS server** (host name or IPv4, optional port, 1688 by default) used to activate volume Windows and Office. **Test from server** checks the server answers before you save. The organisation **time servers** (NTP: an internal address and/or internet names such as `time.windows.com`, comma-separated) are set here too: with them the agent can correct a wrong clock or date on a PC outside a domain. PCs in a domain take their time from Active Directory. | Admins |
@@ -34,7 +34,7 @@ All pages are in the sidebar on the left, grouped as **Monitor**, **Helpdesk**, 
 
 At the top of every page a short paragraph says what the page is for, who uses it and what you can do there.
 
-Some pages were renamed on 14 November 2026 to clearer names; their addresses did not change: Endpoints is now **Online Endpoints**, Devices **Endpoint (PC) inventory**, Health rules **Automatic checks**, Problems **Agent errors & problems**, Helpdesk **HelpDesk (user chats)**, Lessons **Lessons from chats**, Skills **Agent Skills**, Capabilities **Capabilities (agent actions)**, Environment **Company resources**, Packages **Packages and files**, Settings **Organisation settings** and Operators **Dashboard users**. The menu group Support is now **Helpdesk**.
+Some pages were renamed on 14 November 2026 to clearer names; their addresses did not change: Endpoints is now **Online Endpoints**, Devices **Endpoint (PC) inventory**, Health rules **Automatic checks**, Problems **Agent errors & problems**, Helpdesk **HelpDesk (user chats)**, Lessons **Lessons from chats**, Skills **Agent Skills**, Environment **Company resources**, Packages **Packages and files**, Settings **Organisation settings** and Operators **Dashboard users**. The menu group Support is now **Helpdesk**.
 
 - The button at the top of the sidebar shrinks it to icons only; hover an icon to see its name. The dashboard remembers your choice on this computer.
 - On a narrow window the sidebar is hidden. Open it with the menu button in the top bar, and close it with **Esc**, the close button or a click outside.
@@ -52,7 +52,7 @@ The first time the API starts it creates an `admin` account and writes its one-t
 2. **Overview:** is the connection state Live, and are the expected agents online?
 3. **Packages and files:** anything not Ready, Not signed or Hash mismatch?
 4. **Feature requests:** new ones to triage.
-5. **Capabilities (agent actions), Recent runs:** fixes that failed or were undone.
+5. **Capabilities, Recent runs:** fixes that failed or were undone.
 
 ## Troubleshooting
 
@@ -68,6 +68,6 @@ The first time the API starts it creates an `admin` account and writes its one-t
 | An agent never connects | The endpoint must use the server's real host name, not `localhost`. Check enrollment, and that the device was not revoked. |
 | A package is missing or Invalid | Open it on Packages and files and read the line that starts with the field to fix. After copying a changed package folder to the server, refresh the page. |
 | The agent ignores a new skill or SOUL change | Hermes only sees what is in its profile. Run `scripts\sync-hermes-profile.ps1 -Check`, then without `-Check`, and restart the gateway. |
-| An action is missing from the agent's list | It was switched off, or reached its hourly limit. See Capabilities (agent actions). |
+| An action is missing from the agent's list | It was switched off, or reached its hourly limit. See Capabilities. |
 
 For installation, ports and routes see `docs/control-plane-operations.md`, and for enrollment and Hermes setup see `docs/hermes-support-agent.md`.

@@ -32,7 +32,7 @@ Where to find a hardware ID: on a PC with the device attached, Device Manager �
 Some requests should never run without a person. They wait on the **Approvals** page:
 
 - Software removal (`software.uninstall`) and any package whose `problem` starts with `uninstall-` or whose manifest has `requiresApproval: true`.
-- Any other fix an admin switched to **Needs IT approval** on **Capabilities (agent actions) → Actions**.
+- Any other fix an admin switched to **Needs IT approval** on **Capabilities → Actions**.
 
 Each request shows the user, the PC, the item and the agent's reason. **Approve and run** runs it at once through the same checks as any other action (kill switch, hourly limit, before and after). **Decline** takes a note that the user sees. Either way the user gets a short message in their chat, and the decision is recorded with your name.
 
@@ -70,7 +70,7 @@ Windows still refuses a driver whose own signature is invalid, on top of the pac
 ## Keeping it healthy
 
 - Review **Feature requests** weekly. They show which operations to ask for next.
-- Look at **Capabilities (agent actions) → Recent runs** after changes; reviewers can undo a fix from there.
+- Look at **Capabilities → Recent runs** after changes; reviewers can undo a fix from there.
 - Declare an **Incident** as soon as a server or the link is down, so users are told it is known.
 - After any change to a reviewed skill or `SOUL.md` in the repository, run `scripts\sync-hermes-profile.ps1` again.
 - Read [Security and hardening](/docs/security/) before you move from testing to production.

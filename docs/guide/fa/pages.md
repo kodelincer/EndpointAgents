@@ -21,7 +21,7 @@ order: 11
 | **Approvals** | درخواست‌هایی که منتظر کارشناس پشتیبانی‌اند: حذف نرم‌افزار، بسته‌های حذف، و تعمیرهایی که مدیر «Needs IT approval» زده است. **Approve and run** فوراً اجرا می‌کند؛ **Decline** یادداشتی می‌گیرد که کاربر می‌بیند. | کارشناس پشتیبانی و بالاتر |
 | **Lessons from chats** | هر گفتگوی حل‌شده یک درس کوتاه به جا می‌گذارد (کاربر چه گفت، چه امتحان شد، چه چیزی درستش کرد) که بدون هوش مصنوعی نوشته می‌شود. کارشناس ارشد از آن پیش‌نویس مهارت می‌سازد، برای تحلیل نگهش می‌دارد یا کنارش می‌گذارد؛ فقط مهارتی که کارشناس ارشد منتشر کند به عامل می‌رسد. بالای صفحه نشان می‌دهد کدام رفع‌ها بیشترین گفتگوها را حل کرده‌اند. | همه می‌خوانند، کارشناس ارشد تصمیم می‌گیرد |
 | **Feature requests** | چیزهایی که کاربران خواسته‌اند و سیستم هنوز نمی‌تواند: New، Planned، Done، Declined. | کارشناس ارشد و بالاتر |
-| **Capabilities (agent actions)** | چهار زبانه: **Actions** (کلیدها و سقف‌ها، مدیر تغییر می‌دهد)، **Agent tools**، **Writing a skill**، **Recent runs** (کارشناس ارشد می‌تواند یک تعمیر را برگرداند). | همه می‌خوانند |
+| **Capabilities** | چهار زبانه: **Actions** (کلیدها و سقف‌ها، مدیر تغییر می‌دهد)، **Agent tools**، **Writing a skill**، **Recent runs** (کارشناس ارشد می‌تواند یک تعمیر را برگرداند). | همه می‌خوانند |
 | **Agent Skills** | نوشتن پیش‌نویس، بررسی، ارسال، انتشار، بازنشستگی و بازگشت مهارت‌ها. | کارشناس می‌نویسد، کارشناس ارشد منتشر می‌کند |
 | **Company resources** | سه زبانه: **Targets** (سرورها، سامانه‌های وب، چاپگرها، پوشه‌ها، به‌علاوهٔ **نرم‌افزارهای قابل حذف**، **فهرست درایور** مدل‌های دستگاه و **VPNهای سازمان**)، **Standards** (پسوند DNS، پروکسی، منطقهٔ زمانی، ریشه‌های CA) و **Incidents**. | همه قطعی اعلام می‌کنند، مدیر بقیه را ویرایش می‌کند |
 | **Organisation settings** | **سرور KMS سازمان** (نام یا آدرس IPv4، پورت اختیاری، پیش‌فرض 1688) برای فعال‌سازی ویندوز و آفیس حجمی. با **Test from server** قبل از ذخیره بررسی کنید که سرور جواب می‌دهد. **سرورهای زمان سازمان** (NTP: آدرس داخلی و/یا نام اینترنتی مثل `time.windows.com`، با کاما جدا شوند) هم همین‌جا تنظیم می‌شوند: با آن‌ها ایجنت می‌تواند ساعت یا تاریخ اشتباه را در کامپیوتری که عضو دامین نیست درست کند. کامپیوترهای عضو دامین زمان را از Active Directory می‌گیرند. | مدیر |
@@ -34,7 +34,7 @@ order: 11
 
 بالای هر صفحه یک بند کوتاه می‌گوید این صفحه برای چیست، چه کسی از آن استفاده می‌کند و آنجا چه کاری می‌توانید بکنید.
 
-نام بعضی صفحه‌ها در ۱۴ نوامبر ۲۰۲۶ روشن‌تر شد؛ نشانی (آدرس) آن‌ها عوض نشده است: Endpoints حالا **Online Endpoints** است، Devices **Endpoint (PC) inventory**، Health rules **Automatic checks**، Problems **Agent errors & problems**، Helpdesk **HelpDesk (user chats)**، Lessons **Lessons from chats**، Skills **Agent Skills**، Capabilities **Capabilities (agent actions)**، Environment **Company resources**، Packages **Packages and files**، Settings **Organisation settings** و Operators **Dashboard users**. گروه Support در منو حالا **Helpdesk** است.
+نام بعضی صفحه‌ها در ۱۴ نوامبر ۲۰۲۶ روشن‌تر شد؛ نشانی (آدرس) آن‌ها عوض نشده است: Endpoints حالا **Online Endpoints** است، Devices **Endpoint (PC) inventory**، Health rules **Automatic checks**، Problems **Agent errors & problems**، Helpdesk **HelpDesk (user chats)**، Lessons **Lessons from chats**، Skills **Agent Skills**، Environment **Company resources**، Packages **Packages and files**، Settings **Organisation settings** و Operators **Dashboard users**. گروه Support در منو حالا **Helpdesk** است.
 
 - دکمهٔ بالای نوار کناری آن را به حالت فقط‌آیکن کوچک می‌کند؛ با بردن ماوس روی آیکن نام صفحه دیده می‌شود. داشبورد این انتخاب را روی همین کامپیوتر به خاطر می‌سپارد.
 - در پنجرهٔ باریک نوار کناری پنهان است. با دکمهٔ منو در نوار بالا بازش کنید و با **Esc**، دکمهٔ بستن یا کلیک بیرون از آن ببندید.
@@ -52,7 +52,7 @@ order: 11
 2. **Overview:** وضعیت اتصال Live است و عامل‌های مورد انتظار آنلاین‌اند؟
 3. **Packages and files:** چیزی Not signed، Hash mismatch یا غیر از Ready هست؟
 4. **Feature requests:** درخواست‌های تازه برای بررسی.
-5. **Capabilities (agent actions)، Recent runs:** تعمیرهای ناموفق یا برگردانده‌شده.
+5. **Capabilities، Recent runs:** تعمیرهای ناموفق یا برگردانده‌شده.
 
 ## عیب‌یابی
 
@@ -68,6 +68,6 @@ order: 11
 | یک عامل هیچ‌وقت وصل نمی‌شود | کامپیوتر باید نام واقعی سرور را داشته باشد، نه `localhost`. ثبت‌نام و اینکه دستگاه باطل نشده باشد را بررسی کنید. |
 | بسته‌ای نیست یا Invalid است | در Packages and files بازش کنید و خطی را که با نام فیلد شروع می‌شود بخوانید. بعد از کپی پوشهٔ تغییرکرده روی سرور صفحه را تازه کنید. |
 | عامل مهارت یا تغییر SOUL تازه را نمی‌بیند | Hermes فقط چیزی را می‌بیند که در پروفایلش است. `scripts\sync-hermes-profile.ps1 -Check` و بعد بدون `-Check` را اجرا کنید و gateway را دوباره راه بیندازید. |
-| کاری در فهرست عامل نیست | خاموش شده یا به سقف ساعتی رسیده است. Capabilities (agent actions) را ببینید. |
+| کاری در فهرست عامل نیست | خاموش شده یا به سقف ساعتی رسیده است. Capabilities را ببینید. |
 
 برای نصب، پورت‌ها و مسیرها به `docs/control-plane-operations.md` و برای ثبت‌نام دستگاه و راه‌اندازی Hermes به `docs/hermes-support-agent.md` نگاه کنید.

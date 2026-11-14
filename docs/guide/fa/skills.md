@@ -14,8 +14,8 @@ order: 4
 
 | چه می‌خواهید بدانید | کجا ببینید |
 | --- | --- |
-| همهٔ کارهایی که عامل می‌تواند اجرا کند، سطح و پارامترهایشان | **Capabilities (agent actions) ← Actions** |
-| ابزارهایی که عامل می‌تواند صدا بزند | **Capabilities (agent actions) ← Agent tools** |
+| همهٔ کارهایی که عامل می‌تواند اجرا کند، سطح و پارامترهایشان | **Capabilities ← Actions** |
+| ابزارهایی که عامل می‌تواند صدا بزند | **Capabilities ← Agent tools** |
 | کدام تیکت‌های رایج از قبل کار دارند | [تیکت‌های رایج و کار مربوط به هرکدام](/docs/catalog/) |
 | فهرست‌هایی که عامل می‌تواند از آن‌ها انتخاب کند (سرور، چاپگر، نرم‌افزار قابل حذف، مدل دستگاه، VPN) | **Company resources**، [راه‌اندازی سازمان شما](/docs/setup/) |
 | رفتار کلی عامل | [عامل چطور از مهارت، ابزار و بسته استفاده می‌کند](/docs/agent/) |
@@ -101,7 +101,7 @@ Ask whether printing works now. If not and nothing untried fits, escalate_to_hel
 
    | پیام | معنی |
    | --- | --- |
-   | Unknown tool یا action | نام اشتباه است یا وجود ندارد. شناسهٔ دقیق را از صفحهٔ Capabilities (agent actions) کپی کنید. |
+   | Unknown tool یا action | نام اشتباه است یا وجود ندارد. شناسهٔ دقیق را از صفحهٔ Capabilities کپی کنید. |
    | Helpdesk only | کار OperatorOnly (برگشت) را نام برده‌اید. |
    | Looks like a command | عامل دستور اجرا نمی‌کند. به‌جایش کار بنویسید. |
    | Reads like a permission | متن مهارت اجازه نمی‌دهد. به شکل دستورالعمل بازنویسی کنید. |
@@ -114,7 +114,7 @@ Ask whether printing works now. If not and nothing untried fits, escalate_to_hel
 
 ## وقتی کاری که لازم دارید وجود ندارد
 
-در مهارت دورش نزنید. ثبتش کنید: صفحهٔ **Feature requests** (درخواست‌هایی که کاربران می‌کنند عامل اینجا ثبت می‌کند) و فرم **Missing an action?** در **Capabilities (agent actions) ← Actions**. توسعه‌دهنده‌ها کار را اضافه می‌کنند و شما مهارت را برای استفاده از آن به‌روز می‌کنید.
+در مهارت دورش نزنید. ثبتش کنید: صفحهٔ **Feature requests** (درخواست‌هایی که کاربران می‌کنند عامل اینجا ثبت می‌کند) و فرم **Missing an action?** در **Capabilities ← Actions**. توسعه‌دهنده‌ها کار را اضافه می‌کنند و شما مهارت را برای استفاده از آن به‌روز می‌کنید.
 
 تیکت‌های رایجی که برنامه‌ریزی شده ولی هنوز ساخته نشده در [تیکت‌های رایج و کار مربوط به هرکدام](/docs/catalog/) آمده است.
 

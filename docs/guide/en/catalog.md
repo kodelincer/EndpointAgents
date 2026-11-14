@@ -21,7 +21,7 @@ Microsoft 365 services (Teams, OneDrive, Exchange Online, Entra sign-in) are **n
 | **Person** | Only a helpdesk member may do it. The agent sends a **Helpdesk task** to **Approvals** with `request_helpdesk_action`; nothing runs on the PC. |
 | **Built / Planned** | Built means it exists in the code. Planned means it is on the list for a later batch; until then the agent escalates or logs a feature request. |
 
-An admin can move any Fix or Disrupt operation to **IT** on **Capabilities (agent actions) → Actions** ("Needs IT approval").
+An admin can move any Fix or Disrupt operation to **IT** on **Capabilities → Actions** ("Needs IT approval").
 
 ## Network and internet
 
