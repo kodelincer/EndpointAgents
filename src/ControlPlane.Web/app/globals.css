@@ -926,7 +926,7 @@ a.ov-tile:hover .ov-tile-go, a.ov-tile:focus-visible .ov-tile-go { opacity: 1; }
 
 .problem-filters input, .problem-filters select, .settings-grid input, .settings-grid select, .problem-actions input, .problem-actions select { height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface); }
 .problem-filters input:focus-visible, .problem-filters select:focus-visible, .settings-grid input:focus-visible, .settings-grid select:focus-visible, .problem-actions input:focus-visible, .problem-actions select:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-/* =============================================================================
+/* ======================================================================
    Restyle: one visual system for every page, drawn from the sign-in screen.
    The sidebar is the route-ink metro line (groups are lines, pages are stations,
    the current page is the white "you are here" stop); content sits on soft cards.
@@ -1130,3 +1130,36 @@ body { background: var(--canvas); -webkit-font-smoothing: antialiased; }
 .queue-live { margin-bottom: 14px; padding: 12px 16px; display: flex; align-items: center; gap: 28px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); font-variant-numeric: tabular-nums; }.queue-live div { display: flex; flex-direction: column; gap: 2px; }.queue-live span { color: var(--muted); font-size: 11px; }.queue-live strong { font-size: 18px; }.queue-live small { color: var(--muted); font-size: 12px; font-weight: 500; }.queue-live p { margin: 0 0 0 auto; color: var(--muted); font-size: 12px; }
 .settings-card { padding: 4px 18px 16px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }.settings-card h2 { margin: 14px 0 4px; font-size: 14px; }.settings-field { padding: 14px 0; display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 24px; align-items: start; border-bottom: 1px solid var(--line); }.settings-field label { display: flex; flex-direction: column; gap: 4px; }.settings-field label strong { font-size: 13px; }.settings-field label span { color: var(--muted); font-size: 12px; line-height: 1.5; }.settings-input { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }.settings-input input { width: 96px; height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-variant-numeric: tabular-nums; }.settings-input input[aria-invalid=true] { border-color: var(--danger); }.settings-input > span { color: var(--muted); font-size: 12px; }.settings-input small { flex-basis: 100%; color: var(--danger); font-size: 11px; }.settings-actions { padding-top: 14px; display: flex; justify-content: flex-end; align-items: center; gap: 8px; }.settings-actions > span { margin-right: auto; color: oklch(0.4 0.11 155); font-size: 12px; }
 @media (max-width: 640px) { .settings-field { grid-template-columns: 1fr; gap: 10px; }.queue-live { flex-wrap: wrap; gap: 16px; }.queue-live p { margin-left: 0; flex-basis: 100%; } }
+=======
+/* Sidebar as a metro route, in the sign-in page's ink: each section group is a line,
+   each page a station, the current page the white "you are here" stop. */
+.sidebar { --route-ink: oklch(0.23 0.03 258); --route-ink-2: oklch(0.29 0.035 258); --route-line: oklch(0.7 0.13 252); --route-text: oklch(0.76 0.025 255);
+  background: var(--route-ink); border-right-color: oklch(0.3 0.03 258); color: var(--route-text); }
+.sidebar-head { border-bottom-color: oklch(0.31 0.03 258); }
+.sidebar .brand { color: white; }
+.sidebar .brand-mark { background: var(--route-ink-2); box-shadow: inset 0 0 0 1px oklch(0.38 0.04 258); }
+.sidebar .brand-copy > span { color: var(--route-text); }
+.sidebar .sidebar-toggle { color: var(--route-text); }
+.sidebar .sidebar-toggle:hover { color: white; background: var(--route-ink-2); }
+.sidebar .nav-group-title { color: oklch(0.63 0.03 255); }
+.sidebar .nav-group ul { position: relative; gap: 2px; }
+.sidebar .nav-group ul::before { content: ""; position: absolute; left: 18px; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: color-mix(in oklch, var(--route-line) 70%, var(--route-ink)); animation: route-draw 700ms cubic-bezier(.16,1,.3,1) both; }
+.sidebar .nav-link { padding: 0 8px 0 6px; color: var(--route-text); }
+.sidebar .nav-link svg { position: relative; box-sizing: content-box; padding: 5px; border-radius: 50%; background: var(--route-ink); box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--route-line) 70%, var(--route-ink)); transition: background .18s ease-out, color .18s ease-out, box-shadow .18s ease-out; }
+.sidebar .nav-link:hover { color: white; background: var(--route-ink-2); }
+.sidebar .nav-link:hover svg { background: var(--route-ink-2); }
+.sidebar .nav-link[aria-current="page"] { color: white; background: var(--route-ink-2); }
+.sidebar .nav-link[aria-current="page"]::after { display: none; }
+.sidebar .nav-link[aria-current="page"] svg { color: var(--action); background: white; box-shadow: 0 0 0 4px color-mix(in oklch, var(--route-line) 35%, transparent); }
+.sidebar .nav-link:focus-visible { outline-color: color-mix(in oklch, var(--route-line) 70%, transparent); }
+.sidebar-foot { border-top-color: oklch(0.31 0.03 258); }
+.sidebar .account-button { color: var(--route-text); }
+.sidebar .account-button:hover, .sidebar .account-button[aria-expanded="true"] { background: var(--route-ink-2); }
+.sidebar .account-avatar { color: white; background: color-mix(in oklch, var(--route-line) 45%, var(--route-ink)); }
+.sidebar .account-copy strong { color: white; }
+.sidebar .account-copy span { color: var(--route-text); }
+.app-shell.collapsed .sidebar .nav-group ul::before { left: 20.5px; }
+.app-shell.collapsed .sidebar .nav-group + .nav-group { border-top-color: oklch(0.31 0.03 258); }
+.app-shell.collapsed .sidebar .nav-link { padding: 0; }
+@media (max-width: 1024px) { .app-shell.collapsed .sidebar .nav-group ul::before { left: 18px; } .app-shell.collapsed .sidebar .nav-link { padding: 0 8px 0 6px; } }
+@media (prefers-reduced-motion: reduce) { .sidebar .nav-group ul::before { animation: none; } .sidebar .nav-link svg { transition: none; } }
