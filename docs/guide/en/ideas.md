@@ -176,6 +176,8 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 
 **How an agent uses the menus (Microsoft docs):** (1) the agent asks Windows "which menus are there?" and the registry answers with every MCP server and its tools on that PC; (2) before a tool touches files or settings, Windows asks the user (or follows the admin's rule) whether this agent may use it: allow always, ask every time, or never; (3) every call is written to a log that the user and IT can review. For us this means a second, independent audit trail from Windows itself next to our own dashboard history, and our endpoint service would be registered as just one agent with only the few tools our catalogue names.
 
+> **What we would never do:** let Hermes read all the Windows and app menus and order anything it likes. Hermes still only sees our catalogue. Each of our operations may use at most **one fixed** Windows or app menu item behind the scenes, chosen by an IT member when the operation is added, so the rule "only catalogued, fixed operations run" stays exactly the same.
+
 **How we would use it (keeping our rules):**
 
 1. **No free ordering.** Hermes never sees the Windows menus. It still only sees our catalogue.
