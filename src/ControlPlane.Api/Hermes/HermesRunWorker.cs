@@ -32,12 +32,27 @@ public sealed class HermesRunWorker(
         while (!stoppingToken.IsCancellationRequested)
         {
             _activeRuns.RemoveWhere(task => task.IsCompleted);
-            while (_activeRuns.Count < _options.MaxConcurrentRuns)
+            try
             {
-                var lease = await store.LeaseNextRunAsync(_options.MaxHistoryMessages,
-                    TimeSpan.FromSeconds(_options.RunTimeoutSeconds + 60), stoppingToken);
-                if (lease is null) break;
-                _activeRuns.Add(ProcessRunAsync(lease, stoppingToken));
+                while (_activeRuns.Count < _options.MaxConcurrentRuns)
+                {
+                    var lease = await store.LeaseNextRunAsync(_options.MaxHistoryMessages,
+                        TimeSpan.FromSeconds(_options.RunTimeoutSeconds + 60), stoppingToken);
+                    if (lease is null) break;
+                    _activeRuns.Add(ProcessRunAsync(lease, stoppingToken));
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                // An unhandled error here would stop the whole control plane (the host's default
+                // for a failed background service). A busy or briefly locked database is not
+                // worth that: wait and try again.
+                logger.LogError(ex, "Could not pick up the next chat run; trying again shortly.");
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
             }
 
             if (_activeRuns.Count == 0)

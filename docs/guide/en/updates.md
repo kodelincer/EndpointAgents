@@ -28,6 +28,10 @@ A PC goes back to its previous version, without anyone doing anything, in two ca
 - **The new version does not connect** within 3 minutes after the switch. The updater puts the old version back at once.
 - **The new version keeps crashing** in its first 24 hours: if the service stops unexpectedly 3 times in that time, the PC goes back to the old version.
 
+A power cut or a hard reset is not counted as a crash: when Windows itself started again after the service's last start, the PC went down, not the new version.
+
+If the PC loses power in the middle of the switch, the updater never finishes its part. The service then finishes it by itself about 15 minutes later: a new version that reached the control plane is kept and watched for 24 hours like any other update, and one that never connected is rolled back.
+
 The failed version is written down on the PC and reported to the control plane. **That PC will not try that version again**, even when it is the target for everyone, so a broken version cannot crash a PC over and over. The dashboard shows the PC as *Rolled back* with the reason. When the team has fixed the problem, they ship it as a **new** version number (for example 0.3.1 after 0.3.0), and the PC takes that one.
 
 A PC never goes to an older version on its own (no downgrade), so a mistake in the settings cannot push old code to everyone.

@@ -36,6 +36,7 @@ public sealed class AgentUpdateWorker(
         {
             try
             {
+                if (RecoverInterruptedUpdate()) return; // the updater stops this service and rolls back
                 await ReportFinishedUpdateAsync(stoppingToken);
                 if (DateTimeOffset.UtcNow >= nextCheck && _registered)
                 {
@@ -54,6 +55,29 @@ public sealed class AgentUpdateWorker(
 
             if (await WaitAsync(TimeSpan.FromMinutes(1), stoppingToken))
                 nextCheck = DateTimeOffset.UtcNow; // "check now" from the control plane
+        }
+    }
+
+    /// <summary>
+    /// Finishes an update whose updater died half-way (for example the PC lost power during the
+    /// switch). True when the previous version is being put back.
+    /// </summary>
+    private bool RecoverInterruptedUpdate()
+    {
+        try
+        {
+            var outcome = AgentUpdateProbation.RecoverOrphaned(installer.StatePath, agent.Version,
+                DateTimeOffset.UtcNow, connected: _registered);
+            if (outcome != AgentUpdateProbation.OrphanOutcome.None)
+                logger.LogWarning("The updater did not finish the update to {Version}: {Outcome}.",
+                    agent.Version, outcome);
+            return outcome == AgentUpdateProbation.OrphanOutcome.RollingBack;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                   or System.ComponentModel.Win32Exception)
+        {
+            logger.LogWarning(ex, "Could not finish an interrupted agent update.");
+            return false;
         }
     }
 

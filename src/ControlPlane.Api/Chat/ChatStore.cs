@@ -231,8 +231,16 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
         }
     }
 
+    /// <param name="allowReplacingActiveDevice">
+    /// False for callers from the network: a one-time code must not be able to take over the
+    /// identity (and the conversations) of a PC that is already enrolled and not revoked. An
+    /// admin revokes the old device first. The server itself (development scripts) may replace.
+    /// </param>
+    /// <exception cref="DeviceAlreadyEnrolledException">The code is valid, but the requested
+    /// device is active and may not be replaced. The code stays unused.</exception>
     public async Task<EnrollmentRedemption?> RedeemEnrollmentAsync(
-        EnrollmentRequest request, CancellationToken cancellationToken)
+        EnrollmentRequest request, CancellationToken cancellationToken,
+        bool allowReplacingActiveDevice = true)
     {
         if (string.IsNullOrWhiteSpace(request.EnrollmentCode)) return null;
         var now = DateTimeOffset.UtcNow;
@@ -263,6 +271,26 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
                 return null;
             }
             await reader.DisposeAsync();
+
+            if (!allowReplacingActiveDevice)
+            {
+                await using var existing = connection.CreateCommand();
+                existing.Transaction = (SqliteTransaction)transaction;
+                existing.CommandText =
+                    """
+                    SELECT EXISTS(
+                        SELECT 1 FROM devices
+                        WHERE agent_id = $agent_id AND revoked_at_utc IS NULL
+                    );
+                    """;
+                existing.Parameters.AddWithValue("$agent_id", agentId);
+                if (Convert.ToInt64(await existing.ExecuteScalarAsync(cancellationToken),
+                        CultureInfo.InvariantCulture) == 1)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    throw new DeviceAlreadyEnrolledException(agentId);
+                }
+            }
 
             await using var redeem = connection.CreateCommand();
             redeem.Transaction = (SqliteTransaction)transaction;
@@ -336,6 +364,27 @@ public sealed partial class ChatStore(IOptions<ChatOptions> options)
             """,
             [("$now", Format(DateTimeOffset.UtcNow)), ("$agent_id", agentId)],
             cancellationToken);
+
+    /// <summary>True when this id was ever enrolled, also when it was revoked since.</summary>
+    public async Task<bool> IsDeviceEnrolledAsync(
+        string agentId, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await using var connection = await OpenAsync(cancellationToken);
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                "SELECT EXISTS(SELECT 1 FROM devices WHERE agent_id = $agent_id COLLATE NOCASE);";
+            command.Parameters.AddWithValue("$agent_id", agentId);
+            return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken),
+                CultureInfo.InvariantCulture) == 1;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
 
     public async Task<bool> IsDeviceActiveAsync(
         string agentId, CancellationToken cancellationToken)
