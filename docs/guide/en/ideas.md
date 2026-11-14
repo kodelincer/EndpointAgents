@@ -174,6 +174,8 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 
 **How apps publish a menu (Microsoft docs):** an MSIX-packaged app declares an MCP server in its manifest and Windows registers it on install and removes it on uninstall. Other servers can be added by hand with `odr.exe mcp add`, and `odr.exe list` shows what is there. By default each server runs contained, in a separate Windows session under a separate agent account, without direct access to the user's files, settings or credentials; production servers must be signed with a trusted certificate. Admins control which agent may use which server through Windows Settings and Intune, and interactions can be logged.
 
+**How an agent uses the menus (Microsoft docs):** (1) the agent asks Windows "which menus are there?" and the registry answers with every MCP server and its tools on that PC; (2) before a tool touches files or settings, Windows asks the user (or follows the admin's rule) whether this agent may use it: allow always, ask every time, or never; (3) every call is written to a log that the user and IT can review. For us this means a second, independent audit trail from Windows itself next to our own dashboard history, and our endpoint service would be registered as just one agent with only the few tools our catalogue names.
+
 **How we would use it (keeping our rules):**
 
 1. **No free ordering.** Hermes never sees the Windows menus. It still only sees our catalogue.
