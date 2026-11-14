@@ -21,7 +21,7 @@ order: 5
 | **Person** | فقط یک کارشناس پشتیبانی اجازهٔ انجامش را دارد. عامل با `request_helpdesk_action` یک **Helpdesk task** به **Approvals** می‌فرستد؛ روی کامپیوتر چیزی اجرا نمی‌شود. |
 | **Built / Planned** | Built یعنی در کد هست. Planned یعنی برای دستهٔ بعدی برنامه‌ریزی شده؛ تا آن موقع عامل ارجاع می‌دهد یا درخواست قابلیت ثبت می‌کند. |
 
-مدیر می‌تواند هر کار Fix یا Disrupt را در **Agent actions ← Actions** به **IT** ببرد («Needs IT approval»).
+مدیر می‌تواند هر کار Fix یا Disrupt را در **Capabilities (agent actions) ← Actions** به **IT** ببرد («Needs IT approval»).
 
 ## شبکه و اینترنت
 

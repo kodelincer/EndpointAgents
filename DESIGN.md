@@ -14,7 +14,7 @@ Use Geist Sans for interface text and Geist Mono for JSON, identifiers, timestam
 
 ## Layout
 
-A route-ink sidebar on the left carries navigation as a metro line (groups are lines, pages are stations, the current page a white stop), matching the sign-in screen. A quiet translucent top bar holds the page title and live state. Content sits on white 12px cards with soft shadows over a cool canvas; stats are separate tiles; tabs are segmented controls. Mix low-chroma colours with white in `srgb`, not `oklch` (oklch turns them pink). On the Online PCs page the agent registry owns the flexible main pane and the activity trace a fixed rail; drawers provide command review and trace inspection without losing list context.
+A route-ink sidebar on the left carries navigation as a metro line (groups are lines, pages are stations, the current page a white stop), matching the sign-in screen. A quiet translucent top bar holds the page title and live state. Content sits on white 12px cards with soft shadows over a cool canvas; stats are separate tiles; tabs are segmented controls. Mix low-chroma colours with white in `srgb`, not `oklch` (oklch turns them pink). On the Online Endpoints page the agent registry owns the flexible main pane and the activity trace a fixed rail; drawers provide command review and trace inspection without losing list context.
 
 ## Components
 

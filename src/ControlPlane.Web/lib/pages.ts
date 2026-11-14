@@ -12,7 +12,7 @@ export type PageInfo = {
   who: string;
   /** The main things you can do here, one short line each. */
   actions: string[];
-  /** Persian text, only for pages that have a Persian view (Agent actions, User manual). */
+  /** Persian text, only for pages that have a Persian view (Capabilities (agent actions), User manual). */
   fa?: Omit<PageInfo, "fa">;
 };
 
@@ -24,13 +24,13 @@ export const PAGES = {
     actions: ["Pick 7, 14, 30 or 90 days", "Click any tile or card to open its page", "Check that the service is running and live updates are connected"]
   },
   "/agents/": {
-    name: "Online PCs",
+    name: "Online Endpoints",
     purpose: "The PCs that are connected to the control plane right now, with what they are doing.",
     who: "Everyone reads. Admins can send commands.",
     actions: ["Search by PC name, host or user", "Open a PC to see its details and recent activity", "Send a catalogued command (the user still approves anything that changes their PC)"]
   },
   "/devices/": {
-    name: "PC inventory",
+    name: "Endpoint (PC) inventory",
     purpose: "Saved facts about every PC (Windows, hardware, disks, programs, drivers), even when it is offline, and how old each fact is.",
     who: "Everyone. Helpful before you answer a chat about a PC.",
     actions: ["Find a PC by name", "See when each fact was last read", "Use Read now to ask one PC again"]
@@ -42,13 +42,13 @@ export const PAGES = {
     actions: ["Add a check by choosing from fixed lists", "See which PCs passed, failed or were fixed", "A new check only reports during its first week"]
   },
   "/problems/": {
-    name: "Agent errors",
+    name: "Agent errors & problems",
     purpose: "Faults in our own agent software on the PCs (not the users' problems), grouped by kind, plus PCs that went quiet or stayed on an old version.",
     who: "Reviewers and admins. Admins can also collect logs from a PC.",
     actions: ["See how often each error happens and on which PCs", "Mark an error fixed in a version (it reopens if it comes back)", "Use Get logs to collect logs from one PC"]
   },
   "/support/": {
-    name: "User chats",
+    name: "HelpDesk (user chats)",
     purpose: "Every conversation between users and the support agent, live, including the ones the agent passed to a person.",
     who: "Helpdesk members and above.",
     actions: ["Answer chats waiting for the helpdesk first", "Take over a chat from the agent", "Read the messages and the checks the agent ran"]
@@ -72,18 +72,18 @@ export const PAGES = {
     actions: ["See which fixes solved the most chats", "Start an agent skill draft from a lesson", "Keep a lesson for later or drop it"]
   },
   "/skills/": {
-    name: "Agent skills",
+    name: "Agent Skills",
     purpose: "Step-by-step instructions that teach the support agent how to handle a kind of problem, using only existing agent actions.",
     who: "Helpdesk members write drafts. Reviewers publish them.",
     actions: ["Write and check a draft", "Submit it for review, publish it or retire it", "Roll back to an earlier version"]
   },
   "/capabilities/": {
-    name: "Agent actions",
+    name: "Capabilities (agent actions)",
     purpose: "The full list of things the support agent is allowed to do on a user's PC, built from the live catalogue.",
     who: "Everyone reads. Admins switch actions on or off. Reviewers can undo a recent fix.",
     actions: ["See every action, its risk level and its limits", "Read how to write a skill", "Check recent runs and undo one if needed"],
     fa: {
-      name: "کارهای عامل",
+      name: "Capabilities (کارهای عامل)",
       purpose: "فهرست کامل کارهایی که عامل پشتیبانی اجازه دارد روی کامپیوتر کاربر انجام دهد؛ از فهرست زنده ساخته می‌شود.",
       who: "همه می‌خوانند. مدیر کارها را روشن یا خاموش می‌کند. کارشناس ارشد می‌تواند یک تعمیر اخیر را برگرداند.",
       actions: ["دیدن هر کار، سطح خطر و سقف آن", "خواندن روش نوشتن مهارت", "دیدن اجراهای اخیر و برگرداندن در صورت نیاز"]
@@ -135,5 +135,5 @@ export const PAGES = {
 
 export type PageRoute = keyof typeof PAGES;
 
-/** The page name for a route, e.g. pageName("/agents/") is "Online PCs". */
+/** The page name for a route, e.g. pageName("/agents/") is "Online Endpoints". */
 export const pageName = (route: PageRoute) => PAGES[route].name;

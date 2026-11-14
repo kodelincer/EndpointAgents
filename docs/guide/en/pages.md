@@ -11,18 +11,18 @@ order: 11
 | Page | What you do there | Who |
 | --- | --- | --- |
 | **Overview** | A dashboard for the last 7, 14, 30 or 90 days: key-number tiles (PCs online, chats, share solved by the agent, chats waiting for the helpdesk, fixes run, approvals waiting, failing health checks, new feature requests), charts of chats and fixes per day, PCs by connection, Windows 10/11 and agent version, the most used operations and repair packages with their success rate, health rules, agent update results, and short lists of waiting approvals, chats sent to the helpdesk, feature requests and lessons. Every tile and card links to its page. Below it: the control plane service state and recent activity. Admins can switch maintenance mode on or off. Counting only, no AI. | Everyone reads, admins change |
-| **Online PCs** | The PCs that are connected. Admins can send a catalogued command; the user still sees a consent card for commands that change the PC. | Everyone reads, admins send |
-| **PC inventory** | What is known about each PC from earlier checks (Windows, hardware, disks, programs, drivers) and how old it is. **Read now** asks one PC again. PCs are never asked on a timer. | Everyone reads |
+| **Online Endpoints** | The PCs that are connected. Admins can send a catalogued command; the user still sees a consent card for commands that change the PC. | Everyone reads, admins send |
+| **Endpoint (PC) inventory** | What is known about each PC from earlier checks (Windows, hardware, disks, programs, drivers) and how old it is. **Read now** asks one PC again. PCs are never asked on a timer. | Everyone reads |
 | **Automatic checks** | Daily or weekly checks that fix common problems before users call. See [Health rules](/docs/health/). | Everyone reads, admins change |
-| **Agent errors** | What went wrong in our own agent on the PCs, which PCs went quiet or stayed on an old version, and Get logs for one PC. See [Problems and log server](/docs/problems/). | Reviewers and admins read, admins get logs |
+| **Agent errors & problems** | What went wrong in our own agent on the PCs, which PCs went quiet or stayed on an old version, and Get logs for one PC. See [Problems and log server](/docs/problems/). | Reviewers and admins read, admins get logs |
 | **Organisation settings** | The outside log server (Splunk, Graylog or Syslog). See [Problems and log server](/docs/problems/). | Admins only |
 | **Packages and files** | Every repair and install package with its status, symptoms, requirements, hashes, signer and exactly what to fix when it is not Ready. Admins switch an install package to **No approval needed**. | Everyone reads, admins switch |
-| **User chats** | Live conversations, escalated cases, take over, read-only diagnostics. See [Daily helpdesk work](/docs/helpdesk/). | Members and above |
+| **HelpDesk (user chats)** | Live conversations, escalated cases, take over, read-only diagnostics. See [Daily helpdesk work](/docs/helpdesk/). | Members and above |
 | **Approvals** | Requests that wait for a helpdesk member: removing software, uninstall packages, and fixes an admin marked "Needs IT approval". **Approve and run** runs it at once; **Decline** takes a note the user sees. | Members and above |
 | **Lessons from chats** | Every solved chat leaves a short lesson (what the user said, what was tried, what fixed it), written without AI. A reviewer starts a skill draft from it, keeps it for analysis, or drops it; only a skill a reviewer publishes reaches the agent. The top shows which fixes solved the most chats. | Everyone reads, reviewers decide |
 | **Feature requests** | Things users asked for that the system cannot do yet: New, Planned, Done, Declined. | Reviewers and above |
-| **Agent actions** | Four tabs: **Actions** (switches and limits, admins change them), **Agent tools**, **Writing a skill**, **Recent runs** (reviewers can undo a fix). | Everyone reads |
-| **Agent skills** | Draft, check, submit, publish, retire and roll back skills. | Members draft, reviewers publish |
+| **Capabilities (agent actions)** | Four tabs: **Actions** (switches and limits, admins change them), **Agent tools**, **Writing a skill**, **Recent runs** (reviewers can undo a fix). | Everyone reads |
+| **Agent Skills** | Draft, check, submit, publish, retire and roll back skills. | Members draft, reviewers publish |
 | **Company resources** | Three tabs: **Targets** (servers, web apps, printers, shares, plus **Removable software**, the **Driver catalog** of device models, and **Company VPNs**), **Standards** (DNS suffixes, proxy, time zone, root CAs) and **Incidents**. | Everyone declares incidents, admins edit the rest |
 | **Organisation settings** | The organisation **KMS server** (host name or IPv4, optional port, 1688 by default) used to activate volume Windows and Office. **Test from server** checks the server answers before you save. The organisation **time servers** (NTP: an internal address and/or internet names such as `time.windows.com`, comma-separated) are set here too: with them the agent can correct a wrong clock or date on a PC outside a domain. PCs in a domain take their time from Active Directory. | Admins |
 | **Dashboard users** | Create local accounts, add domain users, change roles, disable accounts, reset passwords. | Admins |
@@ -34,7 +34,7 @@ All pages are in the sidebar on the left, grouped as **Monitor**, **Helpdesk**, 
 
 At the top of every page a short box says what the page is for, who uses it and what you can do there.
 
-Some pages were renamed on 14 November 2026 to clearer names; their addresses did not change: Endpoints is now **Online PCs**, Devices **PC inventory**, Health rules **Automatic checks**, Problems **Agent errors**, Helpdesk **User chats**, Lessons **Lessons from chats**, Skills **Agent skills**, Capabilities **Agent actions**, Environment **Company resources**, Packages **Packages and files**, Settings **Organisation settings** and Operators **Dashboard users**. The menu group Support is now **Helpdesk**.
+Some pages were renamed on 14 November 2026 to clearer names; their addresses did not change: Endpoints is now **Online Endpoints**, Devices **Endpoint (PC) inventory**, Health rules **Automatic checks**, Problems **Agent errors & problems**, Helpdesk **HelpDesk (user chats)**, Lessons **Lessons from chats**, Skills **Agent Skills**, Capabilities **Capabilities (agent actions)**, Environment **Company resources**, Packages **Packages and files**, Settings **Organisation settings** and Operators **Dashboard users**. The menu group Support is now **Helpdesk**.
 
 - The button at the top of the sidebar shrinks it to icons only; hover an icon to see its name. The dashboard remembers your choice on this computer.
 - On a narrow window the sidebar is hidden. Open it with the menu button in the top bar, and close it with **Esc**, the close button or a click outside.
@@ -48,11 +48,11 @@ The first time the API starts it creates an `admin` account and writes its one-t
 
 ## Daily checks
 
-1. **User chats:** escalated cases first.
+1. **HelpDesk (user chats):** escalated cases first.
 2. **Overview:** is the connection state Live, and are the expected agents online?
 3. **Packages and files:** anything not Ready, Not signed or Hash mismatch?
 4. **Feature requests:** new ones to triage.
-5. **Agent actions, Recent runs:** fixes that failed or were undone.
+5. **Capabilities (agent actions), Recent runs:** fixes that failed or were undone.
 
 ## Troubleshooting
 
@@ -68,6 +68,6 @@ The first time the API starts it creates an `admin` account and writes its one-t
 | An agent never connects | The endpoint must use the server's real host name, not `localhost`. Check enrollment, and that the device was not revoked. |
 | A package is missing or Invalid | Open it on Packages and files and read the line that starts with the field to fix. After copying a changed package folder to the server, refresh the page. |
 | The agent ignores a new skill or SOUL change | Hermes only sees what is in its profile. Run `scripts\sync-hermes-profile.ps1 -Check`, then without `-Check`, and restart the gateway. |
-| An action is missing from the agent's list | It was switched off, or reached its hourly limit. See Agent actions. |
+| An action is missing from the agent's list | It was switched off, or reached its hourly limit. See Capabilities (agent actions). |
 
 For installation, ports and routes see `docs/control-plane-operations.md`, and for enrollment and Hermes setup see `docs/hermes-support-agent.md`.

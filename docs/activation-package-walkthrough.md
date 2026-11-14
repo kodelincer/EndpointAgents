@@ -121,7 +121,7 @@ Close the old Hermes window first; the second command runs in the new window.
 3. The agent checks activation, runs your package, and asks «آیا مشکل شما حل شد؟».
 4. Answer «نه» to watch the fallback: it runs the next repair in the Try order, and when
    none is left it hands the case to the helpdesk.
-5. In the dashboard **User chats** tab, open the conversation. The timeline shows each
+5. In the dashboard **HelpDesk (user chats)** tab, open the conversation. The timeline shows each
    repair tried and its result; "Raw trace" holds the endpoint's full response, including
    the BAT's output tail when it failed.
 

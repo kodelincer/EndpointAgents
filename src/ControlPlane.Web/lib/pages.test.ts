@@ -23,8 +23,8 @@ describe("page names and intros", () => {
   });
 
   it("uses the clearer names", () => {
-    expect(pageName("/agents/")).toBe("Online PCs");
-    expect(pageName("/devices/")).toBe("PC inventory");
+    expect(pageName("/agents/")).toBe("Online Endpoints");
+    expect(pageName("/devices/")).toBe("Endpoint (PC) inventory");
     expect(pageName("/operators/")).toBe("Dashboard users");
   });
 

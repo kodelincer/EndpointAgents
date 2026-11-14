@@ -39,7 +39,7 @@ A new kind of ticket climbs this ladder only as far as it must. Most stop at the
 
 | Step | When it is enough | Who does it | Where |
 | --- | --- | --- | --- |
-| 1. Write or edit a skill | The operations exist; the agent needs the right order and the way out | Helpdesk member, a reviewer publishes | **Agent skills** ([Writing skills](/docs/skills/)) |
+| 1. Write or edit a skill | The operations exist; the agent needs the right order and the way out | Helpdesk member, a reviewer publishes | **Agent Skills** ([Writing skills](/docs/skills/)) |
 | 2. Add a list entry | The skill exists but needs your printer, share, app, device model, VPN, Wi-Fi or site | Admin | **Company resources** ([Setting up your site](/docs/setup/)) |
 | 3. Add a signed package | The fix is a vendor installer, a driver or a BAT the organisation already trusts | Admin with the signing key | [Adding and signing packages](/docs/packages/) |
 | 4. Ask for a new operation | Nothing above can do it safely | Anyone: the agent logs users' wishes, the team adds its own | **Feature requests**, **Missing an action?** on Capabilities |
@@ -52,7 +52,7 @@ Every new operation must arrive complete: the code on the PC with no shell, a ca
 The order comes from real tickets, not from what is easy to build:
 
 1. **Feature requests** from users and the helpdesk, counted.
-2. Escalated conversations on **User chats** that no operation could solve.
+2. Escalated conversations on **HelpDesk (user chats)** that no operation could solve.
 3. The common-ticket map ([Common tickets and what handles them](/docs/catalog/)), which marks each ticket Built or Planned.
 
 A batch is a group of operations that close the most of those tickets with the least risk. Each batch ends with tests on a real PC before it is used.

@@ -13,7 +13,7 @@ The agent has three kinds of building blocks. They have different jobs, and none
 A **skill** is a short text file (`SKILL.md`) that tells the agent how to handle one kind of problem: what to check, what to try first, when to ask the user, when to escalate. Hermes picks a skill by its one-line description, so descriptions should contain the phrases users really write.
 
 - Reviewed skills for Office, Windows, network, printing, shared drives, sign-in, slow PCs, desktop apps and repair packages are in `deploy/hermes/skills`.
-- Helpdesk-written skills are created on the **Agent skills** page and published as `hd-<name>` skills.
+- Helpdesk-written skills are created on the **Agent Skills** page and published as `hd-<name>` skills.
 - A skill only **orders** existing tools. It cannot add a tool, an action or a permission. The control plane and the Hermes allow-list decide what is possible; if a skill says otherwise, the call is refused.
 
 ## 2. Tools: what the agent can call
