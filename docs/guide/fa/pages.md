@@ -32,7 +32,7 @@ order: 11
 
 همهٔ صفحه‌ها در نوار کناری سمت چپ‌اند و در گروه‌های **Monitor**، **Helpdesk**، **Agent setup**، **Administration** (فقط مدیرها) و **Help** آمده‌اند. صفحهٔ فعلی پررنگ است و عددهای قرمز تعداد موارد منتظر را نشان می‌دهند (مثلاً گفتگوهای باز پشتیبانی).
 
-بالای هر صفحه یک کادر کوتاه می‌گوید این صفحه برای چیست، چه کسی از آن استفاده می‌کند و آنجا چه کاری می‌توانید بکنید.
+بالای هر صفحه یک بند کوتاه می‌گوید این صفحه برای چیست، چه کسی از آن استفاده می‌کند و آنجا چه کاری می‌توانید بکنید.
 
 نام بعضی صفحه‌ها در ۱۴ نوامبر ۲۰۲۶ روشن‌تر شد؛ نشانی (آدرس) آن‌ها عوض نشده است: Endpoints حالا **Online Endpoints** است، Devices **Endpoint (PC) inventory**، Health rules **Automatic checks**، Problems **Agent errors & problems**، Helpdesk **HelpDesk (user chats)**، Lessons **Lessons from chats**، Skills **Agent Skills**، Capabilities **Capabilities (agent actions)**، Environment **Company resources**، Packages **Packages and files**، Settings **Organisation settings** و Operators **Dashboard users**. گروه Support در منو حالا **Helpdesk** است.
 

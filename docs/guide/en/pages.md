@@ -32,7 +32,7 @@ order: 11
 
 All pages are in the sidebar on the left, grouped as **Monitor**, **Helpdesk**, **Agent setup**, **Administration** (admins only) and **Help**. The current page is highlighted, and red numbers show items waiting (for example open helpdesk cases).
 
-At the top of every page a short box says what the page is for, who uses it and what you can do there.
+At the top of every page a short paragraph says what the page is for, who uses it and what you can do there.
 
 Some pages were renamed on 14 November 2026 to clearer names; their addresses did not change: Endpoints is now **Online Endpoints**, Devices **Endpoint (PC) inventory**, Health rules **Automatic checks**, Problems **Agent errors & problems**, Helpdesk **HelpDesk (user chats)**, Lessons **Lessons from chats**, Skills **Agent Skills**, Capabilities **Capabilities (agent actions)**, Environment **Company resources**, Packages **Packages and files**, Settings **Organisation settings** and Operators **Dashboard users**. The menu group Support is now **Helpdesk**.
 

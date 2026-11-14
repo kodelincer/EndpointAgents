@@ -1,30 +1,26 @@
 import { PAGES, type PageInfo, type PageRoute } from "@/lib/pages";
 
 const LABELS = {
-  en: { about: "About", purpose: "What it's for", who: "Who uses it", actions: "What you can do" },
-  fa: { about: "دربارهٔ", purpose: "این صفحه برای چیست", who: "چه کسی از آن استفاده می‌کند", actions: "اینجا چه کاری می‌توانید بکنید" }
+  en: { about: "About", who: "Who uses it:", actions: "Here you can" },
+  fa: { about: "دربارهٔ", who: "چه کسی:", actions: "اینجا می‌توانید" }
 };
 
-/** The short "what is this page for, who uses it, what can I do" box under each page heading. */
+/** Joins the action lines into one sentence: "a; b; c." with each line starting in lower case. */
+export function actionSentence(actions: string[], language: "en" | "fa" = "en") {
+  const lines = actions.map(line => language === "en" ? line.charAt(0).toLowerCase() + line.slice(1) : line);
+  return language === "fa" ? `${lines.join("، ")}.` : `${lines.join("; ")}.`;
+}
+
+/** A short paragraph under each page heading: what the page is for, who uses it and what you can do. */
 export function PageIntro({ route, language = "en" }: { route: PageRoute; language?: "en" | "fa" }) {
   const info: PageInfo = PAGES[route];
   const fa = language === "fa" && info.fa;
   const page = fa ? info.fa! : info;
-  const t = LABELS[fa ? "fa" : "en"];
-  return <section className="page-intro" aria-label={`${t.about} ${page.name}`}>
-    <div className="page-intro-item">
-      <span className="page-intro-label">{t.purpose}</span>
-      <p>{page.purpose}</p>
-    </div>
-    <div className="page-intro-item">
-      <span className="page-intro-label">{t.who}</span>
-      <p>{page.who}</p>
-    </div>
-    <div className="page-intro-item">
-      <span className="page-intro-label">{t.actions}</span>
-      <ul>{page.actions.map(action => <li key={action}>{action}</li>)}</ul>
-    </div>
-  </section>;
+  const lang = fa ? "fa" : "en";
+  const t = LABELS[lang];
+  return <p className="page-intro" aria-label={`${t.about} ${page.name}`}>
+    {page.purpose} <strong>{t.who}</strong> {page.who} <strong>{t.actions}:</strong> {actionSentence(page.actions, lang)}
+  </p>;
 }
 
 /** The page name in the chosen language (falls back to English). */
