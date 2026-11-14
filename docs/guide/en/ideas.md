@@ -183,6 +183,17 @@ Ideas A to L come from studying what the SCCM client and the Intune agent do (fr
 3. **Look before we build:** a read-only, no-AI inventory check lists which MCP servers and tools each PC has (`odr list`). The dashboard shows them, so IT can see what Windows and the installed apps offer across the fleet and choose which tools are worth turning into catalogued operations.
 4. **Fallback:** where the connector is missing (Windows 10, older Windows 11, an app without MCP), the same operation keeps using our own code. The user sees no difference.
 
+**Example: a user writes "my screen text is too small".**
+
+| Step | Today | Later, with Windows MCP |
+| --- | --- | --- |
+| 1 | The user types it in our Tray. | Same. |
+| 2 | Hermes picks our catalogued operation "increase text size". | Same. |
+| 3 | The control plane checks it and sends it to our service on the PC. | Same. |
+| 4 | Our service runs **our own code** to change the setting. | Our service orders `change_text_size` (example name) from the **Settings app's menu**, and Windows makes the change itself. If the PC has no Settings connector, it falls back to our own code. |
+
+The user sees no difference. The gain is for us: Microsoft writes and maintains that fix, and it keeps working when Windows changes.
+
 **Why:** less fix code for us to write and maintain, fixes that keep working when Windows or an app changes, and a clear audit trail on both sides.
 
 **Limits:** preview only; needs a recent Windows 11 build (Microsoft's pages say build 26220.7262 or later); nothing on Windows 10; Microsoft's admin controls assume Intune, which we do not use; the Settings tool list is not public yet. Revisit when it is generally available.
