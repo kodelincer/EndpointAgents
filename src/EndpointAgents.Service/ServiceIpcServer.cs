@@ -97,6 +97,11 @@ public sealed class ServiceIpcServer(
         security.AddAccessRule(new PipeAccessRule(
             new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
             PipeAccessRights.FullControl, AccessControlType.Allow));
+        // The account the service runs as. Already covered above for the installed service (SYSTEM);
+        // the unelevated development host needs it to open more than one pipe instance.
+        using (var self = WindowsIdentity.GetCurrent())
+            security.AddAccessRule(new PipeAccessRule(self.User!,
+                PipeAccessRights.FullControl, AccessControlType.Allow));
         // Users may only talk to the pipe. Full control would also let any user create a pipe
         // instance of their own under this name (and pose as the service to another user's
         // Tray) or change who may connect.
