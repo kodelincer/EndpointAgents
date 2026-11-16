@@ -46,6 +46,7 @@ Every idea must still keep the promises of the system: only catalogued, fixed op
 | W | Our own tiny problem-to-operation matching model, trained from Lessons (Mu-style) | AI agent | 3 | Idea | 2026-11-14 |
 | X | Catalogued "settings fixes" for everyday Windows settings | Helpdesk tools | 2 | Idea | 2026-11-14 |
 | Y | Health check: which Windows AI features are on (Recall, Copilot, agent features) | Proactive care | 3 | Idea | 2026-11-14 |
+| Z | Connect to SCCM or Intune where a company already has them | Later | 4 | Idea | 2026-11-16 |
 
 Ideas A to L come from studying what the SCCM client and the Intune agent do (from Microsoft's public documentation only, never from their code), and what our system is still missing.
 
@@ -269,6 +270,10 @@ Start the company's remote-support tool from the chat, only after the user says 
 A new or empty PC starts from the network (PXE) into a small Windows PE, and installs Windows from an approved image. IT members write the steps as skills and fixed tools: how to partition the disk, which drivers to add for each PC model, and which software the PC and its users need. The AI only picks among those approved steps; it never makes up disk or install commands. Idea from Reza, 2026-11-03 (earlier listed under "not to copy"; now an idea of its own because new PCs need it).
 
 **Design (2026-11-03):** fixed, signed steps only (identify, partition with a named layout, apply a hash-pinned image, add the model's drivers, fill a fixed answer file, install the agent, restart), an IT member approves each new PC by serial number before anything is erased, and the domain join uses an offline join blob so no password reaches the PC. Start with a USB stick, then PXE. Not built yet: it needs a PXE server and a spare PC or VM that can be wiped. Full design in `docs/network-os-install.md`.
+
+### Z. Connect to SCCM or Intune where a company already has them
+
+For a company that already runs SCCM or Intune, the AI agent could also ask those systems to act on a PC: run an existing SCCM script or application deployment, start an Intune remote action (sync, restart, rerun a remediation). The same rules stay: each SCCM or Intune action is one fixed catalogue entry with a tool, a tier and limits, chosen by IT, never a free command; our control plane holds the service account and keeps the audit. Our own agent stays on the PC for chat, diagnostics and our own fixes. Value: more customers (companies with SCCM or Intune), and fixes they already trust. Cost: test labs with SCCM and Intune, their permissions, and keeping up with their APIs. Not for our own pilot: we have neither, and Intune needs Microsoft 365, which we do not use. Idea from Reza, 2026-11-16.
 
 ## Things we decided not to copy
 
