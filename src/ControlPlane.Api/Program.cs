@@ -177,6 +177,7 @@ builder.Services.AddOptions<FileRepositoryOptions>()
         "FileRepository:MaxFileSizeBytes must be between 1 byte and 1 GiB.")
     .ValidateOnStart();
 builder.Services.AddSingleton<FileArtifactRepository>();
+builder.Services.AddSingleton<ControlPlane.Api.Files.Builder.PackageBuilder>();
 builder.Services.AddSingleton<ControlPlaneRuntimeState>();
 builder.Services.AddHealthChecks()
     .AddCheck<MaintenanceReadinessHealthCheck>("maintenance-readiness", tags: ["ready"]);
@@ -568,6 +569,7 @@ app.MapGet("/api/files/office/{artifactId}", async (string artifactId, HttpConte
 app.MapActionEndpoints();
 ControlPlane.Api.Updates.AgentUpdateEndpoints.MapAgentUpdateEndpoints(app);
 ControlPlane.Api.Software.SoftwareEndpoints.MapSoftwareEndpoints(app);
+ControlPlane.Api.Files.Builder.PackageBuilderEndpoints.MapPackageBuilderEndpoints(app);
 ControlPlane.Api.Health.HealthEndpoints.MapHealthEndpoints(app);
 ControlPlane.Api.Inventory.InventoryEndpoints.MapInventoryEndpoints(app);
 ControlPlane.Api.Lessons.LessonEndpoints.MapLessonEndpoints(app);

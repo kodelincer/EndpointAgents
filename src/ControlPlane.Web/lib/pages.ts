@@ -101,6 +101,12 @@ export const PAGES = {
     who: "Everyone reads. Admins decide which install packages need no approval.",
     actions: ["Check each package is Ready, and see exactly what to fix when it is not", "See which symptoms each package fixes", "Let an install package run without a helpdesk approval"]
   },
+  "/package-builder/": {
+    name: "Package builder",
+    purpose: "Turn a vendor's BAT file into a package without editing package.json by hand: upload the file, pick the answer for each of its screens, and the control plane writes the package with all hashes.",
+    who: "Helpdesk members and above. Only admins can change a package that is already signed.",
+    actions: ["Upload a BAT and see the menus and questions found in it", "Pick the answer for each screen, or type your own", "Set how to tell it worked and which PCs it fits", "Open an existing package to change it"]
+  },
   "/settings/": {
     name: "Organisation settings",
     purpose: "Company-wide settings that some agent actions use: the KMS activation server, the time servers, the AI request queue and the log server.",

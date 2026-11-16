@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, Package, RefreshCw, TriangleAlert } from "lucide-react";
+import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, Hammer, Package, RefreshCw, TriangleAlert } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { getPackageInventory } from "@/lib/control-plane";
 import { acceptedRiskLines, describeRun, describeStep, finishRules, packageCompatibility, packageStatus } from "@/lib/packages";
@@ -49,7 +50,10 @@ export function PackageCatalog() {
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="packages-title">
       <div><div className="file-heading-mark"><Package size={17} /></div><div><h1 id="packages-title">{pageName("/files/")}</h1></div></div>
-      <button className="secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
+      <div className="file-heading-actions">
+        <Link className="primary-button" href="/package-builder/"><Hammer size={15} />Build a package</Link>
+        <button className="secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
+      </div>
     </section>
     <PageIntro route="/files/" />
 
@@ -61,7 +65,7 @@ export function PackageCatalog() {
 
     {loading ? <div className="file-list" aria-label="Loading packages"><div className="file-skeleton" /></div> : packages.length === 0 ?
       <section className="file-empty"><span className="empty-icon"><Package size={23} /></span><h2>No packages yet</h2>
-        <p>Create one with <code>scripts\new-package.ps1</code>; see “How to add a package” below.</p></section> :
+        <p>Make one with the <Link href="/package-builder/">Package builder</Link>, or with <code>scripts\new-package.ps1</code>; see “How to add a package” below.</p></section> :
       <section className="file-list" aria-label="Packages">{packages.map(item =>
         <PackageRow key={item.id} item={item} inventory={inventory!} open={open === item.id}
           noApproval={noApproval.has(item.id)} onApprovalChange={skip => void toggleApproval(item, skip)}
@@ -93,6 +97,7 @@ function PackageRow({ item, inventory, open, onToggle, noApproval, onApprovalCha
           : "Waits for a helpdesk approval on the Approvals page")}</label>}
       {item.reasons.length > 0 && <ul className="package-reasons">{item.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       {item.warnings.length > 0 && <ul className="package-warnings">{item.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
+      {item.fileType !== "exe" && !item.software && <Link className="package-toggle" href={`/package-builder/?id=${encodeURIComponent(item.id)}`}><Hammer size={14} />Change in the Package builder</Link>}
       <button type="button" className="package-toggle" onClick={onToggle} aria-expanded={open}>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}{open ? "Hide details" : "Show details"}</button>
       {open && <PackageDetail item={item} inventory={inventory} />}
@@ -143,6 +148,7 @@ function PackageDetail({ item, inventory }: { item: BatPackage; inventory: Packa
 function HowToAddPackage() {
   return <section className="package-howto" aria-labelledby="howto-title">
     <h2 id="howto-title">How to add a package</h2>
+    <p>For a BAT, the easiest way is the <Link href="/package-builder/">Package builder</Link>: upload the file, pick the answer for each screen, save, then test and sign it (steps 5 and 6 below). To do it by hand instead:</p>
     <ol>
       <li>Review the BAT or EXE and get it from a trusted source.</li>
       <li>Create the package folder: <code>.\scripts\new-package.ps1 -File &lt;file.bat or file.exe&gt; -Id &lt;id&gt;</code>, adding <code>-NoInput</code> when the file needs no answers.</li>

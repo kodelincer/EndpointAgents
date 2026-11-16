@@ -24,7 +24,20 @@ The endpoint never improvises. It runs the file only if the file, the supporting
 | Activation (`office` or `windows`) | 1 | Windows or Office activation repairs, chosen by the dedicated activation tools |
 | General | 2 | Everything else. The agent picks it when the user's problem matches its `symptoms`, and it runs without asking the user. |
 
-## Steps
+## The easy way: the Package builder page
+
+For a BAT you do not need the scripts or a text editor. Open **Package builder** in the dashboard (or **Build a package** on Packages and files):
+
+1. **Upload the BAT.** The control plane only reads its text, it never runs it. It lists the menus, questions (`set /p`), one-key choices (`choice`) and pauses it finds, with the lines the BAT prints just before each one, the answers the menu offers and where each answer jumps (`:label`). Lint problems show right away.
+2. **Describe it.** Pick Office activation, Windows activation or General repair, then the id, the name and what it does. For a general repair add the ways users describe the problem.
+3. **Add your answers.** Click the answer you want under a found screen to add it as a step, or add a step by hand. The builder never picks an answer by itself. Check the order and the exact screen text against a real run on a test PC when you are not sure, because a BAT that builds its menus at run time can show screens the text does not reveal.
+4. **Set how to tell it worked** (success text, failure texts, exit codes) and **which PCs it fits**, then **Create the package**.
+
+The control plane writes `packages\<id>\` with the BAT unchanged and a `package.json` with the file and playbook hashes already pinned, exactly as `new-package.ps1` plus `-Fix` would. The package is saved **Not signed**, so no PC gets it yet. Then test it on one PC (`test-bat-playbook.ps1 -Package <folder> -Execute`) and sign it (`-Sign`); the page shows both commands with the right folder.
+
+To change a package, use **Change in the Package builder** on its row, or pick it at the top of the builder; you can keep its BAT or upload a new one. Any helpdesk member may create and change unsigned packages. Changing a signed package needs an admin, and saving it removes the signature, so it leaves the PCs until it is signed again. The builder does not manage supporting files in `files\`; it keeps the ones a package already has.
+
+## Steps (by hand)
 
 You need the repository and the .NET 10 SDK on your admin PC. Run these from the repository root.
 

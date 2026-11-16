@@ -23,6 +23,12 @@ status and exactly what to fix.
 The worked example below uses the harmless mock
 `deploy\samples\menu-repair-sample.bat`. It prints a repair menu and changes nothing.
 
+> **Shortcut:** the dashboard **Package builder** page does steps 2 to 5 and the hash
+> part of step 7 for you: upload the BAT, pick the answer for each screen it finds, fill in
+> the finish rules and compatibility, and save. It writes the same folder and
+> `package.json` this guide describes, unsigned. Then continue with the test run and
+> `-Sign`. See the "Package builder" section of `docs/guide/en/packages.md`.
+
 ## 1. Place the file
 
 Put the BAT somewhere on your admin PC. Only package BATs from a trusted source whose

@@ -1,6 +1,6 @@
 "use client";
 
-import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, CloudDownload, GraduationCap, HeartPulse, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, MonitorSmartphone, Package, PanelLeftClose, PanelLeftOpen, RefreshCw, Server, Settings as SettingsIcon, ShieldCheck, Siren, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
+import { BookMarked, BookOpen, ChevronDown, CircleAlert, ClipboardCheck, CloudDownload, GraduationCap, Hammer, HeartPulse, KeyRound, LayoutDashboard, LifeBuoy, Lightbulb, LogOut, Map as MapIcon, Menu, MonitorSmartphone, Package, PanelLeftClose, PanelLeftOpen, RefreshCw, Server, Settings as SettingsIcon, ShieldCheck, Siren, Sparkles, Waypoints, X, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { roleName } from "@/lib/auth";
@@ -75,7 +75,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       { href: "/skills/", label: name("/skills/"), icon: Sparkles },
       { href: "/capabilities/", label: name("/capabilities/"), icon: BookOpen },
       { href: "/environment/", label: name("/environment/"), icon: MapIcon },
-      { href: "/files/", label: name("/files/"), icon: Package }
+      { href: "/files/", label: name("/files/"), icon: Package },
+      { href: "/package-builder/", label: name("/package-builder/"), icon: Hammer }
     ] },
     { title: "Administration", items: [
       { href: "/settings/", label: name("/settings/"), icon: SettingsIcon },
