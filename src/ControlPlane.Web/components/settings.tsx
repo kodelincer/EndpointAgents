@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
 import { LogServerSection } from "@/components/log-server-settings";
 import { HermesQueueSection } from "@/components/queue-settings";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 import {
   addNtpServer, getKmsSettings, getNtpSettings, internetNtpServers, kmsInputError, ntpInputError, saveKmsSettings, saveNtpSettings,
   testKmsServer, testNtpServers,
@@ -77,12 +79,11 @@ export function SettingsPage() {
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="settings-title">
       <div><div className="file-heading-mark"><SettingsIcon size={17} /></div><div>
-        <h1 id="settings-title">Settings</h1>
-        <p>Organisation settings the endpoint actions use. The agent never sees these addresses; it only runs the catalogued
-          actions that read them.</p></div></div>
+        <h1 id="settings-title">{pageName("/settings/")}</h1></div></div>
       <button className="secondary-button" onClick={() => void refresh()} disabled={loading}>
         <RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
     </section>
+    <PageIntro route="/settings/" />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} />
       <div><strong>Not saved</strong><span>{error}</span></div><button onClick={() => setError(undefined)}>Dismiss</button></div>}

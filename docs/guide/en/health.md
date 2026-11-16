@@ -12,7 +12,7 @@ Nothing here uses the AI, and nobody writes code. The control plane runs the sam
 
 ## The five answers
 
-Open **Health rules** in the menu and press **New rule** (admins only).
+Open **Automatic checks** in the menu and press **New rule** (admins only).
 
 1. **Check**: one item from the fixed list below, with its setting (for example "below 10 GB").
 2. **When it fails**: *Only report*, *Fix it by itself* (only the fixes listed for that check), or *Tell the user in the Tray* (a fixed Persian message next to the clock).

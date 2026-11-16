@@ -50,8 +50,8 @@ export function FileRepository() {
 
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="files-title">
-      <div><div className="file-heading-mark"><FileArchive size={17} /></div><div><h1 id="files-title">Endpoint file repository</h1>
-        <p>Approved files that endpoint agents can download from this control plane.</p></div></div>
+      <div><div className="file-heading-mark"><FileArchive size={17} /></div><div><h2 id="files-title">Downloadable files</h2>
+        <p>Approved files that PCs can download from this control plane.</p></div></div>
       <button className="secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
     </section>
 

@@ -142,7 +142,7 @@ the standards and the action switches and limits.
 
 ## Helpdesk skills
 
-Helpdesk members write skills on the Skills page: a name, a one-line description (Hermes
+Helpdesk members write skills on the Agent Skills page: a name, a one-line description (Hermes
 picks skills by it, so include the phrases users write) and the steps. **Check** lints the
 draft: unknown tools or action ids, helpdesk-only actions, command-like text, wording that
 reads like a permission, missing "ask the user" or escalation steps, IP addresses or UNC
@@ -163,7 +163,7 @@ The program name for `events.app_errors` is matched in code, never put into the 
 
 ## Health rules
 
-Scheduled health rules (dashboard **Health rules**, `ControlPlane.Api/Health`) run Look actions
+Scheduled health rules (dashboard **Automatic checks**, `ControlPlane.Api/Health`) run Look actions
 through `ActionRunner` with source `HealthRule`, judge the answer with fixed code in
 `HealthCheckCatalog`, and after the report-only week may run one of that check's SafeFix
 actions or `notice.show`. `notice.show` is OperatorOnly (never offered to the agent); only health

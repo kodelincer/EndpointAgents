@@ -59,7 +59,7 @@ Admins can switch any action off, or set another hourly limit, on the Capabiliti
 
 ## Environment map
 
-The **Environment** page tells the agent about your site by ID and label: internal web apps, shared folders (with their standard drive letter), office printers and key servers. Optional ports and expected IP addresses let it test the right port and spot wrong DNS answers. It also holds the standards (internal DNS suffixes, proxy, time zone, root CA thumbprints) and the incidents.
+The **Company resources** page tells the agent about your site by ID and label: internal web apps, shared folders (with their standard drive letter), office printers and key servers. Optional ports and expected IP addresses let it test the right port and spot wrong DNS answers. It also holds the standards (internal DNS suffixes, proxy, time zone, root CA thumbprints) and the incidents.
 
 Three more lists drive helpdesk requests: **Removable software** (Apps & features names, with `*`, that users may ask to remove, optionally with an uninstall package), the **Driver catalog** (device models by hardware ID, each with its signed driver package) and **Company VPNs** (server, built-in or client, connection or service name). Software users may install is the set of install packages.
 

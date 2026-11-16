@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { approvalDetails } from "@/lib/software";
 import { approveRequest, declineRequest, getApprovals, pendingSummary, type ApprovalRequest } from "@/lib/capabilities";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 
 const REFRESH_MS = 15000;
 
@@ -45,12 +47,11 @@ export function Approvals() {
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="approvals-title">
       <div><div className="file-heading-mark"><ClipboardCheck size={17} /></div><div>
-        <h1 id="approvals-title">Approvals</h1>
-        <p>Steps the support agent wants to run that need a helpdesk member first, such as removing software.
-          Approving runs it on the user&apos;s PC with every normal check; the user sees the result in their chat either way.</p></div></div>
+        <h1 id="approvals-title">{pageName("/approvals/")}</h1></div></div>
       <button className="secondary-button" onClick={() => { setLoading(true); void refresh(); }} disabled={loading}>
         <RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
     </section>
+    <PageIntro route="/approvals/" />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} />
       <div><strong>Approvals are unavailable</strong><span>{error}</span></div>

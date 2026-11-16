@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, BookMarked, Languages } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
 import type { Block, Inline } from "@/lib/markdown";
+import { PageIntro, localName } from "@/components/page-intro";
 
 export type GuideLanguage = "fa" | "en";
 export type GuideNavItem = { slug: string; fa: { title: string; summary: string }; en: { title: string; summary: string } };
@@ -87,10 +88,11 @@ export function GuideView({ nav, article }: { nav: GuideNavItem[]; article?: Gui
   return <div className="file-page guide-page" dir={fa ? "rtl" : "ltr"} lang={language}>
     <section className="file-heading" aria-labelledby="guide-title">
       <div><div className="file-heading-mark"><BookMarked size={17} /></div><div>
-        <h1 id="guide-title">{t.heading}</h1><p>{t.subtitle}</p></div></div>
+        <h1 id="guide-title">{localName("/docs/", language)}</h1></div></div>
       <button className="secondary-button" onClick={() => setLanguage(fa ? "en" : "fa")}>
         <Languages size={15} />{t.switchTo}</button>
     </section>
+    <PageIntro route="/docs/" language={language} />
 
     <div className="guide-layout">
       <nav className="guide-nav" aria-label={t.topics}>

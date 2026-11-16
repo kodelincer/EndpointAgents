@@ -13,6 +13,8 @@ import {
 } from "@/lib/control-plane";
 import { connectionLabel } from "@/lib/support";
 import { mergeHelpdeskConversations, mergeHelpdeskDetail, repairAttempts } from "@/lib/helpdesk";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 import type {
   ChatMessage, HelpdeskConversationDetail, HelpdeskConversationSummary,
   HelpdeskTraceEvent, SupportRequest
@@ -104,13 +106,13 @@ export function HelpdeskRequests() {
   return <main className="support-page">
     <header className="support-heading">
       <div><span className="support-heading-mark"><LifeBuoy size={19} /></span><div>
-        <h1>Helpdesk conversations</h1>
-        <p>Live endpoint support, human takeover, connection evidence, and inspectable message traffic.</p>
+        <h1>{pageName("/support/")}</h1>
       </div></div>
       <span className={`support-live-state ${connection}`}>
         {connection === "live" ? <Wifi size={14} /> : <WifiOff size={14} />}{connection}
       </span>
     </header>
+    <PageIntro route="/support/" />
 
     {(loadError || error) && <div className="inline-error" role="alert"><CircleAlert size={17} />
       <div><strong>Helpdesk update failed</strong><span>{error ?? loadError}</span></div></div>}

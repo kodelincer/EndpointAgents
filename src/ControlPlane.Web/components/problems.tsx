@@ -4,6 +4,8 @@ import { Check, CircleAlert, ClipboardCopy, Download, FileArchive, RefreshCw, Ro
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth-gate";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 import { downloadLogs, formatBytes, getFleet, getProblem, getProblems, groupProblems, kindClass, kindLabel, markFixed, pcFacts, reopenProblem, requestLogs,
   type FleetPage, type FleetPc, type GroupBy, type LogBundle, type ProblemDetail, type ProblemFilter, type ProblemPage, type ProblemRow } from "@/lib/problems";
 
@@ -50,12 +52,11 @@ export function Problems() {
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="problems-title">
       <div><div className="file-heading-mark"><Siren size={17} /></div><div>
-        <h1 id="problems-title">Problems</h1>
-        <p>What went wrong in our own agent on the PCs, one row per kind of problem. Mark a row fixed in a version,
-          and it opens again by itself if it comes back on that version or a later one. No AI is involved.</p></div></div>
+        <h1 id="problems-title">{pageName("/problems/")}</h1></div></div>
       <button className="secondary-button" onClick={() => { setLoading(true); void refresh(); }} disabled={loading}>
         <RefreshCw className={loading ? "spin" : ""} size={15} />Refresh</button>
     </section>
+    <PageIntro route="/problems/" />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} />
       <div><strong>Problems are unavailable</strong><span>{error}</span></div>

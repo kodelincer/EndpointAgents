@@ -10,7 +10,7 @@ Most conversations are solved by the agent without you. Your job is the ones it 
 
 ## Reading conversations
 
-Open **Helpdesk**. Each row is one conversation between one Windows user on one PC and the agent. Statuses:
+Open **HelpDesk (user chats)**. Each row is one conversation between one Windows user on one PC and the agent. Statuses:
 
 | Status | Meaning |
 | --- | --- |
@@ -56,11 +56,11 @@ If you see a repeated need while working, use **Missing an action?** on the Capa
 
 ## Outages (incidents)
 
-When something is down for everyone, declare an **incident** on the Environment page. The agent checks incidents before repairing anything that could affect more than one PC (network, server, internal web app, printer, shared folder). If one matches, it tells the user the outage is known and does not touch the PC. Close the incident when it is over.
+When something is down for everyone, declare an **incident** on the Company resources page. The agent checks incidents before repairing anything that could affect more than one PC (network, server, internal web app, printer, shared folder). If one matches, it tells the user the outage is known and does not touch the PC. Close the incident when it is over.
 
 ## Skills
 
-The **Skills** page is where helpdesk knowledge becomes agent behaviour.
+The **Agent Skills** page is where helpdesk knowledge becomes agent behaviour.
 
 1. A member writes a skill: a name, a one-line description with the phrases users write, and the steps. **From conversation** starts a draft from a solved or escalated chat.
 2. **Check** lints the draft: unknown tools or actions, helpdesk-only actions, command-like text, wording that reads like a permission, missing "ask the user" or escalation steps, IP addresses and UNC paths.

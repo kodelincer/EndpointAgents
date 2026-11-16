@@ -3,6 +3,8 @@
 import { CircleAlert, MonitorSmartphone, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { age, factName, factRows, getDeviceFacts, getDevices, refreshDevice, type StoredDevice, type StoredFact } from "@/lib/inventory";
+import { PageIntro } from "@/components/page-intro";
+import { pageName } from "@/lib/pages";
 
 /** Facts kept from earlier reads, with their age. PCs are never polled; Refresh asks one PC now. */
 export function Devices() {
@@ -47,11 +49,10 @@ export function Devices() {
 
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="devices-title">
-      <div><div className="file-heading-mark"><MonitorSmartphone size={17} /></div><div><h1 id="devices-title">Devices</h1>
-        <p>What is known about each PC from earlier checks, and how old it is. PCs are never asked on a timer: facts are kept
-          when the agent or the helpdesk reads them, and given again while fresh (hardware 7 days, Windows and programs 1 day).</p></div></div>
+      <div><div className="file-heading-mark"><MonitorSmartphone size={17} /></div><div><h1 id="devices-title">{pageName("/devices/")}</h1></div></div>
       <button className="secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />Refresh list</button>
     </section>
+    <PageIntro route="/devices/" />
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} /><div><strong>Devices</strong><span>{error}</span></div><button onClick={() => setError(undefined)}>Close</button></div>}
 

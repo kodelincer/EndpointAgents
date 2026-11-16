@@ -53,7 +53,7 @@ Every dashboard page and operator API needs a signed-in operator; anything not e
 | **Admin** | Plus environment map, action switches and limits, endpoint commands, maintenance mode, device revoke, enrollment codes, operator accounts |
 
 - **Local accounts** are created by an admin with a one-time password and always work, even when the domain controller is down. Keep at least one local admin.
-- **Active Directory accounts** sign in with their domain password. The control plane checks it against the domain controller and never stores it. Group mapping only chooses the starting role; an admin sets the real role on the Operators page. Off by default (`OperatorDirectory:Enabled`).
+- **Active Directory accounts** sign in with their domain password. The control plane checks it against the domain controller and never stores it. Group mapping only chooses the starting role; an admin sets the real role on the Dashboard users page. Off by default (`OperatorDirectory:Enabled`).
 - Passwords use PBKDF2-SHA256 with 600,000 iterations. Five wrong passwords for one name from one address lock it for 15 minutes.
 - The session cookie is HttpOnly and SameSite=Strict, with a 10 hour sliding lifetime. Disabling an account, changing its role or resetting its password ends its sessions at once.
 - On first start the API creates `admin` with a one-time password in `initial-admin-password.txt` next to the database. Sign in, set a new password and delete the file.

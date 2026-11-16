@@ -1163,3 +1163,8 @@ body { background: var(--canvas); -webkit-font-smoothing: antialiased; }
 .app-shell.collapsed .sidebar .nav-link { padding: 0; }
 @media (max-width: 1024px) { .app-shell.collapsed .sidebar .nav-group ul::before { left: 18px; } .app-shell.collapsed .sidebar .nav-link { padding: 0 8px 0 6px; } }
 @media (prefers-reduced-motion: reduce) { .sidebar .nav-group ul::before { animation: none; } .sidebar .nav-link svg { transition: none; } }
+
+/* Page intro: one short paragraph under the heading ------------------------- */
+.page-intro { max-width: 110ch; margin: -14px 0 22px; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+.page-intro strong { color: var(--ink); font-weight: 600; }
+.file-heading h2 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.015em; }
