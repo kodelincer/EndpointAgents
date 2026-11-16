@@ -32,6 +32,9 @@ The service hosts the only pipe, `EndpointAgents.Service.Status.v1`. The Tray ne
   while no Tray is attached waits up to `TrayConnectTimeoutSeconds` for one.
 - The Tray runs only the methods in `TrayIpcProtocol` and refuses anything else. There is no generic
   command channel in either direction.
+- Before sending anything, the Tray checks who owns the pipe it reached (`ServicePipeTrust`). Only
+  SYSTEM, the Administrators group or the Tray's own user are accepted, so on a shared PC another
+  signed-in user cannot create a look-alike pipe and pose as the service.
 
 ## WebView2 host
 

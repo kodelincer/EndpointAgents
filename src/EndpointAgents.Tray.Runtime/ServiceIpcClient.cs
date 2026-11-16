@@ -161,6 +161,7 @@ public sealed class ServiceIpcClient
             PipeDirection.InOut, PipeOptions.Asynchronous,
             TokenImpersonationLevel.Impersonation);
         await pipe.ConnectAsync(connectTimeout.Token);
+        ServicePipeTrust.EnsureTrustedServer(pipe);
         using var operationTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         operationTimeout.CancelAfter(responseTimeout ?? TimeSpan.FromSeconds(10));
         using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };

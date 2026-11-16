@@ -65,6 +65,7 @@ public sealed class TrayServiceChannel(TrayTaskDispatcher dispatcher,
             connectTimeout.CancelAfter(TimeSpan.FromSeconds(3));
             await pipe.ConnectAsync(connectTimeout.Token);
         }
+        ServicePipeTrust.EnsureTrustedServer(pipe);
 
         using var reader = new StreamReader(pipe, Encoding.UTF8, leaveOpen: true);
         await using var writer = new StreamWriter(pipe, new UTF8Encoding(false), leaveOpen: true)
