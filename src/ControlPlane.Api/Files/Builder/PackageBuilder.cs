@@ -98,12 +98,12 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
         if (!IsValidId(id)) return null;
         var folder = Path.Combine(repository.PackagesRootPath, id);
         var manifestPath = Path.Combine(folder, FileArtifactRepository.PackageManifestFileName);
-        if (!System.IO.File.Exists(manifestPath) || IsRedirected(folder)) return null;
+        if (!global::System.IO.File.Exists(manifestPath) || IsRedirected(folder)) return null;
         BatPackageManifest? manifest;
         try
         {
             manifest = JsonSerializer.Deserialize<BatPackageManifest>(
-                await System.IO.File.ReadAllTextAsync(manifestPath, cancellationToken), Json);
+                await global::System.IO.File.ReadAllTextAsync(manifestPath, cancellationToken), Json);
         }
         catch (JsonException) { return null; }
         if (manifest is null) return null;
@@ -118,7 +118,7 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
             var info = new FileInfo(path);
             if (info.Exists && info.Length is > 0 and <= MaximumFileBytes
                 && (info.Attributes & FileAttributes.ReparsePoint) == 0)
-                scan = ScanBytes(fileName, await System.IO.File.ReadAllBytesAsync(path, cancellationToken));
+                scan = ScanBytes(fileName, await global::System.IO.File.ReadAllBytesAsync(path, cancellationToken));
         }
         var signed = manifest.Signature is not null;
         manifest.Signature = null;
@@ -199,10 +199,10 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                 var keptName = existing?.SchemaVersion == 2 ? existing.File?.FileName : existing?.Bat?.FileName;
                 if (existing is null || keptName is not { Length: > 0 } || Path.GetFileName(keptName) != keptName
                     || !keptName.EndsWith(".bat", StringComparison.OrdinalIgnoreCase)
-                    || !System.IO.File.Exists(Path.Combine(folder, keptName)))
+                    || !global::System.IO.File.Exists(Path.Combine(folder, keptName)))
                     return PackageBuildResult.Fail("Upload the BAT file.");
                 fileName = keptName;
-                bytes = await System.IO.File.ReadAllBytesAsync(Path.Combine(folder, keptName), cancellationToken);
+                bytes = await global::System.IO.File.ReadAllBytesAsync(Path.Combine(folder, keptName), cancellationToken);
             }
 
             var review = request.Review ?? new BatPackageReview();
@@ -223,7 +223,7 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                 {
                     ReviewedBy = string.IsNullOrWhiteSpace(review.ReviewedBy) ? author : review.ReviewedBy.Trim(),
                     ReviewedOn = string.IsNullOrWhiteSpace(review.ReviewedOn)
-                        ? clock.GetUtcNow().ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)
+                        ? clock.GetUtcNow().ToString("yyyy-MM-dd", global::System.Globalization.CultureInfo.InvariantCulture)
                         : review.ReviewedOn.Trim(),
                     Source = review.Source?.Trim(),
                     Notes = string.IsNullOrWhiteSpace(review.Notes)
@@ -273,8 +273,8 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
         Directory.CreateDirectory(building);
         try
         {
-            await System.IO.File.WriteAllBytesAsync(Path.Combine(building, fileName), bytes, cancellationToken);
-            await System.IO.File.WriteAllTextAsync(
+            await global::System.IO.File.WriteAllBytesAsync(Path.Combine(building, fileName), bytes, cancellationToken);
+            await global::System.IO.File.WriteAllTextAsync(
                 Path.Combine(building, FileArtifactRepository.PackageManifestFileName),
                 JsonSerializer.Serialize(manifest, Json) + Environment.NewLine,
                 new UTF8Encoding(false), cancellationToken);
@@ -306,18 +306,18 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
     {
         Directory.CreateDirectory(to);
         foreach (var file in Directory.EnumerateFiles(from))
-            System.IO.File.Copy(file, Path.Combine(to, Path.GetFileName(file)));
+            global::System.IO.File.Copy(file, Path.Combine(to, Path.GetFileName(file)));
     }
 
     private static async Task<BatPackageManifest?> ReadManifestAsync(string folder,
         CancellationToken cancellationToken)
     {
         var path = Path.Combine(folder, FileArtifactRepository.PackageManifestFileName);
-        if (!System.IO.File.Exists(path)) return null;
+        if (!global::System.IO.File.Exists(path)) return null;
         try
         {
             return JsonSerializer.Deserialize<BatPackageManifest>(
-                await System.IO.File.ReadAllTextAsync(path, cancellationToken), Json);
+                await global::System.IO.File.ReadAllTextAsync(path, cancellationToken), Json);
         }
         catch (JsonException) { return null; }
     }
@@ -371,7 +371,7 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
             .Contains("TODO", StringComparison.Ordinal);
 
     private static bool IsRedirected(string path) =>
-        (System.IO.File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+        (global::System.IO.File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
 
     public static bool IsValidId(string? id) =>
         id is { Length: > 0 } && IdPattern().IsMatch(id) && char.IsAsciiLetterOrDigit(id[^1]);

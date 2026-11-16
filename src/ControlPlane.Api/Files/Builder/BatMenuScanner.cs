@@ -354,7 +354,7 @@ public static partial class BatMenuScanner
             var match = ErrorLevelPattern().Match(line);
             if (!match.Success) continue;
             var level = int.Parse(match.Groups["level"].Value,
-                System.Globalization.CultureInfo.InvariantCulture);
+                global::System.Globalization.CultureInfo.InvariantCulture);
             if (level >= 1 && level <= keyCount)
                 jumps.TryAdd(level, match.Groups["target"].Value);
         }
