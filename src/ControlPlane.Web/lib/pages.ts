@@ -32,8 +32,8 @@ export const PAGES = {
   "/devices/": {
     name: "Endpoint (PC) inventory",
     purpose: "Saved facts about every PC (Windows, hardware, disks, programs, drivers), even when it is offline, and how old each fact is.",
-    who: "Everyone. Helpful before you answer a chat about a PC.",
-    actions: ["Find a PC by name", "See when each fact was last read", "Use Read now to ask one PC again"]
+    who: "Everyone. Helpful before you answer a chat about a PC. Admins also add and cut off PCs here.",
+    actions: ["Find a PC by name", "See when each fact was last read", "Use Read now to ask one PC again", "Admins: New enrollment code to add a PC, Revoke to cut one off"]
   },
   "/health/": {
     name: "Automatic checks",

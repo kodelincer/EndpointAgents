@@ -56,3 +56,31 @@ export const getDevices = () => call<StoredDevice[]>("/api/inventory");
 export const getDeviceFacts = (agentId: string) => call<StoredFact[]>(`/api/inventory/${encodeURIComponent(agentId)}`);
 export const refreshDevice = (agentId: string) =>
   call<{ refreshed: boolean; problems: string[] }>(`/api/inventory/${encodeURIComponent(agentId)}/refresh`, { method: "POST" });
+
+/** A one-time code a new PC trades for its device token at install (admin only). */
+export type EnrollmentIssue = { enrollmentCode: string; expiresAtUtc: string };
+
+export const issueEnrollmentCode = () => call<EnrollmentIssue>("/api/agent-enrollments", { method: "POST" });
+
+/** Cuts one PC off: its device token stops working until it is enrolled again (admin only). */
+export async function revokeDevice(agentId: string): Promise<void> {
+  const response = await apiFetch(`/api/devices/${encodeURIComponent(agentId)}/revoke`, { method: "POST" });
+  if (!response.ok) throw new Error(response.status === 403 ? "Your role does not allow this." : `Control plane returned ${response.status}.`);
+}
+
+/** The PowerShell line to run on the new PC, with the code filled in. */
+export function installCommand(code: string, hubUrl: string): string {
+  return `.\\scripts\\install-endpoint.ps1 -ControlPlaneHubUrl '${hubUrl}' -EnrollmentCode '${code}'`;
+}
+
+/** The hub address a PC must use. The dashboard runs on the server itself, so a loopback name
+ * would point each PC at itself: show a placeholder for the server's real name instead. */
+export function hubUrlFor(hostname: string): string {
+  const loopback = hostname === "localhost" || hostname === "::1" || hostname === "[::1]" || hostname.startsWith("127.");
+  return `https://${loopback ? "SERVER-NAME" : hostname}:5052/agent-hub`;
+}
+
+/** Minutes left before a code expires, never below zero. */
+export function minutesLeft(expiresAtUtc: string, now = new Date()): number {
+  return Math.max(0, Math.ceil((new Date(expiresAtUtc).getTime() - now.getTime()) / 60_000));
+}

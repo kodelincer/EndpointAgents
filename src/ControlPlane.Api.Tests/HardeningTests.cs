@@ -1,4 +1,5 @@
 using ControlPlane.Api.Chat;
+using ControlPlane.Api.Security;
 using ControlPlane.Api.System;
 using EndpointAgents.Shared.Agents;
 using Microsoft.AspNetCore.Http.Connections;
@@ -79,10 +80,67 @@ public sealed class HardeningTests(ControlPlaneApiFactory factory) : IClassFixtu
     }
 
     [Fact]
+    public async Task OnlyEnrolledPcsMayConnectByDefault()
+    {
+        Assert.True(new AgentSecurityOptions().RequireAuthentication);
+        Assert.True(factory.Services.GetRequiredService<IOptions<AgentSecurityOptions>>().Value.RequireAuthentication);
+
+        // A machine that only has the installer: no token, so it may not register at all.
+        var stranger = "unknown-" + Guid.NewGuid().ToString("N");
+        await using var connection = Connect(token: null);
+        await connection.StartAsync(TestCancellation);
+        await Assert.ThrowsAsync<HubException>(() => connection.InvokeAsync("RegisterAgent",
+            Registration(stranger), TestCancellation));
+        Assert.DoesNotContain(factory.Services.GetRequiredService<ControlPlane.Api.Agents.AgentRegistry>()
+            .GetOnlineAgents(), agent => agent.AgentId == stranger);
+    }
+
+    [Fact]
+    public async Task AnEnrolledPcConnectsWithItsToken()
+    {
+        using var admin = await factory.CreateOperatorClientAsync(cancellationToken: TestCancellation);
+        using var remote = factory.CreateRemoteClient();
+        var agentId = Guid.NewGuid().ToString("D");
+        var redemption = await RedeemAsync(admin, remote, agentId);
+        var token = (await redemption.Content.ReadFromJsonAsync<EnrollmentRedemption>(TestCancellation))!.DeviceToken;
+
+        await using var connection = Connect(token);
+        await connection.StartAsync(TestCancellation);
+        await connection.InvokeAsync("RegisterAgent", Registration(agentId), TestCancellation);
+        Assert.Contains(factory.Services.GetRequiredService<ControlPlane.Api.Agents.AgentRegistry>()
+            .GetOnlineAgents(), agent => agent.AgentId == agentId);
+    }
+
+    [Fact]
+    public async Task OnlyAnAdminMayMakeAnEnrollmentCodeFromTheDashboard()
+    {
+        using var reviewer = await factory.CreateOperatorClientAsync(OperatorRoles.Reviewer, TestCancellation);
+        using var reviewerRequest = new HttpRequestMessage(HttpMethod.Post, "/api/agent-enrollments");
+        reviewerRequest.Headers.Add("Origin", "http://127.0.0.1:3000");
+        Assert.Equal(HttpStatusCode.Forbidden, (await reviewer.SendAsync(reviewerRequest, TestCancellation)).StatusCode);
+
+        using var anonymous = factory.CreateClient();
+        using var browserRequest = new HttpRequestMessage(HttpMethod.Post, "/api/agent-enrollments");
+        browserRequest.Headers.Add("Origin", "http://127.0.0.1:3000");
+        Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.SendAsync(browserRequest, TestCancellation)).StatusCode);
+
+        using var admin = await factory.CreateOperatorClientAsync(cancellationToken: TestCancellation);
+        using var adminRequest = new HttpRequestMessage(HttpMethod.Post, "/api/agent-enrollments");
+        adminRequest.Headers.Add("Origin", "http://127.0.0.1:3000");
+        var issued = await admin.SendAsync(adminRequest, TestCancellation);
+        Assert.Equal(HttpStatusCode.OK, issued.StatusCode);
+        Assert.False(string.IsNullOrWhiteSpace((await issued.Content.ReadFromJsonAsync<EnrollmentIssue>(TestCancellation))!.EnrollmentCode));
+    }
+
+    [Fact]
     public async Task RegistrationTextIsShortenedAndCleaned()
     {
-        var agentId = "legacy-" + Guid.NewGuid().ToString("N");
-        await using var connection = Connect(token: null);
+        using var admin = await factory.CreateOperatorClientAsync(cancellationToken: TestCancellation);
+        using var remote = factory.CreateRemoteClient();
+        var agentId = Guid.NewGuid().ToString("D");
+        var token = (await (await RedeemAsync(admin, remote, agentId)).Content
+            .ReadFromJsonAsync<EnrollmentRedemption>(TestCancellation))!.DeviceToken;
+        await using var connection = Connect(token);
         await connection.StartAsync(TestCancellation);
         await connection.InvokeAsync("RegisterAgent", new AgentRegistration(agentId, "host",
             new string('m', 5_000) + "\u0007", "user", new string('9', 500), DateTimeOffset.UtcNow),

@@ -36,6 +36,15 @@ $systemSid = "S-1-5-18"
 $administratorsSid = "S-1-5-32-544"
 $usersSid = "S-1-5-32-545"
 
+# The control plane only accepts enrolled PCs. A first install therefore needs a one-time code
+# (dashboard: Endpoint (PC) inventory > New enrollment code); a reinstall keeps the credential it already has.
+$EnrollmentCode = $EnrollmentCode.Trim()
+if ([string]::IsNullOrWhiteSpace($EnrollmentCode) -and
+    -not (Test-Path -LiteralPath (Join-Path $credentialRoot "device-credential.bin"))) {
+    throw ("This PC is not enrolled yet. On the dashboard open 'Endpoint (PC) inventory', click 'New enrollment code', " +
+        "and run this script again with -EnrollmentCode <code> within 30 minutes.")
+}
+
 # If anything below fails, leave a log on this PC and send one small report to the control plane,
 # so a PC that never finished installing shows on the Problems page. There is no agent and no token
 # yet: the report holds the step, the first line of the error with personal data cut, and Windows facts.

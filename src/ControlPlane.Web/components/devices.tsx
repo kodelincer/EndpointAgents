@@ -1,13 +1,17 @@
 "use client";
 
-import { CircleAlert, MonitorSmartphone, RefreshCw } from "lucide-react";
+import { CircleAlert, Copy, KeyRound, MonitorSmartphone, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { age, factName, factRows, getDeviceFacts, getDevices, refreshDevice, type StoredDevice, type StoredFact } from "@/lib/inventory";
+import { age, factName, factRows, getDeviceFacts, getDevices, hubUrlFor, installCommand, issueEnrollmentCode, minutesLeft,
+  refreshDevice, revokeDevice, type EnrollmentIssue, type StoredDevice, type StoredFact } from "@/lib/inventory";
+import { useAuth } from "@/components/auth-gate";
 import { PageIntro } from "@/components/page-intro";
 import { pageName } from "@/lib/pages";
 
 /** Facts kept from earlier reads, with their age. PCs are never polled; Refresh asks one PC now. */
 export function Devices() {
+  const { can } = useAuth();
+  const admin = can("devices.manage");
   const [devices, setDevices] = useState<StoredDevice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
@@ -45,6 +49,14 @@ export function Devices() {
     finally { setBusy(undefined); }
   };
 
+  const revoke = async (device: StoredDevice) => {
+    if (!window.confirm(`Cut off ${device.machineName}? Its device token stops working at once. To use it again, enroll it with a new code.`)) return;
+    setBusy(device.agentId);
+    try { await revokeDevice(device.agentId); await refresh(); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : "The PC could not be revoked."); }
+    finally { setBusy(undefined); }
+  };
+
   const shown = devices.filter(device => device.machineName.toLowerCase().includes(filter.toLowerCase()));
 
   return <div className="file-page">
@@ -53,6 +65,7 @@ export function Devices() {
       <button className="secondary-button" onClick={() => void refresh()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} size={15} />Refresh list</button>
     </section>
     <PageIntro route="/devices/" />
+    {admin && <EnrollmentCodePanel onError={setError} />}
 
     {error && <div className="inline-error" role="alert"><CircleAlert size={17} /><div><strong>Devices</strong><span>{error}</span></div><button onClick={() => setError(undefined)}>Close</button></div>}
 
@@ -79,8 +92,52 @@ export function Devices() {
           </div>
           <div className="file-row-actions">
             <button className="secondary-button" disabled={!device.online || busy === device.agentId} onClick={() => void readNow(device)}>
-              <RefreshCw size={14} className={busy === device.agentId ? "spin" : ""} />{busy === device.agentId ? "Reading…" : "Read now"}</button>
+              <RefreshCw size={14} className={busy === device.agentId ? "spin" : ""} />{busy === device.agentId ? "Working…" : "Read now"}</button>
+            {admin && <button className="secondary-button danger-text" disabled={busy === device.agentId} onClick={() => void revoke(device)}>Revoke</button>}
           </div>
         </article>)}</section>}
   </div>;
+}
+
+/** Admins make one code per new PC here; the PC trades it for its device token at install. */
+function EnrollmentCodePanel({ onError }: { onError: (message: string) => void }) {
+  const [issue, setIssue] = useState<EnrollmentIssue>();
+  const [making, setMaking] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    if (!issue) return;
+    const timer = window.setInterval(() => setNow(new Date()), 15_000);
+    return () => window.clearInterval(timer);
+  }, [issue]);
+
+  const make = async () => {
+    setMaking(true); setCopied(false);
+    try { setIssue(await issueEnrollmentCode()); setNow(new Date()); }
+    catch (reason) { onError(reason instanceof Error ? reason.message : "No code could be made."); }
+    finally { setMaking(false); }
+  };
+
+  const command = issue ? installCommand(issue.enrollmentCode, hubUrlFor(window.location.hostname)) : "";
+  const left = issue ? minutesLeft(issue.expiresAtUtc, now) : 0;
+  const copy = async () => { await navigator.clipboard.writeText(command); setCopied(true); };
+
+  return <section className="file-row" aria-labelledby="enroll-title">
+    <div className="file-row-main">
+      <div className="file-row-title"><KeyRound size={15} /><strong id="enroll-title">Add a new PC</strong></div>
+      <p className="file-description">Only enrolled PCs can connect. Make one code per PC, then run the line below on that PC in PowerShell as administrator. The code works once.</p>
+      {issue && (left > 0
+        ? <div className="package-detail">
+            <p>Code <code dir="ltr">{issue.enrollmentCode}</code> <span className="muted">· {left} min left</span></p>
+            <pre dir="ltr" className="file-compatibility" style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{command}</pre>
+            {command.includes("SERVER-NAME") && <p className="muted">Replace SERVER-NAME with the name PCs use to reach this server.</p>}
+          </div>
+        : <p className="file-compatibility">This code has expired. Make a new one.</p>)}
+    </div>
+    <div className="file-row-actions">
+      <button className="secondary-button" disabled={making} onClick={() => void make()}><KeyRound size={14} />{making ? "Making…" : "New enrollment code"}</button>
+      {issue && left > 0 && <button className="secondary-button" onClick={() => void copy()}><Copy size={14} />{copied ? "Copied" : "Copy line"}</button>}
+    </div>
+  </section>;
 }

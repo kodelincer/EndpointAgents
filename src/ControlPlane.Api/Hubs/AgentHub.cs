@@ -43,7 +43,7 @@ public sealed class AgentHub(AgentRegistry registry, SupportRequestPublisher sup
             AgentAuthentication.AgentIdClaim)?.Value;
         if (security.Value.RequireAuthentication
             && string.IsNullOrWhiteSpace(authenticatedAgentId))
-            throw new HubException("Endpoint device authentication is required.");
+            throw new HubException("This PC is not enrolled. Install it again with an enrollment code from the dashboard page Endpoint (PC) inventory.");
         if (!string.IsNullOrWhiteSpace(authenticatedAgentId)
             && !await chatStore.IsDeviceActiveAsync(
                 authenticatedAgentId, Context.ConnectionAborted))

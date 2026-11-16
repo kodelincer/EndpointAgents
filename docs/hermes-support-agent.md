@@ -119,8 +119,8 @@ and operator APIs on loopback. A reverse proxy requires an explicit trusted
 forwarded-header configuration first; that is not enabled by the default
 application profile.
 
-Do not enable `AgentSecurity:RequireAuthentication` until the staged endpoint
-enrollment described below is complete.
+`AgentSecurity:RequireAuthentication` is on by default: only enrolled endpoints
+connect. Enroll each endpoint as described below.
 
 ### 2. Install a pinned Hermes runtime
 
@@ -211,7 +211,9 @@ Hermes Desktop if it manages that exact profile.
 
 ### 3. Enroll endpoint devices
 
-Create one enrollment code per endpoint from a loopback administrator session:
+Create one enrollment code per endpoint. The easy way is the dashboard: an admin
+opens **Endpoint (PC) inventory** and clicks **New enrollment code**, which also
+shows the install line. A script on the server itself can do the same:
 
 ```powershell
 $issue = Invoke-RestMethod -Method Post `
@@ -233,16 +235,9 @@ in the SYSTEM/Administrators-only
 `C:\ProgramData\EndpointAgents\Credentials` directory, and authenticates
 SignalR through `AccessTokenProvider`.
 
-After all supported endpoint versions are enrolled and visible, set:
-
-```json
-{
-  "AgentSecurity": {
-    "RequireAuthentication": true,
-    "RequireHttps": true
-  }
-}
-```
+`AgentSecurity:RequireAuthentication` stays `true` (the default). Set it to
+`false` only for a short test; an unenrolled endpoint is then accepted as a new,
+unknown PC.
 
 Restart `EndpointAgents.ControlPlane.Api`, verify coverage, and remove the
 legacy support-request path only after older endpoint versions are retired.

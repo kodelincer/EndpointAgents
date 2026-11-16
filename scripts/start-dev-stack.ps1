@@ -130,11 +130,14 @@ Start-Part "Dashboard" "Set-Location .\src\ControlPlane.Web; npm.cmd run dev"
 $credential = Join-Path $env:LOCALAPPDATA "EndpointAgents\dev-device-credential.bin"
 New-Item -ItemType Directory -Force -Path (Split-Path $credential) | Out-Null
 $endpointEnv = "`$env:ControlPlane__DeviceCredentialPath = '$credential'; "
-if (-not (Test-Path $credential)) {
-    $code = (Invoke-RestMethod -Method Post http://127.0.0.1:5052/api/agent-enrollments).enrollmentCode
-    $endpointEnv += "`$env:ControlPlane__EnrollmentCode = '$code'; "
-    Write-Host "Enrolling this PC with a new one-time code."
-}
+# The control plane only accepts enrolled PCs (AgentSecurity:RequireAuthentication). A saved
+# credential stops working when the dev database is reset or the device was revoked, so this PC
+# enrols again at every start. It keeps its agent id, and the server lets itself replace its own
+# device, so the dashboard still shows one PC with its chats.
+Remove-Item -LiteralPath $credential -Force -ErrorAction SilentlyContinue
+$code = (Invoke-RestMethod -Method Post http://127.0.0.1:5052/api/agent-enrollments).enrollmentCode
+$endpointEnv += "`$env:ControlPlane__EnrollmentCode = '$code'; "
+Write-Host "Enrolling this PC with a new one-time code."
 Start-Part "Endpoint service + tray" ($endpointEnv + "& .\scripts\run-endpoint-dev.ps1")
 
 Wait-Port 8642 "Hermes gateway"

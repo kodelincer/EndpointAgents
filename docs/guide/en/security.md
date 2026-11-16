@@ -58,13 +58,24 @@ Every dashboard page and operator API needs a signed-in operator; anything not e
 - The session cookie is HttpOnly and SameSite=Strict, with a 10 hour sliding lifetime. Disabling an account, changing its role or resetting its password ends its sessions at once.
 - On first start the API creates `admin` with a one-time password in `initial-admin-password.txt` next to the database. Sign in, set a new password and delete the file.
 
+## Adding a new PC
+
+Every PC needs a one-time enrollment code before it can connect. The PC trades the code for its own device token during install, keeps the token encrypted (only SYSTEM and Administrators can read it), and shows it on every connection. The user never sees it.
+
+1. **Make a code** (admin). On **Endpoint (PC) inventory**, click **New enrollment code**. The page shows the code, how many minutes it has left, and the full install line. One code per PC; it works once and expires after 30 minutes.
+2. **Install on the PC.** Open PowerShell as administrator on that PC and run the line (click **Copy line**). Replace `SERVER-NAME` with the name PCs use to reach the control plane, and add `-PackageSigningPublicKey '<your public key>'` so repair packages work.
+3. **Check.** The PC appears on **Online Endpoints** within a minute. Open the Tray on it and send a test message.
+
+If the code expired or was mistyped, make a new one and run the install again. Without a code, `install-endpoint.ps1` stops at the start and says so. Reinstalling or upgrading a PC that is already enrolled needs no code. To move a PC's identity to a new machine, revoke the old one first. HTTPS on the control plane is needed for a PC other than the server itself to enroll.
+
 ## Endpoint actions: tiers, limits and the kill switch
 
 - Tiers decide whether the user must say yes (Disruptive) and whether the agent may run an action at all (OperatorOnly).
 - Hourly limits per PC and action stop loops. Defaults are 30 for Look, 3 for SafeFix and 2 for Disruptive.
 - Admins can switch off any action, or change its limit, on **Capabilities** without a release.
 - **Maintenance mode** (admin) makes the control plane refuse new endpoint commands with HTTP 503 while keeping connections alive. It resets when the API restarts.
-- **Device revoke** (admin) invalidates one PC's token. Enrollment codes are one-time and short-lived (30 minutes by default).
+- **Only enrolled PCs can connect** (`AgentSecurity:RequireAuthentication`, on by default since 16 November 2026). A PC without a device token is refused at once: it does not appear in the dashboard and cannot chat. See [Adding a new PC](#adding-a-new-pc).
+- **Device revoke** (admin, **Revoke** on the Endpoint (PC) inventory page) invalidates one PC's token. Enrollment codes are one-time and short-lived (30 minutes by default).
 - **An enrolled PC's identity cannot be borrowed.** A connection without the device token cannot register under the ID of an enrolled (or revoked) PC, and an enrollment code cannot replace a PC that is still active: revoke the old device first, then enroll again.
 - Run limits for the agent itself: four concurrent conversations, one active run per conversation, a 15 minute run timeout, and a short conversation window sent to the model (`Hermes:MaxHistoryMessages`, 5 by default).
 - Anything outside the catalogue needs a proposal and the user's approval card in the Tray. A proposal is single-use, stored with exact parameters and expires after 10 minutes.
@@ -97,7 +108,7 @@ Decisions to know about, so nobody is surprised later.
 ## What to harden in production
 
 1. **HTTPS** with a trusted certificate for the endpoint hub (`AgentSecurity:RequireHttps` stays `true`). Keep the dashboard and operator APIs on loopback; do not put them behind a reverse proxy without an explicit forwarded-header configuration.
-2. **Enroll every PC, then set `AgentSecurity:RequireAuthentication` to `true`** and restart the API, so only enrolled devices connect. Revoke lost or compromised devices.
+2. **Keep `AgentSecurity:RequireAuthentication` on** (the default), so only enrolled PCs connect. Revoke lost or compromised devices. Set it to `false` only for a short test, never on the pilot.
 3. **Protect the data tree.** Keep `C:\ProgramData\EndpointAgents\ControlPlane` on an encrypted volume (BitLocker). The installer restricts it to SYSTEM and Administrators, but does not enable encryption. Leave `FileRepository:RequireProtectedAcl` on.
 4. **Replace every development key** with production values: the Hermes API key, the MCP key (different from each other), and trusted package-signing keys. Never commit real secrets.
 5. **Run Hermes as its own low-privilege service** (`NT SERVICE\EndpointAgents.Hermes`) bound to `127.0.0.1`, pinned to a tested release with no auto-update, and with skill-write approval on. Keep the disabled-toolsets list from `config.yaml.example`.

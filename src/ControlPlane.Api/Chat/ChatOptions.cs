@@ -12,7 +12,11 @@ public sealed class ChatOptions
 
 public sealed class AgentSecurityOptions
 {
-    public bool RequireAuthentication { get; set; }
+    /// <summary>
+    /// Only enrolled PCs (with a device token) may connect. On by default: a PC gets its token
+    /// at install from a one-time enrollment code (dashboard page Endpoint (PC) inventory, New enrollment code).
+    /// </summary>
+    public bool RequireAuthentication { get; set; } = true;
 
     public bool RequireHttps { get; set; } = true;
 
