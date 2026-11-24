@@ -33,9 +33,15 @@ For a BAT you do not need the scripts or a text editor. Open **Package builder**
 3. **Add your answers.** Click the answer you want under a found screen to add it as a step, or add a step by hand. The builder never picks an answer by itself. Check the order and the exact screen text against a real run on a test PC when you are not sure, because a BAT that builds its menus at run time can show screens the text does not reveal.
 4. **Set how to tell it worked** (success text, failure texts, exit codes) and **which PCs it fits**, then **Create the package**.
 
-The control plane writes `packages\<id>\` with the BAT unchanged and a `package.json` with the file and playbook hashes already pinned, exactly as `new-package.ps1` plus `-Fix` would. The package is saved **Not signed**, so no PC gets it yet. Then test it on one PC (`test-bat-playbook.ps1 -Package <folder> -Execute`) and sign it (`-Sign`); the page shows both commands with the right folder.
+The control plane writes `packages\<id>\` with the BAT unchanged and a `package.json` with the file and playbook hashes already pinned, exactly as `new-package.ps1` plus `-Fix` would. The package is saved as a **draft** (Not signed), so no PC gets it yet. You can try it on a test PC first with `test-bat-playbook.ps1 -Package <folder> -Execute`.
 
-To change a package, use **Change in the Package builder** on its row, or pick it at the top of the builder; you can keep its BAT or upload a new one. Any helpdesk member may create and change unsigned packages. Changing a signed package needs an admin, and saving it removes the signature, so it leaves the PCs until it is signed again. The builder does not manage supporting files in `files\`; it keeps the ones a package already has.
+### Approve and sign (second person)
+
+On **Packages and files**, a draft shows **Waiting for approval** and who saved it. An admin who did **not** save it opens **Show details**, checks the steps, and clicks **Approve and sign**. The control plane then signs exactly that revision with its own key, and the package becomes Ready. If the package changed after the admin opened the page, the approval is refused and they must look again. Saving the package again in the builder removes the approval.
+
+The control plane's key is a non-exportable Windows key created on its first start, in the profile of the account it runs as. Its public key is shown at the top of Packages and files for admins. **Each PC must trust it once**, for packages only (never for agent updates): add it to `PackageSigning:ApprovalPublicKeys` in the endpoint settings, or install PCs with `install-endpoint.ps1 -ApprovalSigningPublicKey <key>`. Settings: `PackageApproval:Enabled` (default on) and `PackageApproval:RequireSecondPerson` (default on; switch it off only if your team has a single admin). Signing by hand with `-Sign` keeps working as before.
+
+To change a package, use **Change in the Package builder** on its row, or pick it at the top of the builder; you can keep its BAT or upload a new one. Any helpdesk member may create and change unsigned packages. Changing a signed package needs an admin, and saving it removes the signature, so it leaves the PCs until it is approved again. The builder does not manage supporting files in `files\`; it keeps the ones a package already has.
 
 ## Steps (by hand)
 

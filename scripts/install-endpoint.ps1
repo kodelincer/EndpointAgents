@@ -9,6 +9,8 @@ param(
     # Public key(s) of the administrators who sign packages (new-package-signing-key.ps1 -Show).
     # Without one, the endpoint refuses every repair package.
     [string[]]$PackageSigningPublicKey = @(),
+    # The control plane's approval key (dashboard Packages page): trusted for packages only.
+    [string[]]$ApprovalSigningPublicKey = @(),
     # Also require signatures on Office and Windows activation repairs.
     [switch]$RequireSignedActivationRepairs,
     # Install the previous WinUI Tray instead of the WebView2 Tray.
@@ -420,8 +422,9 @@ $serviceSettings = Get-Content -LiteralPath $serviceSettingsPath -Raw | ConvertF
 $serviceSettings.ControlPlane.HubUrl = $ControlPlaneHubUrl.AbsoluteUri
 $serviceSettings.ControlPlane.EnrollmentCode = $EnrollmentCode
 $serviceSettings.PackageSigning.TrustedPublicKeys = @($PackageSigningPublicKey)
+$serviceSettings.PackageSigning | Add-Member -NotePropertyName ApprovalPublicKeys -NotePropertyValue @($ApprovalSigningPublicKey) -Force
 $serviceSettings.PackageSigning.RequireForActivationRepairs = [bool]$RequireSignedActivationRepairs
-if ($PackageSigningPublicKey.Count -eq 0) {
+if ($PackageSigningPublicKey.Count -eq 0 -and $ApprovalSigningPublicKey.Count -eq 0) {
     Write-Warning "No package signing key was given; this endpoint will refuse every repair package."
 }
 $serviceSettingsJson = ($serviceSettings | ConvertTo-Json -Depth 10) + [Environment]::NewLine
@@ -466,6 +469,7 @@ $siteSettings = [ordered]@{
     ControlPlane = [ordered]@{ HubUrl = $ControlPlaneHubUrl.AbsoluteUri }
     PackageSigning = [ordered]@{
         TrustedPublicKeys = @($PackageSigningPublicKey)
+        ApprovalPublicKeys = @($ApprovalSigningPublicKey)
         RequireForActivationRepairs = [bool]$RequireSignedActivationRepairs
     }
 }

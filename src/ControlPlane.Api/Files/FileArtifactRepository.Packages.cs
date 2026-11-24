@@ -398,12 +398,13 @@ public sealed partial class FileArtifactRepository
             fileSha256, playbookSha256, supportFiles.Count == 0 ? null
                 : BatchSupportFilePolicy.ComputeBundleSha256(fileSha256, supportFiles),
             publisher, acceptedRisks, softwareSha256);
-        if (PackageSignaturePolicy.Verify(statement, signature,
-                _options.TrustedPackageSigningKeys))
+        var trusted = _options.TrustedPackageSigningKeys
+            .Concat(_options.PackageOnlySigningKeys).ToArray();
+        if (PackageSignaturePolicy.Verify(statement, signature, trusted))
             return;
         var reason = signature is null
-            ? "The package is not signed. Sign it on the admin PC with: test-bat-playbook.ps1 -Package <folder> -Sign"
-            : _options.TrustedPackageSigningKeys.Count == 0
+            ? "The package is not signed. An admin approves it on the Packages page, or sign it on the admin PC with: test-bat-playbook.ps1 -Package <folder> -Sign"
+            : trusted.Length == 0
                 ? "No trusted signing key is configured on the control plane (FileRepository:TrustedPackageSigningKeys)."
                 : "The signature does not match this revision or a trusted key. Review the change, then sign it again with -Sign.";
         if (_options.RequirePackageSignatures)

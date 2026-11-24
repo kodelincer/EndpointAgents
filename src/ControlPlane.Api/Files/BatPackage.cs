@@ -96,6 +96,13 @@ public sealed class BatPackageReview
     /// over, so they cannot be changed without signing again.
     /// </summary>
     public List<string> AcceptedRisks { get; set; } = [];
+
+    /// <summary>Who last saved the package in the dashboard Package builder.</summary>
+    public string? BuiltBy { get; set; }
+
+    /// <summary>The admin who approved and signed it in the dashboard, and when (UTC date).</summary>
+    public string? ApprovedBy { get; set; }
+    public string? ApprovedOn { get; set; }
 }
 
 public static class BatPackageStatuses

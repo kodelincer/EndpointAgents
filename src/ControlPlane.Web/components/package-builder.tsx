@@ -229,7 +229,7 @@ export function PackageBuilder() {
 
     <div className="builder-actions">
       <button className="primary-button" onClick={() => void save()} disabled={busy}>{busy ? "Working…" : existing ? "Save changes" : "Create the package"}</button>
-      <span>Saves the folder with all hashes filled in. It is not signed, so no PC gets it yet.</span>
+      <span>Saves a draft with all hashes filled in. No PC gets it until an admin approves it on the Packages page.</span>
     </div>
 
     {result?.saved && <SaveResult result={result} />}
@@ -283,9 +283,8 @@ function SaveResult({ result }: { result: BuildResult }) {
       <strong>Saved {status.id}: {tone.label}</strong>
       {status.reasons.length > 0 && <ul>{status.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       {status.warnings.length > 0 && <ul>{status.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
-      {unsignedOnly && <p>Everything else is in order. Next, test it on one PC and sign it on the admin PC:
-        <code className="builder-command">.\scripts\test-bat-playbook.ps1 -Package &quot;{status.folder}&quot; -Execute</code>
-        <code className="builder-command">.\scripts\test-bat-playbook.ps1 -Package &quot;{status.folder}&quot; -Sign</code></p>}
+      {unsignedOnly && <p>Saved as a draft, and everything else is in order. Next, an admin who did not make it opens the <Link href="/files/">Packages page</Link>, checks the steps and clicks <strong>Approve and sign</strong>. No PC gets it before that. To try it on a test PC first:
+        <code className="builder-command">.\scripts\test-bat-playbook.ps1 -Package &quot;{status.folder}&quot; -Execute</code></p>}
       <p><Link href="/files/">Open the Packages page</Link></p>
     </div>
   </div>;

@@ -178,6 +178,17 @@ builder.Services.AddOptions<FileRepositoryOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton<FileArtifactRepository>();
 builder.Services.AddSingleton<ControlPlane.Api.Files.Builder.PackageBuilder>();
+builder.Services.Configure<ControlPlane.Api.Files.Builder.PackageApprovalOptions>(
+    builder.Configuration.GetSection(ControlPlane.Api.Files.Builder.PackageApprovalOptions.SectionName));
+builder.Services.AddSingleton<ControlPlane.Api.Files.Builder.IPackageApprovalKey,
+    ControlPlane.Api.Files.Builder.CngPackageApprovalKey>();
+// The approval key signs packages only; agent updates keep TrustedPackageSigningKeys alone.
+builder.Services.AddOptions<FileRepositoryOptions>()
+    .PostConfigure<ControlPlane.Api.Files.Builder.IPackageApprovalKey>((options, key) =>
+    {
+        if (key.PublicKey is { } publicKey && !options.PackageOnlySigningKeys.Contains(publicKey))
+            options.PackageOnlySigningKeys.Add(publicKey);
+    });
 builder.Services.AddSingleton<ControlPlaneRuntimeState>();
 builder.Services.AddHealthChecks()
     .AddCheck<MaintenanceReadinessHealthCheck>("maintenance-readiness", tags: ["ready"]);

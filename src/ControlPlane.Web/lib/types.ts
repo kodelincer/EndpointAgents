@@ -76,7 +76,8 @@ export type BatPackage = {
     minWindowsVersion: string; maxWindowsVersionExclusive: string; editionIds?: string[] | null;
   } | null;
   review?: { reviewedBy?: string | null; reviewedOn?: string | null;
-    source?: string | null; notes?: string | null; acceptedRisks?: string[] | null } | null;
+    source?: string | null; notes?: string | null; acceptedRisks?: string[] | null;
+    builtBy?: string | null; approvedBy?: string | null; approvedOn?: string | null } | null;
   software?: SoftwareSpec | null;
 };
 export type PackageInventory = {

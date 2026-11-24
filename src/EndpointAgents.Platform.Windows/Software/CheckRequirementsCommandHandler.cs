@@ -43,7 +43,7 @@ public sealed class CheckRequirementsCommandHandler(
         if (descriptor is null)
             return RpcResponse.Failure(request.Id, 404, "The requested package is not available.");
         if (!PackageDescriptorPolicy.TryValidate(descriptor, out _)
-            || !PackageSignaturePolicy.Verify(descriptor, signing.Value.TrustedPublicKeys))
+            || !PackageSignaturePolicy.Verify(descriptor, signing.Value.PackageKeys))
             return RpcResponse.Failure(request.Id, 412, "The package is not signed by a trusted administrator key.");
 
         var report = RequirementChecker.Check(descriptor, new WindowsMachineFacts(), catalog);

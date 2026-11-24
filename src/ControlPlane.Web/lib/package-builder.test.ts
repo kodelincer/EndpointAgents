@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  emptyForm, emptyStep, formFromDraft, formProblems, idFromFileName, stepFromSuggestion, toRequest,
+  approvalState, emptyForm, emptyStep, formFromDraft, formProblems, idFromFileName, stepFromSuggestion, toRequest,
   type BuilderDraft, type ScreenSuggestion
 } from "./package-builder";
 
@@ -81,5 +81,27 @@ describe("package builder form", () => {
     expect(form.successExitCodes).toBe("0, 1");
     expect(form.editionIds).toBe("Professional");
     expect(toRequest(form, null, true).windows?.editionIds).toEqual(["Professional"]);
+  });
+});
+
+describe("dashboard approval", () => {
+  const info = { available: true, keyId: "ABCD", publicKey: "key", requireSecondPerson: true };
+  const draft = { id: "fix", folder: "f", status: "Unsigned", reasons: ["not signed"], warnings: [], supportFiles: [],
+    fileType: "bat", review: { builtBy: "member1" } } as unknown as import("./types").BatPackage;
+
+  it("lets a different admin approve an unsigned BAT draft", () => {
+    expect(approvalState(draft, info, "admin1", true)).toEqual({ show: true, builtBy: "member1", blocked: null });
+  });
+
+  it("explains why the button is off", () => {
+    expect(approvalState(draft, info, "Member1", true).blocked).toContain("different admin");
+    expect(approvalState(draft, info, "member2", false).blocked).toBe("An admin approves it.");
+    expect(approvalState(draft, { ...info, available: false, problem: "No key." }, "admin1", true).blocked).toBe("No key.");
+    expect(approvalState(draft, { ...info, requireSecondPerson: false }, "member1", true).blocked).toBeNull();
+  });
+
+  it("is not offered for ready, EXE or install packages", () => {
+    expect(approvalState({ ...draft, status: "Ready" }, info, "admin1", true).show).toBe(false);
+    expect(approvalState({ ...draft, fileType: "exe" }, info, "admin1", true).show).toBe(false);
   });
 });

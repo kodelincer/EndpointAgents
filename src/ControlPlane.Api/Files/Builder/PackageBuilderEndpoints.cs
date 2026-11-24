@@ -25,6 +25,21 @@ public static class PackageBuilderEndpoints
                 : Results.NotFound(new { message = "No readable package with that id." }))
             .RequireAuthorization(OperatorPolicies.Operator);
 
+        app.MapGet("/api/files/packages/approval", (PackageBuilder builder) =>
+            Results.Ok(builder.GetApprovalInfo()))
+            .RequireAuthorization(OperatorPolicies.Operator);
+
+        // A second person, an admin, approves the revision they reviewed; the control
+        // plane then signs it with its own key.
+        app.MapPost("/api/files/packages/builder/{packageId}/approve", async (string packageId,
+            PackageApproveRequest request, HttpContext context, PackageBuilder builder,
+            CancellationToken cancellationToken) =>
+        {
+            var approver = context.User.Identity?.Name is { Length: > 0 } name ? name : "admin";
+            var result = await builder.ApproveAsync(packageId, request, approver, cancellationToken);
+            return result.Saved ? Results.Ok(result) : Results.BadRequest(new { message = result.Error });
+        }).RequireAuthorization(OperatorPolicies.Admin);
+
         app.MapPost("/api/files/packages/builder", async (PackageBuildRequest request,
             HttpContext context, PackageBuilder builder, IAuthorizationService authorization,
             CancellationToken cancellationToken) =>

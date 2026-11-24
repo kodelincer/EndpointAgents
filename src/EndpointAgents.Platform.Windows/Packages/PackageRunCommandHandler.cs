@@ -66,7 +66,7 @@ public sealed class PackageRunCommandHandler(
         if (!PackageDescriptorPolicy.TryValidate(descriptor, out _))
             return RpcResponse.Failure(request.Id, 412,
                 "The control plane returned an invalid package revision.");
-        if (!PackageSignaturePolicy.Verify(descriptor, signing.Value.TrustedPublicKeys))
+        if (!PackageSignaturePolicy.Verify(descriptor, signing.Value.PackageKeys))
             return RpcResponse.Failure(request.Id, 412,
                 "The package is not signed by a trusted administrator key.");
         // The control plane pins the revision it chose; a newer catalog revision

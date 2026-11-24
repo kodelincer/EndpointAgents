@@ -1,9 +1,11 @@
 "use client";
 
-import { ChevronDown, ChevronRight, CircleAlert, CircleCheck, Hammer, Package, RefreshCw, TriangleAlert } from "lucide-react";
+import { BadgeCheck, ChevronDown, ChevronRight, CircleAlert, CircleCheck, Hammer, KeyRound, Package, RefreshCw, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { getPackageInventory } from "@/lib/control-plane";
+import { useAuth } from "@/components/auth-gate";
+import { approvalState, approvePackage, getApprovalInfo, type ApprovalInfo } from "@/lib/package-builder";
 import { acceptedRiskLines, describeRun, describeStep, finishRules, packageCompatibility, packageStatus } from "@/lib/packages";
 import { cannotSkipApproval, getNoApproval, installLines, isInstallPackage, requirementLines, setNoApproval } from "@/lib/software";
 import type { BatPackage, PackageInventory } from "@/lib/types";
@@ -18,12 +20,18 @@ export function PackageCatalog() {
   const [open, setOpen] = useState<string>();
   const [noApproval, setNoApprovalIds] = useState<Set<string>>(new Set());
   const [switchError, setSwitchError] = useState<string>();
+  const [approval, setApproval] = useState<ApprovalInfo>();
+  const [approving, setApproving] = useState<string>();
+  const [approveMessage, setApproveMessage] = useState<{ ok: boolean; text: string }>();
+  const { session, can } = useAuth();
+  const isAdmin = can("packages.approve");
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       setInventory(await getPackageInventory());
       setNoApprovalIds(new Set((await getNoApproval().catch(() => [])).map(entry => entry.packageId)));
+      setApproval(await getApprovalInfo().catch(() => undefined));
       setError(undefined);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The package list could not be loaded.");
@@ -47,6 +55,17 @@ export function PackageCatalog() {
     } catch (reason) { setSwitchError(reason instanceof Error ? reason.message : "The list was not changed."); }
   };
 
+  const approve = async (item: BatPackage) => {
+    if (!window.confirm(`Approve and sign "${item.displayName || item.id}"?\n\nThe control plane signs exactly this revision. PCs that trust its key may then run it without asking the user. Check the steps under "Show details" first.`)) return;
+    setApproving(item.id); setApproveMessage(undefined);
+    try {
+      const result = await approvePackage(item);
+      setApproveMessage({ ok: true, text: `${item.displayName || item.id} is approved and signed${result.status ? `: ${packageStatus(result.status.status).label}` : ""}.` });
+      await refresh();
+    } catch (reason) { setApproveMessage({ ok: false, text: reason instanceof Error ? reason.message : "The package was not approved." }); }
+    finally { setApproving(undefined); }
+  };
+
   return <div className="file-page">
     <section className="file-heading" aria-labelledby="packages-title">
       <div><div className="file-heading-mark"><Package size={17} /></div><div><h1 id="packages-title">{pageName("/files/")}</h1></div></div>
@@ -61,6 +80,10 @@ export function PackageCatalog() {
 
     {switchError && <div className="inline-error" role="alert"><CircleAlert size={17} /><div><strong>Approval setting not changed</strong><span>{switchError}</span></div></div>}
 
+    {approveMessage && <div className={approveMessage.ok ? "builder-result ready" : "inline-error"} role="status">{approveMessage.ok ? <BadgeCheck size={17} /> : <CircleAlert size={17} />}<div><strong>{approveMessage.ok ? "Approved" : "Not approved"}</strong><span>{approveMessage.text}</span></div></div>}
+
+    {isAdmin && approval && <ApprovalKey info={approval} />}
+
     {inventory && <p className="package-path">Package folder: <code>{inventory.packagesPath}</code></p>}
 
     {loading ? <div className="file-list" aria-label="Loading packages"><div className="file-skeleton" /></div> : packages.length === 0 ?
@@ -68,6 +91,8 @@ export function PackageCatalog() {
         <p>Make one with the <Link href="/package-builder/">Package builder</Link>, or with <code>scripts\new-package.ps1</code>; see “How to add a package” below.</p></section> :
       <section className="file-list" aria-label="Packages">{packages.map(item =>
         <PackageRow key={item.id} item={item} inventory={inventory!} open={open === item.id}
+          approval={approvalState(item, approval, session.userName, isAdmin)} approving={approving === item.id}
+          onApprove={() => void approve(item)}
           noApproval={noApproval.has(item.id)} onApprovalChange={skip => void toggleApproval(item, skip)}
           onToggle={() => setOpen(open === item.id ? undefined : item.id)} />)}</section>}
 
@@ -75,9 +100,10 @@ export function PackageCatalog() {
   </div>;
 }
 
-function PackageRow({ item, inventory, open, onToggle, noApproval, onApprovalChange }:
+function PackageRow({ item, inventory, open, onToggle, noApproval, onApprovalChange, approval, approving, onApprove }:
   { item: BatPackage; inventory: PackageInventory; open: boolean; onToggle: () => void;
-    noApproval: boolean; onApprovalChange: (skip: boolean) => void }) {
+    noApproval: boolean; onApprovalChange: (skip: boolean) => void;
+    approval: ReturnType<typeof approvalState>; approving: boolean; onApprove: () => void }) {
   const blocked = cannotSkipApproval(item);
   const status = packageStatus(item.status);
   const Icon = status.tone === "ready" ? CircleCheck : status.tone === "warning" ? TriangleAlert : CircleAlert;
@@ -95,6 +121,13 @@ function PackageRow({ item, inventory, open, onToggle, noApproval, onApprovalCha
           onChange={event => onApprovalChange(event.target.checked)} />
         {blocked ?? (noApproval ? "No approval needed: installs as soon as the PC meets the requirements"
           : "Waits for a helpdesk approval on the Approvals page")}</label>}
+      {approval.show && <div className="package-approve">
+        <span><strong>Waiting for approval</strong>{approval.builtBy ? ` · saved by ${approval.builtBy}` : ""}</span>
+        <button type="button" className="primary-button" onClick={onApprove} disabled={Boolean(approval.blocked) || approving}
+          title={approval.blocked ?? undefined}><BadgeCheck size={15} />{approving ? "Signing…" : "Approve and sign"}</button>
+        {approval.blocked && <small>{approval.blocked}</small>}
+      </div>}
+      {item.review?.approvedBy && <p className="file-compatibility">Approved in the dashboard by {item.review.approvedBy}{item.review.approvedOn ? ` on ${item.review.approvedOn}` : ""}</p>}
       {item.reasons.length > 0 && <ul className="package-reasons">{item.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       {item.warnings.length > 0 && <ul className="package-warnings">{item.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
       {item.fileType !== "exe" && !item.software && <Link className="package-toggle" href={`/package-builder/?id=${encodeURIComponent(item.id)}`}><Hammer size={14} />Change in the Package builder</Link>}
@@ -145,6 +178,18 @@ function PackageDetail({ item, inventory }: { item: BatPackage; inventory: Packa
   </div>;
 }
 
+/** The control plane's approval key, which every PC must trust before it runs approved packages. */
+function ApprovalKey({ info }: { info: ApprovalInfo }) {
+  return <section className="package-approval-key" aria-labelledby="approval-key-title">
+    <h2 id="approval-key-title"><KeyRound size={15} />Approving in the dashboard</h2>
+    {info.available ? <>
+      <p>Packages an admin approves here are signed with the control plane&apos;s own key <code>{info.keyId}</code>. A PC runs them only after it trusts this key, for packages only (never for agent updates). Add it once on each PC under <code>PackageSigning:ApprovalPublicKeys</code>, or install PCs with <code>install-endpoint.ps1 -ApprovalSigningPublicKey &lt;key&gt;</code>.</p>
+      <code className="builder-command">{info.publicKey}</code>
+      {info.requireSecondPerson && <p>The person who saved a package in the builder cannot approve it; a different admin must.</p>}
+    </> : <p>{info.problem ?? "Approving in the dashboard is not available."} Sign packages with <code>test-bat-playbook.ps1 -Sign</code> instead.</p>}
+  </section>;
+}
+
 function HowToAddPackage() {
   return <section className="package-howto" aria-labelledby="howto-title">
     <h2 id="howto-title">How to add a package</h2>
@@ -154,7 +199,7 @@ function HowToAddPackage() {
       <li>Create the package folder: <code>.\scripts\new-package.ps1 -File &lt;file.bat or file.exe&gt; -Id &lt;id&gt;</code>, adding <code>-NoInput</code> when the file needs no answers.</li>
       <li>For a file with screens, find each one, one round at a time: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Execute -Discover</code> and add a playbook step for it.</li>
       <li>Fill in the symptoms users would describe, any fixed arguments, the success and failure texts, compatibility and review, and remove every TODO.</li>
-      <li>Check, record the hashes and sign the reviewed revision: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Fix -Sign</code> until the status is Ready. Create your signing key once with <code>.\scripts\new-package-signing-key.ps1</code>.</li>
+      <li>Packages made in the Package builder: an admin who did not make it clicks <strong>Approve and sign</strong> on its row. Otherwise check, record the hashes and sign the reviewed revision: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Fix -Sign</code> until the status is Ready. Create your signing key once with <code>.\scripts\new-package-signing-key.ps1</code>.</li>
       <li>Copy the folder to the control plane’s <code>FileRepository\packages</code>, refresh this page, and test on one PC before rollout.</li>
     </ol>
     <p>The full guide is <code>docs\bat-packages.md</code>.</p>

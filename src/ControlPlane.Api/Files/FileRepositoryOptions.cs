@@ -34,6 +34,12 @@ public sealed class FileRepositoryOptions
     /// </summary>
     public List<string> TrustedPackageSigningKeys { get; set; } = [];
 
+    /// <summary>
+    /// Keys trusted for packages only, never for agent updates: the control plane's own
+    /// approval key (dashboard "Approve and sign"), added at start-up.
+    /// </summary>
+    public List<string> PackageOnlySigningKeys { get; set; } = [];
+
     /// <summary>Publish only packages signed by a trusted key.</summary>
     public bool RequirePackageSignatures { get; set; } = true;
 }

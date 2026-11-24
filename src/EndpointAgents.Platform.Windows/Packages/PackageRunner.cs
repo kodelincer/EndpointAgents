@@ -33,7 +33,7 @@ public sealed class PackageRunner(PackageArtifactClient artifacts,
         }
         if (!PackageDescriptorPolicy.TryValidate(descriptor, out var playbook))
             throw new InvalidDataException("The package or its playbook is not approved.");
-        if (!PackageSignaturePolicy.Verify(descriptor, signing.Value.TrustedPublicKeys))
+        if (!PackageSignaturePolicy.Verify(descriptor, signing.Value.PackageKeys))
             throw new InvalidDataException("The package is not signed by a trusted administrator key.");
         if (!await IsStagedAndApprovedAsync(path, descriptor, cancellationToken)
             || !await BatchSupportFileDownloader.AreApprovedAsync(path,
@@ -72,7 +72,7 @@ public sealed class PackageRunner(PackageArtifactClient artifacts,
         if (descriptor.Software?.Install is not { } install
             || !PackageDescriptorPolicy.TryValidate(descriptor, out _))
             throw new InvalidDataException("The package or its software section is not approved.");
-        if (!PackageSignaturePolicy.Verify(descriptor, signing.Value.TrustedPublicKeys))
+        if (!PackageSignaturePolicy.Verify(descriptor, signing.Value.PackageKeys))
             throw new InvalidDataException("The package is not signed by a trusted administrator key.");
         if (!await IsStagedAndApprovedAsync(path, descriptor, cancellationToken)
             || !await BatchSupportFileDownloader.AreApprovedAsync(path,

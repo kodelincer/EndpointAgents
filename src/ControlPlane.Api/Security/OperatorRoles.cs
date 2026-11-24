@@ -23,7 +23,7 @@ public static class OperatorRoles
     public static string[] PermissionsFor(string role) => role switch
     {
         Admin => [.. ReviewerPermissions, "commands.run", "maintenance.set", "devices.manage",
-            "users.manage", "environment.manage"],
+            "users.manage", "environment.manage", "packages.approve"],
         Reviewer => ReviewerPermissions,
         Member => MemberPermissions,
         _ => []

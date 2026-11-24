@@ -14,6 +14,15 @@ public sealed class PackageSigningOptions
     public List<string> TrustedPublicKeys { get; set; } = [];
 
     /// <summary>
+    /// Keys trusted for packages only, never for agent updates: the control plane's own
+    /// key for packages an admin approves in the dashboard (shown on its Packages page).
+    /// </summary>
+    public List<string> ApprovalPublicKeys { get; set; } = [];
+
+    /// <summary>Every key a package signature may come from.</summary>
+    public IReadOnlyList<string> PackageKeys => [.. TrustedPublicKeys, .. ApprovalPublicKeys];
+
+    /// <summary>
     /// Also require signatures on Office and Windows activation repairs. Turn it on once
     /// every activation repair is a signed package (legacy manifests cannot be signed).
     /// General repair packages always require a signature.
@@ -25,5 +34,5 @@ public sealed class PackageSigningOptions
         PackageSignature? signature, IReadOnlyCollection<string>? acceptedRisks = null) =>
         PackageSignaturePolicy.Verify(PackageSignaturePolicy.BuildStatement(packageId,
             fileName, sha256, playbookSha256, bundleSha256, publisher, acceptedRisks),
-            signature, TrustedPublicKeys);
+            signature, PackageKeys);
 }

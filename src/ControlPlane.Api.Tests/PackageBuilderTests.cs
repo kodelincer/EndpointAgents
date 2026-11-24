@@ -3,6 +3,8 @@ using ControlPlane.Api.Files.Builder;
 using EndpointAgents.Shared.Office;
 using Microsoft.Extensions.Hosting.Internal;
 using Microsoft.Extensions.Options;
+using EndpointAgents.Shared.Packages;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -119,15 +121,28 @@ public sealed class PackageBuilderTests : IDisposable
         if (Directory.Exists(_root)) Directory.Delete(_root, recursive: true);
     }
 
-    private FileArtifactRepository CreateRepository() => new(
+    private FileArtifactRepository CreateRepository(FakeApprovalKey? approvalKey = null) => new(
         Options.Create(new FileRepositoryOptions
         {
             RootPath = _root, RequireProtectedAcl = false,
-            TrustedPackageSigningKeys = [TestPackageSigner.PublicKey]
+            TrustedPackageSigningKeys = [TestPackageSigner.PublicKey],
+            PackageOnlySigningKeys = approvalKey is null ? [] : [approvalKey.PublicKey!]
         }),
         new HostingEnvironment { ContentRootPath = _root });
 
-    private PackageBuilder CreateBuilder() => new(CreateRepository(), TimeProvider.System);
+    private PackageBuilder CreateBuilder(FakeApprovalKey? key = null, bool secondPerson = true) => new(
+        CreateRepository(key), TimeProvider.System, key,
+        Options.Create(new PackageApprovalOptions { RequireSecondPerson = secondPerson }));
+
+    /// <summary>Stands in for the control plane's Windows (CNG) key.</summary>
+    private sealed class FakeApprovalKey : IPackageApprovalKey
+    {
+        private readonly ECDsa _key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        public string? PublicKey => Convert.ToBase64String(_key.ExportSubjectPublicKeyInfo());
+        public string? Problem => null;
+        public PackageSignature Sign(string statement) =>
+            PackageSignaturePolicy.Sign(statement, _key, PublicKey!);
+    }
 
     private static PackageFileUpload Upload(string text = Bat, string name = "Vendor Fix.bat") =>
         new(name, Convert.ToBase64String(Encoding.UTF8.GetBytes(text)));
@@ -305,5 +320,96 @@ public sealed class PackageBuilderTests : IDisposable
         Assert.Contains(result.Notes, note => note.Contains("not UTF-8"));
         Assert.Equal("Pick:", Assert.Single(result.Screens).Expect);
         Assert.NotNull(PackageBuilder.Scan(new PackageFileUpload("x.bat", "not base64!")).Error);
+    }
+
+    private static PackageApproveRequest Reviewed(BatPackageStatus status) =>
+        new(status.ActualBatSha256, status.ComputedPlaybookSha256);
+
+    [Fact]
+    public async Task ASecondAdminApprovesAndTheControlPlaneSignsIt()
+    {
+        var key = new FakeApprovalKey();
+        var builder = CreateBuilder(key);
+        var token = TestContext.Current.CancellationToken;
+        var saved = await builder.SaveAsync(OfficeRequest(), "member1", false, token);
+        Assert.Equal("member1", (await builder.LoadAsync("office-reseller-fix", token))!.Manifest.Review!.BuiltBy);
+
+        var result = await builder.ApproveAsync("office-reseller-fix", Reviewed(saved.Status!), "admin1", token);
+
+        Assert.True(result.Saved, result.Error);
+        Assert.Equal(BatPackageStatuses.Ready, result.Status!.Status);
+        Assert.Equal("admin1", result.Status.Review!.ApprovedBy);
+        // Joins the Office catalog for endpoints.
+        Assert.Single((await CreateRepository(key).GetOfficeBugfixCatalogAsync(token)).Artifacts);
+        // Without trusting the approval key, the same package is not published.
+        Assert.Equal(BatPackageStatuses.Unsigned,
+            Assert.Single(await CreateRepository().GetPackageStatusesAsync(token)).Status);
+    }
+
+    [Fact]
+    public async Task TheBuilderCannotApproveTheirOwnPackageUnlessThatRuleIsOff()
+    {
+        var key = new FakeApprovalKey();
+        var token = TestContext.Current.CancellationToken;
+        var saved = await CreateBuilder(key).SaveAsync(OfficeRequest(), "Reza", false, token);
+
+        var own = await CreateBuilder(key).ApproveAsync("office-reseller-fix", Reviewed(saved.Status!), "reza", token);
+        var allowed = await CreateBuilder(key, secondPerson: false)
+            .ApproveAsync("office-reseller-fix", Reviewed(saved.Status!), "reza", token);
+
+        Assert.Contains("different admin", own.Error);
+        Assert.True(allowed.Saved, allowed.Error);
+    }
+
+    [Fact]
+    public async Task ApprovalRefusesAChangedRevisionAndBrokenPackages()
+    {
+        var key = new FakeApprovalKey();
+        var builder = CreateBuilder(key);
+        var token = TestContext.Current.CancellationToken;
+        var first = await builder.SaveAsync(OfficeRequest(), "member1", false, token);
+        await builder.SaveAsync(OfficeRequest(replace: true) with { File = null,
+            Playbook = new BatchPlaybook(2, [new BatchPlaybookStep("Select an option:", "2", "line", 60)]) },
+            "member1", false, token);
+
+        var stale = await builder.ApproveAsync("office-reseller-fix", Reviewed(first.Status!), "admin1", token);
+        Assert.Contains("changed after you opened it", stale.Error);
+
+        var folder = Path.Combine(_root, "packages", "office-reseller-fix");
+        await File.AppendAllTextAsync(Path.Combine(folder, "Vendor Fix.bat"), "rem changed\r\n", token);
+        var current = Assert.Single(await CreateRepository(key).GetPackageStatusesAsync(token));
+        var broken = await builder.ApproveAsync("office-reseller-fix", Reviewed(current), "admin1", token);
+        Assert.Contains("Fix the package first", broken.Error);
+        Assert.Null((await builder.LoadAsync("office-reseller-fix", token))!.Manifest.Review!.ApprovedBy);
+    }
+
+    [Fact]
+    public async Task SavingAgainRemovesTheApproval()
+    {
+        var key = new FakeApprovalKey();
+        var builder = CreateBuilder(key);
+        var token = TestContext.Current.CancellationToken;
+        var saved = await builder.SaveAsync(OfficeRequest(), "member1", false, token);
+        await builder.ApproveAsync("office-reseller-fix", Reviewed(saved.Status!), "admin1", token);
+
+        var changed = await builder.SaveAsync(OfficeRequest(replace: true) with { File = null }, "admin1", true, token);
+
+        Assert.Equal(BatPackageStatuses.Unsigned, changed.Status!.Status);
+        Assert.Null(changed.Status.Review!.ApprovedBy);
+        Assert.Equal("admin1", changed.Status.Review.BuiltBy);
+    }
+
+    [Fact]
+    public async Task ApprovalNeedsTheKey()
+    {
+        var token = TestContext.Current.CancellationToken;
+        var builder = CreateBuilder();
+        var saved = await builder.SaveAsync(OfficeRequest(), "member1", false, token);
+
+        var result = await builder.ApproveAsync("office-reseller-fix", Reviewed(saved.Status!), "admin1", token);
+
+        Assert.False(result.Saved);
+        Assert.False(builder.GetApprovalInfo().Available);
+        Assert.True(CreateBuilder(new FakeApprovalKey()).GetApprovalInfo().Available);
     }
 }

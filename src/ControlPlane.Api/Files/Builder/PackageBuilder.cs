@@ -4,7 +4,10 @@ using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using EndpointAgents.Shared.Packages;
+using Microsoft.Extensions.Options;
 
 namespace ControlPlane.Api.Files.Builder;
 
@@ -32,6 +35,13 @@ public sealed record PackageBuildRequest(
     PackageCompatibilityManifest? Compatibility = null,
     BatPackageReview? Review = null);
 
+/// <summary>The revision the admin reviewed: both hashes must still match when they approve.</summary>
+public sealed record PackageApproveRequest(string? FileSha256, string? PlaybookSha256);
+
+/// <summary>Whether dashboard approvals work, and the key endpoints must trust for them.</summary>
+public sealed record PackageApprovalInfo(bool Available, string? KeyId, string? PublicKey,
+    string? Problem, bool RequireSecondPerson);
+
 /// <summary>An existing package loaded back into the builder form.</summary>
 public sealed record PackageBuilderDraft(string Kind, BatPackageManifest Manifest,
     BatScanResult? Scan, bool Signed);
@@ -48,7 +58,8 @@ public sealed record PackageBuildResult(bool Saved, string? Error, BatPackageSta
 /// unchanged, and <c>package.json</c> with the file and playbook hashes pinned. The
 /// package is saved unsigned, so endpoints cannot get it until it is signed.
 /// </summary>
-public sealed partial class PackageBuilder(FileArtifactRepository repository, TimeProvider clock)
+public sealed partial class PackageBuilder(FileArtifactRepository repository, TimeProvider clock,
+    IPackageApprovalKey? approvalKey = null, IOptions<PackageApprovalOptions>? approvalOptions = null)
 {
     public const string General = "general";
     public const string Office = "office";
@@ -229,7 +240,9 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                     Notes = string.IsNullOrWhiteSpace(review.Notes)
                         ? $"Made with the dashboard package builder by {author}."
                         : review.Notes.Trim(),
-                    AcceptedRisks = review.AcceptedRisks ?? []
+                    AcceptedRisks = review.AcceptedRisks ?? [],
+                    // A saved revision is a draft again until an admin approves it.
+                    BuiltBy = author
                 }
             };
             var fileSha256 = Sha256(bytes);
@@ -307,6 +320,100 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
         Directory.CreateDirectory(to);
         foreach (var file in Directory.EnumerateFiles(from))
             global::System.IO.File.Copy(file, Path.Combine(to, Path.GetFileName(file)));
+    }
+
+    /// <summary>What the dashboard shows about dashboard approvals.</summary>
+    public PackageApprovalInfo GetApprovalInfo()
+    {
+        var publicKey = approvalKey?.PublicKey;
+        return new PackageApprovalInfo(publicKey is not null,
+            publicKey is null ? null : PackageSignaturePolicy.GetKeyId(publicKey), publicKey,
+            approvalKey is null ? "Approving in the dashboard is not set up." : approvalKey.Problem,
+            approvalOptions?.Value.RequireSecondPerson ?? true);
+    }
+
+    /// <summary>
+    /// An admin approves the revision they reviewed: the control plane signs it with its own
+    /// key, so endpoints that trust that key may run it. The hashes the admin saw must still
+    /// match, and the person who saved it in the builder may not approve it.
+    /// </summary>
+    public async Task<PackageBuildResult> ApproveAsync(string id, PackageApproveRequest request,
+        string approver, CancellationToken cancellationToken)
+    {
+        if (approvalKey?.PublicKey is null)
+            return PackageBuildResult.Fail(approvalKey?.Problem ?? "Approving in the dashboard is not set up.");
+        if (!IsValidId(id))
+            return PackageBuildResult.Fail("Unknown package.");
+
+        await WriteLock.WaitAsync(cancellationToken);
+        try
+        {
+            var folder = Path.Combine(repository.PackagesRootPath, id);
+            var manifestPath = Path.Combine(folder, FileArtifactRepository.PackageManifestFileName);
+            if (!Directory.Exists(folder) || IsRedirected(folder) || !global::System.IO.File.Exists(manifestPath))
+                return PackageBuildResult.Fail("Unknown package.");
+            var status = (await repository.GetPackageStatusesAsync(cancellationToken))
+                .FirstOrDefault(item => item.Id == id);
+            if (status is null)
+                return PackageBuildResult.Fail("Unknown package.");
+            if (status.Status != BatPackageStatuses.Unsigned)
+                return PackageBuildResult.Fail(BatPackageStatuses.IsPublished(status.Status)
+                    ? "This package is already signed."
+                    : $"Fix the package first: {string.Join(" ", status.Reasons)}");
+            if (status.FileType != PackageFileTypes.Bat || status.Software is not null)
+                return PackageBuildResult.Fail("Only BAT repair and activation packages can be approved here. Sign other packages with test-bat-playbook.ps1 -Sign.");
+            if (!string.Equals(request.FileSha256, status.ActualBatSha256, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(request.PlaybookSha256, status.ComputedPlaybookSha256, StringComparison.OrdinalIgnoreCase))
+                return PackageBuildResult.Fail("The package changed after you opened it. Refresh the page and review it again.");
+
+            var original = await global::System.IO.File.ReadAllTextAsync(manifestPath, cancellationToken);
+            var node = JsonNode.Parse(original)?.AsObject();
+            var manifest = node?.Deserialize<BatPackageManifest>(Json);
+            if (node is null || manifest is null)
+                return PackageBuildResult.Fail("package.json could not be read.");
+            var builtBy = manifest.Review?.BuiltBy;
+            if ((approvalOptions?.Value.RequireSecondPerson ?? true) && builtBy is not null
+                && string.Equals(builtBy, approver, StringComparison.OrdinalIgnoreCase))
+                return PackageBuildResult.Fail("You saved this package yourself, so a different admin must approve it.");
+
+            var stagedName = manifest.SchemaVersion == 2
+                ? PackageDescriptorPolicy.StagedFileName(id, PackageFileTypes.Bat) : $"{id}.bat";
+            var support = status.SupportFiles
+                .Select(entry => new BatchSupportFile(entry.FileName, entry.Sha256, string.Empty)).ToArray();
+            var statement = PackageSignaturePolicy.BuildStatement(id, stagedName, status.ActualBatSha256!,
+                status.ComputedPlaybookSha256!, support.Length == 0 ? null
+                    : BatchSupportFilePolicy.ComputeBundleSha256(status.ActualBatSha256!, support),
+                null, PackageSignaturePolicy.NormalizeRisks(manifest.Review?.AcceptedRisks), null);
+
+            node["signature"] = JsonSerializer.SerializeToNode(approvalKey.Sign(statement), Json);
+            if (node["review"] is not JsonObject review)
+                node["review"] = review = new JsonObject();
+            review["approvedBy"] = approver;
+            review["approvedOn"] = clock.GetUtcNow().ToString("yyyy-MM-dd",
+                global::System.Globalization.CultureInfo.InvariantCulture);
+            await WriteManifestAsync(manifestPath, node.ToJsonString(Json) + Environment.NewLine, cancellationToken);
+
+            var signed = (await repository.GetPackageStatusesAsync(cancellationToken))
+                .FirstOrDefault(item => item.Id == id);
+            if (signed is null || !BatPackageStatuses.IsPublished(signed.Status))
+            {
+                await WriteManifestAsync(manifestPath, original, cancellationToken);
+                return PackageBuildResult.Fail("The new signature did not check out, so nothing was changed. "
+                    + string.Join(" ", signed?.Reasons ?? []));
+            }
+            return new PackageBuildResult(true, null, signed);
+        }
+        finally
+        {
+            WriteLock.Release();
+        }
+    }
+
+    private static async Task WriteManifestAsync(string path, string text, CancellationToken cancellationToken)
+    {
+        var temporary = path + ".approving";
+        await global::System.IO.File.WriteAllTextAsync(temporary, text, new UTF8Encoding(false), cancellationToken);
+        global::System.IO.File.Move(temporary, path, overwrite: true);
     }
 
     private static async Task<BatPackageManifest?> ReadManifestAsync(string folder,

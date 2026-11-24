@@ -250,5 +250,34 @@ export const scanBat = (fileName: string, fileBase64: string) =>
 export const loadDraft = (id: string) =>
   send<BuilderDraft>(`/api/files/packages/builder/${encodeURIComponent(id)}`);
 
+/** Whether an admin can approve and sign packages here, and the key PCs must trust for that. */
+export type ApprovalInfo = {
+  available: boolean; keyId?: string | null; publicKey?: string | null;
+  problem?: string | null; requireSecondPerson: boolean;
+};
+
+export const getApprovalInfo = () => send<ApprovalInfo>("/api/files/packages/approval");
+
+/** Approves the exact revision on screen: both hashes must still match on the server. */
+export const approvePackage = (item: BatPackage) =>
+  send<BuildResult>(`/api/files/packages/builder/${encodeURIComponent(item.id)}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ fileSha256: item.actualBatSha256, playbookSha256: item.computedPlaybookSha256 })
+  });
+
+/**
+ * Where a package stands with dashboard approval. Only an Unsigned BAT package (no install
+ * section) can be approved, and the person who saved it in the builder may not approve it.
+ */
+export function approvalState(item: BatPackage, info: ApprovalInfo | undefined, userName: string, isAdmin: boolean) {
+  if (item.status !== "Unsigned" || item.fileType === "exe" || item.software) return { show: false as const };
+  const builtBy = item.review?.builtBy ?? null;
+  const own = Boolean(info?.requireSecondPerson && builtBy && builtBy.toLowerCase() === userName.toLowerCase());
+  const blocked = !isAdmin ? "An admin approves it."
+    : !info?.available ? (info?.problem ?? "Approving here is not available.")
+    : own ? "You saved it yourself, so a different admin must approve it." : null;
+  return { show: true as const, builtBy, blocked };
+}
+
 export const savePackage = (request: BuildRequest) =>
   send<BuildResult>("/api/files/packages/builder", { method: "POST", body: JSON.stringify(request) });
