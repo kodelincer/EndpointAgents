@@ -195,15 +195,18 @@ public sealed class BatPackageLoaderTests : IDisposable
         var statuses = await repository.GetPackageStatusesAsync(
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(["adobe-connect-install", "chrome-install", "chrome-reset",
+        // Packages someone saved locally with the Package builder (not in git) may sit
+        // beside these; only the checked-in ones are checked here.
+        var checkedIn = new HashSet<string>(["adobe-connect-install", "chrome-install", "chrome-reset",
                 "foxit-editor-install", "foxit-reader-install", "no-input-repair-sample",
                 "office-activation-repair", "persian-fonts-install", "photos-install",
-                "windows-activation-retry"],
-            statuses.Select(status => status.Id).Order(StringComparer.Ordinal));
+                "windows-activation-retry"], StringComparer.Ordinal);
+        Assert.Superset(checkedIn, statuses.Select(status => status.Id).ToHashSet(StringComparer.Ordinal));
         // Install packages need vendor installers that are not in git, and these new
         // packages still need an administrator's signature (docs/software-install.md);
         // RepairPackageLoaderTests checks them with a test key.
-        foreach (var status in statuses.Where(status => status.Id != "chrome-reset"
+        foreach (var status in statuses.Where(status => checkedIn.Contains(status.Id)
+                     && status.Id != "chrome-reset"
                      && !status.Id.EndsWith("-install", StringComparison.Ordinal)))
             Assert.True(status.Status == BatPackageStatuses.Ready,
                 $"{status.Id}: {string.Join(" ", status.Reasons)}");
