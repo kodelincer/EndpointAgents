@@ -58,6 +58,7 @@ public sealed partial class InstallerUploads(FileArtifactRepository repository,
         {
             long size;
             string sha256;
+            var tooLarge = false;
             await using (var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write,
                              FileShare.None, 81920, useAsync: true))
             using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
@@ -70,13 +71,18 @@ public sealed partial class InstallerUploads(FileArtifactRepository repository,
                     size += read;
                     if (size > MaximumBytes)
                     {
-                        Directory.Delete(folder, recursive: true);
-                        return (null, $"The installer is larger than {MaximumBytes / 1024 / 1024} MB.");
+                        tooLarge = true; // delete only after the file is closed
+                        break;
                     }
                     hash.AppendData(buffer, 0, read);
                     await file.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
                 }
                 sha256 = Convert.ToHexString(hash.GetHashAndReset());
+            }
+            if (tooLarge)
+            {
+                Directory.Delete(folder, recursive: true);
+                return (null, $"The installer is larger than {MaximumBytes / 1024 / 1024} MB.");
             }
             if (size == 0)
             {
