@@ -15,9 +15,6 @@ public sealed class PackageApprovalOptions
 
     /// <summary>Name of the control plane's non-exportable Windows (CNG) signing key.</summary>
     public string KeyName { get; set; } = "EndpointAgents.ControlPlane.PackageApproval";
-
-    /// <summary>The person who saved a package in the builder may not approve it.</summary>
-    public bool RequireSecondPerson { get; set; } = true;
 }
 
 /// <summary>The control plane's own key for packages an admin approves in the dashboard.</summary>

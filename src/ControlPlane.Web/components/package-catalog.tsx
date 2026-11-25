@@ -23,7 +23,7 @@ export function PackageCatalog() {
   const [approval, setApproval] = useState<ApprovalInfo>();
   const [approving, setApproving] = useState<string>();
   const [approveMessage, setApproveMessage] = useState<{ ok: boolean; text: string }>();
-  const { session, can } = useAuth();
+  const { can } = useAuth();
   const isAdmin = can("packages.approve");
 
   const refresh = useCallback(async () => {
@@ -91,7 +91,7 @@ export function PackageCatalog() {
         <p>Make one with the <Link href="/package-builder/">Package builder</Link>, or with <code>scripts\new-package.ps1</code>; see “How to add a package” below.</p></section> :
       <section className="file-list" aria-label="Packages">{packages.map(item =>
         <PackageRow key={item.id} item={item} inventory={inventory!} open={open === item.id}
-          approval={approvalState(item, approval, session.userName, isAdmin)} approving={approving === item.id}
+          approval={approvalState(item, approval, isAdmin)} approving={approving === item.id}
           onApprove={() => void approve(item)}
           noApproval={noApproval.has(item.id)} onApprovalChange={skip => void toggleApproval(item, skip)}
           onToggle={() => setOpen(open === item.id ? undefined : item.id)} />)}</section>}
@@ -185,7 +185,6 @@ function ApprovalKey({ info }: { info: ApprovalInfo }) {
     {info.available ? <>
       <p>Packages an admin approves here are signed with the control plane&apos;s own key <code>{info.keyId}</code>. A PC runs them only after it trusts this key, for packages only (never for agent updates). Add it once on each PC under <code>PackageSigning:ApprovalPublicKeys</code>, or install PCs with <code>install-endpoint.ps1 -ApprovalSigningPublicKey &lt;key&gt;</code>.</p>
       <code className="builder-command">{info.publicKey}</code>
-      {info.requireSecondPerson && <p>The person who saved a package in the builder cannot approve it; a different admin must.</p>}
     </> : <p>{info.problem ?? "Approving in the dashboard is not available."} Sign packages with <code>test-bat-playbook.ps1 -Sign</code> instead.</p>}
   </section>;
 }
@@ -199,7 +198,7 @@ function HowToAddPackage() {
       <li>Create the package folder: <code>.\scripts\new-package.ps1 -File &lt;file.bat or file.exe&gt; -Id &lt;id&gt;</code>, adding <code>-NoInput</code> when the file needs no answers.</li>
       <li>For a file with screens, find each one, one round at a time: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Execute -Discover</code> and add a playbook step for it.</li>
       <li>Fill in the symptoms users would describe, any fixed arguments, the success and failure texts, compatibility and review, and remove every TODO.</li>
-      <li>Packages made in the Package builder: an admin who did not make it clicks <strong>Approve and sign</strong> on its row. Otherwise check, record the hashes and sign the reviewed revision: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Fix -Sign</code> until the status is Ready. Create your signing key once with <code>.\scripts\new-package-signing-key.ps1</code>.</li>
+      <li>Packages made in the Package builder: an admin clicks <strong>Approve and sign</strong> on its row. Otherwise check, record the hashes and sign the reviewed revision: <code>.\scripts\test-bat-playbook.ps1 -Package &lt;folder&gt; -Fix -Sign</code> until the status is Ready. Create your signing key once with <code>.\scripts\new-package-signing-key.ps1</code>.</li>
       <li>Copy the folder to the control plane’s <code>FileRepository\packages</code>, refresh this page, and test on one PC before rollout.</li>
     </ol>
     <p>The full guide is <code>docs\bat-packages.md</code>.</p>

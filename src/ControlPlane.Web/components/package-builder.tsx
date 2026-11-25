@@ -408,7 +408,7 @@ function SaveResult({ result, install }: { result: BuildResult; install: boolean
       <strong>Saved {status.id}: {tone.label}</strong>
       {status.reasons.length > 0 && <ul>{status.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       {status.warnings.length > 0 && <ul>{status.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
-      {unsignedOnly && <p>Saved as a draft, and everything else is in order. Next, an admin who did not make it opens the <Link href="/files/">Packages page</Link>, checks the steps and clicks <strong>Approve and sign</strong>. No PC gets it before that. To try it on a test PC first{install ? " (this really installs it)" : ""}:
+      {unsignedOnly && <p>Saved as a draft, and everything else is in order. Next, an admin (you, if you are one) opens the <Link href="/files/">Packages page</Link>, checks the steps and clicks <strong>Approve and sign</strong>. No PC gets it before that. To try it on a test PC first{install ? " (this really installs it)" : ""}:
         <code className="builder-command">.\scripts\test-bat-playbook.ps1 -Package &quot;{status.folder}&quot; -Execute</code></p>}
       <p><Link href="/files/">Open the Packages page</Link></p>
     </div>

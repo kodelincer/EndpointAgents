@@ -35,11 +35,11 @@ For a BAT or a vendor installer you do not need the scripts or a text editor. Op
 
 The control plane writes `packages\<id>\` with the BAT unchanged and a `package.json` with the file and playbook hashes already pinned, exactly as `new-package.ps1` plus `-Fix` would. The package is saved as a **draft** (Not signed), so no PC gets it yet. You can try it on a test PC first with `test-bat-playbook.ps1 -Package <folder> -Execute`.
 
-### Approve and sign (second person)
+### Approve and sign (admin)
 
-On **Packages and files**, a draft shows **Waiting for approval** and who saved it. An admin who did **not** save it opens **Show details**, checks the steps, and clicks **Approve and sign**. The control plane then signs exactly that revision with its own key, and the package becomes Ready. If the package changed after the admin opened the page, the approval is refused and they must look again. Saving the package again in the builder removes the approval.
+On **Packages and files**, a draft shows **Waiting for approval** and who saved it. Any admin, including the one who saved it, opens **Show details**, checks the steps, and clicks **Approve and sign**. The control plane then signs exactly that revision with its own key, and the package becomes Ready. If the package changed after the admin opened the page, the approval is refused and they must look again. Saving the package again in the builder removes the approval.
 
-The control plane's key is a non-exportable Windows key created on its first start, in the profile of the account it runs as. Its public key is shown at the top of Packages and files for admins. **Each PC must trust it once**, for packages only (never for agent updates): add it to `PackageSigning:ApprovalPublicKeys` in the endpoint settings, or install PCs with `install-endpoint.ps1 -ApprovalSigningPublicKey <key>`. Settings: `PackageApproval:Enabled` (default on) and `PackageApproval:RequireSecondPerson` (default on; switch it off only if your team has a single admin). Signing by hand with `-Sign` keeps working as before.
+The control plane's key is a non-exportable Windows key created on its first start, in the profile of the account it runs as. Its public key is shown at the top of Packages and files for admins. **Each PC must trust it once**, for packages only (never for agent updates): add it to `PackageSigning:ApprovalPublicKeys` in the endpoint settings, or install PCs with `install-endpoint.ps1 -ApprovalSigningPublicKey <key>`. Setting: `PackageApproval:Enabled` (default on). Signing by hand with `-Sign` keeps working as before.
 
 To change a package, use **Change in the Package builder** on its row, or pick it at the top of the builder; you can keep its BAT or installer, or upload a new one. Any helpdesk member may create and change unsigned packages. Changing a signed package needs an admin, and saving it removes the signature, so it leaves the PCs until it is approved again.
 
@@ -54,7 +54,7 @@ Pick **Install software** at the top of the builder to make an install package f
 3. **Say how to tell it worked:** the name the app shows in Apps & features (Settings > Apps), without version numbers. The PC checks it before installing (already there?) and after.
 4. **Add the requirements** from the vendor's page (Windows build, memory, free space, processor, runtimes, domain) and mark **Licensed** software, which always waits for a helpdesk approval.
 
-The package is the same as `new-install-package.ps1 -Typed`: the installer is the package file, pinned by hash and by its signer, with the signed `software` section. It is a draft until a second admin approves it, like any other package. Installers that need recorded wizard answers (`-RecordAnswers`) or cannot run silently (`-Manual`) still use the script.
+The package is the same as `new-install-package.ps1 -Typed`: the installer is the package file, pinned by hash and by its signer, with the signed `software` section. It is a draft until an admin approves it, like any other package. Installers that need recorded wizard answers (`-RecordAnswers`) or cannot run silently (`-Manual`) still use the script.
 
 ## Steps (by hand)
 

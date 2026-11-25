@@ -438,7 +438,7 @@ export const loadDraft = (id: string) =>
 /** Whether an admin can approve and sign packages here, and the key PCs must trust for that. */
 export type ApprovalInfo = {
   available: boolean; keyId?: string | null; publicKey?: string | null;
-  problem?: string | null; requireSecondPerson: boolean;
+  problem?: string | null;
 };
 
 export const getApprovalInfo = () => send<ApprovalInfo>("/api/files/packages/approval");
@@ -452,15 +452,13 @@ export const approvePackage = (item: BatPackage) =>
 
 /**
  * Where a package stands with dashboard approval. Only an Unsigned BAT, EXE or MSI package
- * can be approved, and the person who saved it in the builder may not approve it.
+ * can be approved. Any admin may approve it, including the one who saved it.
  */
-export function approvalState(item: BatPackage, info: ApprovalInfo | undefined, userName: string, isAdmin: boolean) {
+export function approvalState(item: BatPackage, info: ApprovalInfo | undefined, isAdmin: boolean) {
   if (item.status !== "Unsigned" || !["bat", "exe", "msi"].includes(item.fileType ?? "bat")) return { show: false as const };
   const builtBy = item.review?.builtBy ?? null;
-  const own = Boolean(info?.requireSecondPerson && builtBy && builtBy.toLowerCase() === userName.toLowerCase());
   const blocked = !isAdmin ? "An admin approves it."
-    : !info?.available ? (info?.problem ?? "Approving here is not available.")
-    : own ? "You saved it yourself, so a different admin must approve it." : null;
+    : !info?.available ? (info?.problem ?? "Approving here is not available.") : null;
   return { show: true as const, builtBy, blocked };
 }
 

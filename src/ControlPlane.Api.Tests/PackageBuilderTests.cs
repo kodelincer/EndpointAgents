@@ -130,9 +130,8 @@ public sealed class PackageBuilderTests : IDisposable
         }),
         new HostingEnvironment { ContentRootPath = _root });
 
-    private PackageBuilder CreateBuilder(FakeApprovalKey? key = null, bool secondPerson = true) => new(
-        CreateRepository(key), TimeProvider.System, key,
-        Options.Create(new PackageApprovalOptions { RequireSecondPerson = secondPerson }), CreateUploads());
+    private PackageBuilder CreateBuilder(FakeApprovalKey? key = null) => new(
+        CreateRepository(key), TimeProvider.System, key, CreateUploads());
 
     private InstallerUploads CreateUploads(long maximumBytes = 500L * 1024 * 1024) => new(CreateRepository(),
         Options.Create(new FileRepositoryOptions { RootPath = _root, MaxFileSizeBytes = maximumBytes }),
@@ -375,18 +374,16 @@ public sealed class PackageBuilderTests : IDisposable
     }
 
     [Fact]
-    public async Task TheBuilderCannotApproveTheirOwnPackageUnlessThatRuleIsOff()
+    public async Task AnAdminMayApproveAPackageTheySavedThemselves()
     {
         var key = new FakeApprovalKey();
         var token = TestContext.Current.CancellationToken;
         var saved = await CreateBuilder(key).SaveAsync(OfficeRequest(), "Reza", false, token);
 
         var own = await CreateBuilder(key).ApproveAsync("office-reseller-fix", Reviewed(saved.Status!), "reza", token);
-        var allowed = await CreateBuilder(key, secondPerson: false)
-            .ApproveAsync("office-reseller-fix", Reviewed(saved.Status!), "reza", token);
 
-        Assert.Contains("different admin", own.Error);
-        Assert.True(allowed.Saved, allowed.Error);
+        Assert.True(own.Saved, own.Error);
+        Assert.Equal("reza", own.Status!.Review!.ApprovedBy);
     }
 
     [Fact]

@@ -85,26 +85,24 @@ describe("package builder form", () => {
 });
 
 describe("dashboard approval", () => {
-  const info = { available: true, keyId: "ABCD", publicKey: "key", requireSecondPerson: true };
+  const info = { available: true, keyId: "ABCD", publicKey: "key" };
   const draft = { id: "fix", folder: "f", status: "Unsigned", reasons: ["not signed"], warnings: [], supportFiles: [],
     fileType: "bat", review: { builtBy: "member1" } } as unknown as import("./types").BatPackage;
 
-  it("lets a different admin approve an unsigned BAT draft", () => {
-    expect(approvalState(draft, info, "admin1", true)).toEqual({ show: true, builtBy: "member1", blocked: null });
+  it("lets any admin approve an unsigned draft, including the one who saved it", () => {
+    expect(approvalState(draft, info, true)).toEqual({ show: true, builtBy: "member1", blocked: null });
   });
 
   it("explains why the button is off", () => {
-    expect(approvalState(draft, info, "Member1", true).blocked).toContain("different admin");
-    expect(approvalState(draft, info, "member2", false).blocked).toBe("An admin approves it.");
-    expect(approvalState(draft, { ...info, available: false, problem: "No key." }, "admin1", true).blocked).toBe("No key.");
-    expect(approvalState(draft, { ...info, requireSecondPerson: false }, "member1", true).blocked).toBeNull();
+    expect(approvalState(draft, info, false).blocked).toBe("An admin approves it.");
+    expect(approvalState(draft, { ...info, available: false, problem: "No key." }, true).blocked).toBe("No key.");
   });
 
   it("is offered for EXE and MSI drafts, not for ready packages or other file types", () => {
-    expect(approvalState({ ...draft, status: "Ready" }, info, "admin1", true).show).toBe(false);
-    expect(approvalState({ ...draft, fileType: "exe" }, info, "admin1", true).show).toBe(true);
-    expect(approvalState({ ...draft, fileType: "msi" }, info, "admin1", true).show).toBe(true);
-    expect(approvalState({ ...draft, fileType: "zip" }, info, "admin1", true).show).toBe(false);
+    expect(approvalState({ ...draft, status: "Ready" }, info, true).show).toBe(false);
+    expect(approvalState({ ...draft, fileType: "exe" }, info, true).show).toBe(true);
+    expect(approvalState({ ...draft, fileType: "msi" }, info, true).show).toBe(true);
+    expect(approvalState({ ...draft, fileType: "zip" }, info, true).show).toBe(false);
   });
 });
 

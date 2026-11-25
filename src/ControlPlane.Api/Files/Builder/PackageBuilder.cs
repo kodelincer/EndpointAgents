@@ -44,7 +44,7 @@ public sealed record PackageApproveRequest(string? FileSha256, string? PlaybookS
 
 /// <summary>Whether dashboard approvals work, and the key endpoints must trust for them.</summary>
 public sealed record PackageApprovalInfo(bool Available, string? KeyId, string? PublicKey,
-    string? Problem, bool RequireSecondPerson);
+    string? Problem);
 
 /// <summary>An existing package loaded back into the builder form.</summary>
 public sealed record PackageBuilderDraft(string Kind, BatPackageManifest Manifest,
@@ -63,8 +63,7 @@ public sealed record PackageBuildResult(bool Saved, string? Error, BatPackageSta
 /// package is saved unsigned, so endpoints cannot get it until it is signed.
 /// </summary>
 public sealed partial class PackageBuilder(FileArtifactRepository repository, TimeProvider clock,
-    IPackageApprovalKey? approvalKey = null, IOptions<PackageApprovalOptions>? approvalOptions = null,
-    InstallerUploads? uploads = null)
+    IPackageApprovalKey? approvalKey = null, InstallerUploads? uploads = null)
 {
     public const string General = "general";
     public const string Office = "office";
@@ -567,14 +566,13 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
         var publicKey = approvalKey?.PublicKey;
         return new PackageApprovalInfo(publicKey is not null,
             publicKey is null ? null : PackageSignaturePolicy.GetKeyId(publicKey), publicKey,
-            approvalKey is null ? "Approving in the dashboard is not set up." : approvalKey.Problem,
-            approvalOptions?.Value.RequireSecondPerson ?? true);
+            approvalKey is null ? "Approving in the dashboard is not set up." : approvalKey.Problem);
     }
 
     /// <summary>
     /// An admin approves the revision they reviewed: the control plane signs it with its own
     /// key, so endpoints that trust that key may run it. The hashes the admin saw must still
-    /// match, and the person who saved it in the builder may not approve it.
+    /// match. Any admin may approve, including the one who saved it.
     /// </summary>
     public async Task<PackageBuildResult> ApproveAsync(string id, PackageApproveRequest request,
         string approver, CancellationToken cancellationToken)
@@ -610,11 +608,6 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
             var manifest = node?.Deserialize<BatPackageManifest>(Json);
             if (node is null || manifest is null)
                 return PackageBuildResult.Fail("package.json could not be read.");
-            var builtBy = manifest.Review?.BuiltBy;
-            if ((approvalOptions?.Value.RequireSecondPerson ?? true) && builtBy is not null
-                && string.Equals(builtBy, approver, StringComparison.OrdinalIgnoreCase))
-                return PackageBuildResult.Fail("You saved this package yourself, so a different admin must approve it.");
-
             var stagedName = manifest.SchemaVersion == 2
                 ? PackageDescriptorPolicy.StagedFileName(id, status.FileType) : $"{id}.bat";
             var support = status.SupportFiles
