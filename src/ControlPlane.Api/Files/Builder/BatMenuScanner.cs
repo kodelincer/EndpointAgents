@@ -105,6 +105,52 @@ public static partial class BatMenuScanner
         return screens;
     }
 
+    /// <summary>
+    /// Reads a plain text file a BAT shows while it runs (for example with <c>type menu.txt</c>),
+    /// and lists each block of menu lines in it. The prompt the BAT waits at is usually in
+    /// the BAT itself, so it is only suggested when the block is followed by a line such as
+    /// <c>Select an option:</c>.
+    /// </summary>
+    public static IReadOnlyList<BatScreenSuggestion> ScanPlainText(string text, string fileName)
+    {
+        var lines = SplitLines(text);
+        var screens = new List<BatScreenSuggestion>();
+        var shown = new List<string>();
+        for (var index = 0; index < lines.Count && screens.Count < MaximumScreens; index++)
+        {
+            var line = Normalize(lines[index].Trim());
+            if (line.Length == 0 || !MenuLinePattern().IsMatch(line))
+            {
+                if (line.Length > 0) shown.Add(line);
+                continue;
+            }
+            var start = index;
+            var block = new List<string>();
+            while (index < lines.Count && Normalize(lines[index].Trim()) is var item
+                   && (item.Length == 0 || MenuLinePattern().IsMatch(item)))
+            {
+                if (item.Length > 0) block.Add(item);
+                index++;
+            }
+            var options = ReadOptions(block);
+            if (options.Count < 2) { shown.AddRange(block); index--; continue; }
+            var next = index < lines.Count ? Normalize(lines[index].Trim()) : string.Empty;
+            var prompt = next.Length > 0 && next[^1] is ':' or '?' or ']' or '>' ? Shorten(next) : null;
+            var notes = new List<string> { $"Read from {fileName}, which the BAT shows while it runs." };
+            if (prompt is null)
+                notes.Add("The text the BAT waits at is not in this file; copy it from the BAT or from the screen of a test run.");
+            var screen = new List<string>(shown);
+            screen.AddRange(block);
+            if (prompt is not null) screen.Add(next);
+            screens.Add(new BatScreenSuggestion(start + 1, "menu", null, prompt, "line", options,
+                Tail(screen), notes));
+            shown.Clear();
+            if (prompt is not null) index++;
+            index--;
+        }
+        return screens;
+    }
+
     private static BatScreenSuggestion BuildSetPrompt(IReadOnlyList<string> lines, int index,
         string? section, List<string> shown, string variable, string prompt)
     {

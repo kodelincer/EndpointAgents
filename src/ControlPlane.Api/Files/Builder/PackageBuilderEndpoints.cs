@@ -32,6 +32,18 @@ public static class PackageBuilderEndpoints
             return info is null ? Results.BadRequest(new { message = error }) : Results.Ok(info);
         }).RequireAuthorization(OperatorPolicies.Operator);
 
+        // A supporting file for a BAT package's files\ folder, sent the same way.
+        app.MapPost("/api/files/packages/builder/support-uploads", async (string? fileName,
+            HttpContext context, InstallerUploads uploads, CancellationToken cancellationToken) =>
+        {
+            if (context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+                limit.MaxRequestBodySize = uploads.MaximumBytes + 1;
+            if (context.Request.ContentLength > uploads.MaximumBytes)
+                return Results.BadRequest(new { message = $"The file is larger than {uploads.MaximumBytes / 1024 / 1024} MB." });
+            var (info, error) = await uploads.SaveSupportAsync(context.Request.Body, fileName, cancellationToken);
+            return info is null ? Results.BadRequest(new { message = error }) : Results.Ok(info);
+        }).RequireAuthorization(OperatorPolicies.Operator);
+
         app.MapGet("/api/files/packages/builder/{packageId}", async (string packageId,
             PackageBuilder builder, CancellationToken cancellationToken) =>
             await builder.LoadAsync(packageId, cancellationToken) is { } draft

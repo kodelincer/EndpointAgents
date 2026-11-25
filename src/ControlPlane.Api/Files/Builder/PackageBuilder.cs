@@ -35,7 +35,9 @@ public sealed record PackageBuildRequest(
     PackageCompatibilityManifest? Compatibility = null,
     BatPackageReview? Review = null,
     string? UploadId = null,
-    SoftwareSpec? Software = null);
+    SoftwareSpec? Software = null,
+    IReadOnlyList<string>? KeepSupportFiles = null,
+    IReadOnlyList<string>? SupportUploadIds = null);
 
 /// <summary>The revision the admin reviewed: both hashes must still match when they approve.</summary>
 public sealed record PackageApproveRequest(string? FileSha256, string? PlaybookSha256);
@@ -46,7 +48,7 @@ public sealed record PackageApprovalInfo(bool Available, string? KeyId, string? 
 
 /// <summary>An existing package loaded back into the builder form.</summary>
 public sealed record PackageBuilderDraft(string Kind, BatPackageManifest Manifest,
-    BatScanResult? Scan, bool Signed);
+    BatScanResult? Scan, bool Signed, IReadOnlyList<SupportFileInfo>? SupportFiles = null);
 
 /// <summary>The builder's answer: either the saved package's status or why nothing was saved.</summary>
 public sealed record PackageBuildResult(bool Saved, string? Error, BatPackageStatus? Status)
@@ -142,9 +144,21 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                 && (info.Attributes & FileAttributes.ReparsePoint) == 0)
                 scan = ScanBytes(fileName, await global::System.IO.File.ReadAllBytesAsync(path, cancellationToken));
         }
+        var support = new List<SupportFileInfo>();
+        foreach (var entry in manifest.SupportFiles ?? [])
+        {
+            if (InstallerUploads.SafeSupportFileName(entry.FileName) != entry.FileName) continue;
+            var path = Path.Combine(folder, FileArtifactRepository.PackageSupportDirectoryName, entry.FileName);
+            var info = new FileInfo(path);
+            support.Add(info.Exists && (info.Attributes & FileAttributes.ReparsePoint) == 0
+                ? InstallerUploads.DescribeSupportFile(path, entry.FileName, info.Length,
+                    await Sha256FileAsync(path, cancellationToken), null)
+                : new SupportFileInfo(null, entry.FileName, 0, entry.Sha256, null, [],
+                    ["This file is missing from the package. Upload it again, or remove it."]));
+        }
         var signed = manifest.Signature is not null;
         manifest.Signature = null;
-        return new PackageBuilderDraft(kind, manifest, scan, signed);
+        return new PackageBuilderDraft(kind, manifest, scan, signed, support);
     }
 
     /// <summary>Validates the form, writes the package folder, and returns its status.</summary>
@@ -240,8 +254,6 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                 Problem = string.IsNullOrWhiteSpace(request.Problem) ? null : request.Problem.Trim(),
                 Order = request.Order,
                 RequiresApproval = request.RequiresApproval,
-                // Supporting files are not managed by the builder; keep the existing ones.
-                SupportFiles = existing?.SupportFiles ?? [],
                 Playbook = normalized,
                 PlaybookSha256 = BatchPlaybookPolicy.ComputeSha256(normalized!),
                 Review = BuildReview(request.Review, author, $"Made with the dashboard package builder by {author}.")
@@ -260,10 +272,22 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                 manifest.Windows = kind == Windows ? request.Windows : null;
             }
 
+            var stagedName = kind == General
+                ? PackageDescriptorPolicy.StagedFileName(id, PackageFileTypes.Bat) : $"{id}.bat";
+            var (support, supportError) = await PlanSupportFilesAsync(request, existing, folder,
+                [stagedName, fileName!], cancellationToken);
+            if (supportError is not null)
+                return PackageBuildResult.Fail(supportError);
+            manifest.SupportFiles = support!
+                .Select(item => new BatchSupportFileManifestEntry { FileName = item.FileName, Sha256 = item.Sha256 })
+                .ToList();
+
             var batBytes = bytes;
             await WriteFolderAsync(root, folder, fileName!,
                 (path, token) => global::System.IO.File.WriteAllBytesAsync(path, batBytes, token),
-                manifest, existing is not null, keepSupportFiles: true, cancellationToken);
+                manifest, existing is not null, support!, cancellationToken);
+            foreach (var uploadId in request.SupportUploadIds ?? [])
+                uploads?.Remove(uploadId);
         }
         finally
         {
@@ -399,7 +423,7 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                     await using var to = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true);
                     await from.CopyToAsync(to, token);
                 }
-            }, manifest, existing is not null, keepSupportFiles: false, cancellationToken);
+            }, manifest, existing is not null, [], cancellationToken);
             if (request.UploadId is not null) uploads?.Remove(request.UploadId);
         }
         finally
@@ -449,7 +473,7 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
     /// </summary>
     private async Task WriteFolderAsync(string root, string folder, string fileName,
         Func<string, CancellationToken, Task> writeFile, BatPackageManifest manifest, bool replace,
-        bool keepSupportFiles, CancellationToken cancellationToken)
+        IReadOnlyList<SupportFilePlan> support, CancellationToken cancellationToken)
     {
         var staging = StagingRoot(repository);
         Directory.CreateDirectory(root);
@@ -463,9 +487,18 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                 Path.Combine(building, FileArtifactRepository.PackageManifestFileName),
                 JsonSerializer.Serialize(manifest, Json) + Environment.NewLine,
                 new UTF8Encoding(false), cancellationToken);
-            var support = Path.Combine(folder, FileArtifactRepository.PackageSupportDirectoryName);
-            if (keepSupportFiles && replace && Directory.Exists(support) && !IsRedirected(support))
-                CopyDirectory(support, Path.Combine(building, FileArtifactRepository.PackageSupportDirectoryName));
+            if (support.Count > 0)
+            {
+                var files = Path.Combine(building, FileArtifactRepository.PackageSupportDirectoryName);
+                Directory.CreateDirectory(files);
+                foreach (var item in support)
+                {
+                    var target = Path.Combine(files, item.FileName);
+                    // Uploads sit on the same disk; kept files are copied so the old folder stays whole until the swap.
+                    if (item.Move) global::System.IO.File.Move(item.SourcePath, target);
+                    else global::System.IO.File.Copy(item.SourcePath, target);
+                }
+            }
 
             if (replace)
             {
@@ -487,11 +520,45 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
         }
     }
 
-    private static void CopyDirectory(string from, string to)
+    /// <summary>One file for the package's files\ folder, with its hash worked out by the control plane.</summary>
+    private sealed record SupportFilePlan(string FileName, string Sha256, string SourcePath, bool Move);
+
+    private const int MaximumSupportFiles = 32;
+
+    /// <summary>
+    /// The supporting files the saved package will have: the existing ones the person kept
+    /// (all of them when the form does not say) and the new uploads, which replace a kept
+    /// file of the same name. Every hash is computed from the file itself.
+    /// </summary>
+    private async Task<(IReadOnlyList<SupportFilePlan>? Files, string? Error)> PlanSupportFilesAsync(
+        PackageBuildRequest request, BatPackageManifest? existing, string folder,
+        IReadOnlyList<string> reservedNames, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(to);
-        foreach (var file in Directory.EnumerateFiles(from))
-            global::System.IO.File.Copy(file, Path.Combine(to, Path.GetFileName(file)));
+        var plan = new List<SupportFilePlan>();
+        var existingNames = (existing?.SupportFiles ?? []).Select(entry => entry.FileName).ToList();
+        var keep = request.KeepSupportFiles ?? existingNames;
+        foreach (var name in keep.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!existingNames.Contains(name, StringComparer.OrdinalIgnoreCase))
+                return (null, $"The package has no supporting file named {name}.");
+            var path = Path.Combine(folder, FileArtifactRepository.PackageSupportDirectoryName, name);
+            if (InstallerUploads.SafeSupportFileName(name) != name || !global::System.IO.File.Exists(path)
+                || IsRedirected(path))
+                return (null, $"The supporting file {name} is missing. Upload it again, or remove it.");
+            plan.Add(new SupportFilePlan(name, await Sha256FileAsync(path, cancellationToken), path, false));
+        }
+        foreach (var uploadId in (request.SupportUploadIds ?? []).Distinct(StringComparer.Ordinal))
+        {
+            if (uploads?.GetSupport(uploadId) is not { } upload)
+                return (null, "An uploaded supporting file has expired. Upload it again.");
+            plan.RemoveAll(item => item.FileName.Equals(upload.Info.FileName, StringComparison.OrdinalIgnoreCase));
+            plan.Add(new SupportFilePlan(upload.Info.FileName, upload.Info.Sha256, upload.Path, true));
+        }
+        if (plan.Count > MaximumSupportFiles)
+            return (null, $"A package can have at most {MaximumSupportFiles} supporting files.");
+        if (plan.FirstOrDefault(item => reservedNames.Contains(item.FileName, StringComparer.OrdinalIgnoreCase)) is { } clash)
+            return (null, $"A supporting file cannot be named {clash.FileName}, like the package's own file. Rename it.");
+        return (plan.OrderBy(item => item.FileName, StringComparer.OrdinalIgnoreCase).ToList(), null);
     }
 
     /// <summary>What the dashboard shows about dashboard approvals.</summary>
@@ -641,7 +708,7 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
     }
 
     /// <summary>UTF-8 when the bytes are valid UTF-8; otherwise each byte as one character.</summary>
-    private static string DecodeText(byte[] bytes, out string? note)
+    internal static string DecodeText(byte[] bytes, out string? note)
     {
         note = null;
         try

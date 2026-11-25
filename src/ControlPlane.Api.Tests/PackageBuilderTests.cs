@@ -538,4 +538,78 @@ public sealed class PackageBuilderTests : IDisposable
         Assert.Contains("no vendor", (await builder.SaveAsync(InstallRequest(unsigned.UploadId), "m", false, token)).Error);
         Assert.False(Directory.Exists(Path.Combine(_root, "packages", "dotnet-install")));
     }
+
+    private async Task<SupportFileInfo> UploadSupportAsync(string name, string text)
+    {
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(text));
+        var (info, error) = await CreateUploads().SaveSupportAsync(stream, name, TestContext.Current.CancellationToken);
+        Assert.True(info is not null, error);
+        return info!;
+    }
+
+    [Fact]
+    public void MenusInPlainTextFilesAreSuggested()
+    {
+        var screens = BatMenuScanner.ScanPlainText("Main menu\r\n\r\n[1] Activate\r\n[2] Exit\r\nSelect an option:\r\n", "menu.txt");
+        var screen = Assert.Single(screens);
+        Assert.Equal("Select an option:", screen.Expect);
+        Assert.Equal(new[] { "1", "2" }, screen.Options.Select(option => option.Value));
+        Assert.Contains("menu.txt", screen.Notes[0]);
+
+        var noPrompt = Assert.Single(BatMenuScanner.ScanPlainText("1. Repair\n2. Reset\nThanks", "m.txt"));
+        Assert.Null(noPrompt.Expect);
+        Assert.Empty(BatMenuScanner.ScanPlainText("[1] only one option\nhello", "m.txt"));
+    }
+
+    [Fact]
+    public async Task SupportingFilesAreHashedKeptAndRemoved()
+    {
+        var key = new FakeApprovalKey();
+        var builder = CreateBuilder(key);
+        var token = TestContext.Current.CancellationToken;
+        var menu = await UploadSupportAsync("menu list.txt", "[1] Activate\r\n[2] Exit\r\nChoose:\r\n");
+        Assert.Equal("menu-list.txt", menu.FileName);
+        Assert.Single(menu.Screens);
+
+        var saved = await builder.SaveAsync(OfficeRequest() with { SupportUploadIds = [menu.UploadId!] }, "member1", false, token);
+        Assert.True(saved.Saved, saved.Error);
+        Assert.Equal(BatPackageStatuses.Unsigned, saved.Status!.Status);
+        var entry = Assert.Single(saved.Status.SupportFiles);
+        Assert.Equal(("menu-list.txt", menu.Sha256), (entry.FileName, entry.Sha256));
+        var folder = Path.Combine(_root, "packages", "office-reseller-fix");
+        Assert.True(File.Exists(Path.Combine(folder, "files", "menu-list.txt")));
+        Assert.Null(CreateUploads().GetSupport(menu.UploadId));
+
+        // The approval covers the supporting files too.
+        var approved = await builder.ApproveAsync("office-reseller-fix", Reviewed(saved.Status), "admin1", token);
+        Assert.True(approved.Saved, approved.Error);
+
+        var draft = await builder.LoadAsync("office-reseller-fix", token);
+        var loaded = Assert.Single(draft!.SupportFiles!);
+        Assert.Equal(menu.Sha256, loaded.Sha256);
+        Assert.Single(loaded.Screens);
+
+        // Not saying which files to keep keeps them all; an empty list removes them.
+        var kept = await builder.SaveAsync(OfficeRequest(replace: true) with { File = null }, "admin1", true, token);
+        Assert.Single(kept.Status!.SupportFiles);
+        var removed = await builder.SaveAsync(OfficeRequest(replace: true) with { File = null, KeepSupportFiles = [] }, "admin1", true, token);
+        Assert.Empty(removed.Status!.SupportFiles);
+        Assert.False(Directory.Exists(Path.Combine(folder, "files")));
+    }
+
+    [Fact]
+    public async Task SupportingFilesNeedSafeUniqueNames()
+    {
+        var builder = CreateBuilder();
+        var token = TestContext.Current.CancellationToken;
+        var clash = await UploadSupportAsync("office-reseller-fix.bat", "echo hi");
+
+        var result = await builder.SaveAsync(OfficeRequest() with { SupportUploadIds = [clash.UploadId!] }, "m", false, token);
+
+        Assert.Contains("cannot be named", result.Error);
+        Assert.Contains("expired", (await builder.SaveAsync(OfficeRequest() with { SupportUploadIds = [new string('c', 32)] }, "m", false, token)).Error);
+        Assert.Contains("no supporting file", (await builder.SaveAsync(OfficeRequest() with { KeepSupportFiles = ["x.txt"] }, "m", false, token)).Error);
+        Assert.Null(InstallerUploads.SafeSupportFileName(".hidden"));
+        Assert.Null(InstallerUploads.SafeSupportFileName(new string('a', 129)));
+    }
 }

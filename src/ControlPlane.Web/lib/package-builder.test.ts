@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  approvalState, emptyForm, emptyStep, formFromDraft, formFromInstaller, formProblems, idFromFileName, stepFromSuggestion, toRequest,
-  type BuilderDraft, type InstallerInfo, type ScreenSuggestion
+  addSupportFile, approvalState, emptyForm, emptyStep, formFromDraft, formFromInstaller, formProblems, idFromFileName, stepFromSuggestion, toRequest,
+  type BuilderDraft, type InstallerInfo, type ScreenSuggestion, type SupportFileInfo
 } from "./package-builder";
 
 const menu: ScreenSuggestion = {
@@ -170,5 +170,22 @@ describe("install packages", () => {
     const form = formFromDraft(draft);
     expect(form).toMatchObject({ kind: "install", appName: "7-Zip", installKind: "msi", msiProperties: "ALLUSERS=1", detectName: "7-Zip", installTimeoutSeconds: "600", minFreeDiskGB: "2" });
     expect(toRequest(form, null, true).software?.install?.msiProperties).toEqual({ ALLUSERS: "1" });
+  });
+});
+
+describe("supporting files", () => {
+  const file = (fileName: string, uploadId: string | null = null): SupportFileInfo =>
+    ({ fileName, uploadId, sizeBytes: 10, sha256: "AA", screens: [], notes: [] });
+
+  it("sends the kept files by name and the new ones by upload", () => {
+    const request = toRequest(filled(), null, true, null, [file("menu.txt"), file("tool.exe", "b".repeat(32))]);
+    expect(request.keepSupportFiles).toEqual(["menu.txt"]);
+    expect(request.supportUploadIds).toEqual(["b".repeat(32)]);
+    expect(toRequest(filled(), null, true)).not.toHaveProperty("keepSupportFiles");
+  });
+
+  it("replaces a file of the same name when one is uploaded again", () => {
+    const list = addSupportFile([file("Menu.txt"), file("a.cab")], file("menu.txt", "c".repeat(32)));
+    expect(list.map(item => [item.fileName, item.uploadId])).toEqual([["a.cab", null], ["menu.txt", "c".repeat(32)]]);
   });
 });

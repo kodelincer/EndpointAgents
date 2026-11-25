@@ -1,3 +1,4 @@
+using EndpointAgents.Shared.Office;
 using EndpointAgents.Shared.Packages;
 using Microsoft.Extensions.Options;
 using System.Diagnostics;
@@ -28,6 +29,18 @@ public sealed record InstallerInfo(
     string? Signer,
     IReadOnlyList<string> Notes);
 
+/// <summary>A supporting file in a package's files\ folder, or one just uploaded for it.</summary>
+/// <param name="UploadId">Set while the file is an upload that is not saved into a package yet.</param>
+/// <param name="Screens">Menus found in it, for a BAT, CMD or text file the BAT shows while it runs.</param>
+public sealed record SupportFileInfo(
+    string? UploadId,
+    string FileName,
+    long SizeBytes,
+    string Sha256,
+    string? Signer,
+    IReadOnlyList<BatScreenSuggestion> Screens,
+    IReadOnlyList<string> Notes);
+
 /// <summary>
 /// Installers uploaded from the builder page, kept beside the packages folder until the
 /// package is saved (or for a day). The body is streamed to disk, so large installers do
@@ -37,6 +50,7 @@ public sealed partial class InstallerUploads(FileArtifactRepository repository,
     IOptions<FileRepositoryOptions> options, TimeProvider clock)
 {
     private const string InfoFileName = "upload.json";
+    private const string SupportInfoFileName = "support-file.json";
     private static readonly TimeSpan KeepFor = TimeSpan.FromDays(1);
 
     public long MaximumBytes => options.Value.MaxFileSizeBytes;
@@ -49,6 +63,37 @@ public sealed partial class InstallerUploads(FileArtifactRepository repository,
         var fileName = SafeFileName(requestedName);
         if (fileName is null)
             return (null, "Choose an .msi or .exe installer.");
+        var (stored, error) = await StoreAsync(body, fileName, "installer", cancellationToken);
+        if (stored is not { } file) return (null, error);
+        return await WriteInfoAsync(file.Folder, InfoFileName,
+            Inspect(file.Id, file.Path, fileName, file.Size, file.Sha256), cancellationToken);
+    }
+
+    /// <summary>A supporting file for a BAT package (files\), such as a tool, a CAB or a menu text file.</summary>
+    public async Task<(SupportFileInfo? Info, string? Error)> SaveSupportAsync(Stream body, string? requestedName,
+        CancellationToken cancellationToken)
+    {
+        var fileName = SafeSupportFileName(requestedName);
+        if (fileName is null)
+            return (null, "The file name must use letters, numbers, dots, underscores or hyphens (up to 128 characters).");
+        var (stored, error) = await StoreAsync(body, fileName, "file", cancellationToken);
+        if (stored is not { } file) return (null, error);
+        return await WriteInfoAsync(file.Folder, SupportInfoFileName,
+            DescribeSupportFile(file.Path, fileName, file.Size, file.Sha256, file.Id), cancellationToken);
+    }
+
+    private static async Task<(T? Info, string? Error)> WriteInfoAsync<T>(string folder, string name, T info,
+        CancellationToken cancellationToken) where T : class
+    {
+        await global::System.IO.File.WriteAllTextAsync(Path.Combine(folder, name),
+            JsonSerializer.Serialize(info, PackageBuilder.Json), cancellationToken);
+        return (info, null);
+    }
+
+    /// <summary>Streams the body to a new upload folder while hashing it; never keeps a partial file.</summary>
+    private async Task<((string Id, string Folder, string Path, long Size, string Sha256)? File, string? Error)>
+        StoreAsync(Stream body, string fileName, string what, CancellationToken cancellationToken)
+    {
         RemoveOld();
         var id = Guid.NewGuid().ToString("N");
         var folder = Path.Combine(Root, id);
@@ -82,23 +127,59 @@ public sealed partial class InstallerUploads(FileArtifactRepository repository,
             if (tooLarge)
             {
                 Directory.Delete(folder, recursive: true);
-                return (null, $"The installer is larger than {MaximumBytes / 1024 / 1024} MB.");
+                return (null, $"The {what} is larger than {MaximumBytes / 1024 / 1024} MB.");
             }
             if (size == 0)
             {
                 Directory.Delete(folder, recursive: true);
                 return (null, "The file is empty.");
             }
-            var info = Inspect(id, path, fileName, size, sha256);
-            await global::System.IO.File.WriteAllTextAsync(Path.Combine(folder, InfoFileName),
-                JsonSerializer.Serialize(info, PackageBuilder.Json), cancellationToken);
-            return (info, null);
+            return ((id, folder, path, size, sha256), null);
         }
         catch
         {
             if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
             throw;
         }
+    }
+
+    /// <summary>An uploaded supporting file, or null when unknown or expired.</summary>
+    public (string Path, SupportFileInfo Info)? GetSupport(string? uploadId)
+    {
+        if (uploadId is null || !UploadIdPattern().IsMatch(uploadId)) return null;
+        var folder = Path.Combine(Root, uploadId);
+        var infoPath = Path.Combine(folder, SupportInfoFileName);
+        if (!global::System.IO.File.Exists(infoPath)) return null;
+        var info = JsonSerializer.Deserialize<SupportFileInfo>(global::System.IO.File.ReadAllText(infoPath), PackageBuilder.Json);
+        if (info is null || SafeSupportFileName(info.FileName) != info.FileName) return null;
+        var path = Path.Combine(folder, info.FileName);
+        return global::System.IO.File.Exists(path) ? (path, info) : null;
+    }
+
+    /// <summary>The hash, signer and (for text files) the menus of a supporting file.</summary>
+    public static SupportFileInfo DescribeSupportFile(string path, string fileName, long size, string sha256,
+        string? uploadId)
+    {
+        var notes = new List<string>();
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        string? signer = null;
+        if (extension is ".exe" or ".dll" or ".msi" or ".cab" or ".sys")
+        {
+            signer = ExecutableInspector.ReadSignerSubject(path);
+            if (signer is null)
+                notes.Add("This file has no vendor (Authenticode) signature. It is still pinned by its hash, so it cannot change after review.");
+        }
+        IReadOnlyList<BatScreenSuggestion> screens = [];
+        if (extension is ".bat" or ".cmd" or ".txt" or ".ini" or ".cfg" or ".nfo" or ".lst"
+            && size <= PackageBuilder.MaximumFileBytes)
+        {
+            var text = PackageBuilder.DecodeText(global::System.IO.File.ReadAllBytes(path), out _);
+            screens = extension is ".bat" or ".cmd"
+                ? BatMenuScanner.Scan(text).Select(screen => screen with
+                    { Notes = [$"Read from {fileName}, which the BAT runs.", .. screen.Notes] }).ToArray()
+                : BatMenuScanner.ScanPlainText(text, fileName);
+        }
+        return new SupportFileInfo(uploadId, fileName, size, sha256, signer, screens, notes);
     }
 
     /// <summary>The uploaded file and what was read from it, or null when unknown or expired.</summary>
@@ -132,6 +213,13 @@ public sealed partial class InstallerUploads(FileArtifactRepository repository,
             }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
+    }
+
+    /// <summary>Letters, digits, '.', '_' and '-' only, as package supporting files must be named.</summary>
+    public static string? SafeSupportFileName(string? requested)
+    {
+        var name = UnsafeCharacters().Replace(Path.GetFileName(requested?.Trim() ?? string.Empty), "-");
+        return name.StartsWith('.') || name.EndsWith('.') || !BatchSupportFilePolicy.IsValidName(name) ? null : name;
     }
 
     /// <summary>Letters, digits, '.', '_' and '-' only, like new-install-package.ps1; .msi or .exe.</summary>

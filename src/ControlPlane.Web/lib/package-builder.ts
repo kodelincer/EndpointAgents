@@ -17,6 +17,12 @@ export type InstallerInfo = {
   technology: InstallKind; silentSwitches: string[]; productName?: string | null; signer?: string | null; notes: string[];
 };
 
+/** A file in the package's files\ folder, or one just uploaded for it (uploadId set). */
+export type SupportFileInfo = {
+  uploadId?: string | null; fileName: string; sizeBytes: number; sha256: string; signer?: string | null;
+  screens: ScreenSuggestion[]; notes: string[];
+};
+
 export const INSTALL_KIND_TEXT: Record<InstallKind, string> = {
   msi: "MSI (msiexec /qn /norestart)",
   inno: "Inno Setup (/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-)",
@@ -75,13 +81,14 @@ export type BuildRequest = {
   compatibility?: { minWindowsVersion?: string | null; maxWindowsVersionExclusive?: string | null } | null;
   review: { reviewedBy?: string | null; source?: string | null; notes?: string | null };
   uploadId?: string | null; software?: SoftwareSpec | null;
+  keepSupportFiles?: string[] | null; supportUploadIds?: string[] | null;
 };
 
 export type BuildResult = { saved: boolean; error?: string | null; status?: BatPackage | null };
 
 /** A package read back from the server to edit in the form. */
 export type BuilderDraft = {
-  kind: BuilderKind; signed: boolean; scan?: ScanResult | null;
+  kind: BuilderKind; signed: boolean; scan?: ScanResult | null; supportFiles?: SupportFileInfo[] | null;
   manifest: {
     id: string; displayName: string; description: string; symptoms?: string[] | null;
     problem?: string | null; order?: number | null; requiresApproval?: boolean;
@@ -252,7 +259,7 @@ export function softwareFromForm(form: BuilderForm): SoftwareSpec {
 
 /** The request the control plane turns into package.json. */
 export function toRequest(form: BuilderForm, file: { fileName: string; fileBase64: string } | null,
-  replace: boolean, uploadId: string | null = null): BuildRequest {
+  replace: boolean, uploadId: string | null = null, support: SupportFileInfo[] | null = null): BuildRequest {
   if (form.kind === "install") return {
     id: form.id.trim(), kind: "install", displayName: form.displayName.trim(), description: form.description.trim(),
     playbook: { version: 3, steps: [] }, file: null, replace, uploadId,
@@ -297,8 +304,23 @@ export function toRequest(form: BuilderForm, file: { fileName: string; fileBase6
       minWindowsVersion: form.minWindowsVersion.trim() || null,
       maxWindowsVersionExclusive: form.maxWindowsVersionExclusive.trim() || null
     } : null,
-    review: { reviewedBy: form.reviewedBy.trim() || null, source: form.source.trim() || null, notes: form.notes.trim() || null }
+    review: { reviewedBy: form.reviewedBy.trim() || null, source: form.source.trim() || null, notes: form.notes.trim() || null },
+    ...(support ? supportRequest(support) : {})
   };
+}
+
+/** Which existing supporting files stay and which uploads are added; the server works out every hash. */
+export function supportRequest(support: SupportFileInfo[]) {
+  return {
+    keepSupportFiles: support.filter(item => !item.uploadId).map(item => item.fileName),
+    supportUploadIds: support.flatMap(item => item.uploadId ? [item.uploadId] : [])
+  };
+}
+
+/** Adds an upload to the list, replacing a file of the same name (names are not case-sensitive). */
+export function addSupportFile(support: SupportFileInfo[], added: SupportFileInfo) {
+  return [...support.filter(item => item.fileName.toLowerCase() !== added.fileName.toLowerCase()), added]
+    .sort((a, b) => a.fileName.localeCompare(b.fileName));
 }
 
 /** Fills the form from an existing package so it can be changed and saved again. */
@@ -394,15 +416,20 @@ export const scanBat = (fileName: string, fileBase64: string) =>
   send<ScanResult>("/api/files/packages/builder/scan", { method: "POST", body: JSON.stringify({ fileName, fileBase64 }) });
 
 /** Sends the installer itself as the request body (no base64), so large files work. */
-export async function uploadInstaller(file: File): Promise<InstallerInfo> {
-  const response = await apiFetch(`/api/files/packages/builder/uploads?fileName=${encodeURIComponent(file.name)}`, {
+export const uploadInstaller = (file: File) => uploadRaw<InstallerInfo>("uploads", file);
+
+/** Sends a supporting file the same way. */
+export const uploadSupportFile = (file: File) => uploadRaw<SupportFileInfo>("support-uploads", file);
+
+async function uploadRaw<T>(route: string, file: File): Promise<T> {
+  const response = await apiFetch(`/api/files/packages/builder/${route}?fileName=${encodeURIComponent(file.name)}`, {
     method: "POST", body: file, headers: { "Content-Type": "application/octet-stream" }
   });
   if (!response.ok) {
     const body = await response.json().catch(() => undefined) as { message?: string } | undefined;
-    throw new Error(body?.message ?? (response.status === 413 ? "The installer is too large." : `Control plane returned ${response.status}.`));
+    throw new Error(body?.message ?? (response.status === 413 ? "The file is too large." : `Control plane returned ${response.status}.`));
   }
-  return response.json() as Promise<InstallerInfo>;
+  return response.json() as Promise<T>;
 }
 
 export const loadDraft = (id: string) =>

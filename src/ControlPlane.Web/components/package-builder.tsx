@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowDown, ArrowUp, CircleAlert, CircleCheck, FileUp, Hammer, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { ArrowDown, ArrowUp, CircleAlert, CircleCheck, FilePlus, FileUp, Hammer, Plus, Trash2, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -8,10 +8,10 @@ import { useAuth } from "@/components/auth-gate";
 import { PageIntro } from "@/components/page-intro";
 import { getPackageInventory } from "@/lib/control-plane";
 import {
-  describeScreen, emptyForm, emptyStep, formFromDraft, formFromInstaller, formProblems, idFromFileName, INSTALL_KIND_TEXT, isBuilderPackage,
-  KIND_TEXT, loadDraft, readFileBase64, RUNTIMES, savePackage, scanBat, stepFromSuggestion, toRequest, uploadInstaller,
+  addSupportFile, describeScreen, emptyForm, emptyStep, formFromDraft, formFromInstaller, formProblems, idFromFileName, INSTALL_KIND_TEXT, isBuilderPackage,
+  KIND_TEXT, loadDraft, readFileBase64, RUNTIMES, savePackage, scanBat, stepFromSuggestion, toRequest, uploadInstaller, uploadSupportFile,
   type BuilderForm, type BuilderKind, type BuildResult, type InstallerInfo, type InstallKind, type ScanResult,
-  type ScreenSuggestion, type StepRow
+  type ScreenSuggestion, type StepRow, type SupportFileInfo
 } from "@/lib/package-builder";
 import { packageStatus } from "@/lib/packages";
 import { pageName } from "@/lib/pages";
@@ -29,6 +29,7 @@ export function PackageBuilder() {
   const [existing, setExisting] = useState<{ id: string; signed: boolean; fileName?: string } | null>(null);
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [installer, setInstaller] = useState<InstallerInfo | null>(null);
+  const [support, setSupport] = useState<SupportFileInfo[]>([]);
   const [packages, setPackages] = useState<BatPackage[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -49,7 +50,7 @@ export function PackageBuilder() {
       const draft = await loadDraft(id);
       setForm(formFromDraft(draft));
       setScan(draft.scan ?? null);
-      setFile(null); setInstaller(null);
+      setFile(null); setInstaller(null); setSupport(draft.supportFiles ?? []);
       setExisting({ id, signed: draft.signed, fileName: draft.manifest.bat?.fileName ?? draft.manifest.file?.fileName });
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The package could not be opened."); }
     finally { setBusy(false); }
@@ -82,13 +83,13 @@ export function PackageBuilder() {
   };
 
   const startOver = () => {
-    setForm(emptyForm()); setFile(null); setScan(null); setInstaller(null); setExisting(null); setResult(undefined); setError(undefined); setShowProblems(false);
+    setForm(emptyForm()); setFile(null); setScan(null); setInstaller(null); setSupport([]); setExisting(null); setResult(undefined); setError(undefined); setShowProblems(false);
   };
 
   const install = form.kind === "install";
   const hasFile = Boolean((install ? installer : file) || existing?.fileName);
   const chooseKind = (kind: BuilderKind) => {
-    if ((kind === "install") !== install) { setFile(null); setScan(null); setInstaller(null); }
+    if ((kind === "install") !== install) { setFile(null); setScan(null); setInstaller(null); setSupport([]); }
     setForm(current => ({ ...emptyForm(kind), ...pickCommon(current, kind === "install" || install), kind }));
   };
   const problems = useMemo(() => formProblems(form, hasFile), [form, hasFile]);
@@ -99,13 +100,32 @@ export function PackageBuilder() {
     if (existing?.signed && !window.confirm(`"${existing.id}" is signed and may be in use on PCs. Saving takes it off the PCs until it is signed again. Save anyway?`)) return;
     setBusy(true); setError(undefined); setResult(undefined);
     try {
-      const saved = await savePackage(toRequest(form, install ? null : file, Boolean(existing), install ? installer?.uploadId ?? null : null));
+      const saved = await savePackage(toRequest(form, install ? null : file, Boolean(existing),
+        install ? installer?.uploadId ?? null : null, install ? null : support));
       setResult(saved);
+      setSupport(current => current.map(item => ({ ...item, uploadId: null })));
       setExisting({ id: form.id, signed: false, fileName: (install ? installer?.fileName : file?.fileName) ?? existing?.fileName });
       setFile(null); setInstaller(null);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The package was not saved."); }
     finally { setBusy(false); }
   };
+
+  const addSupport = async (chosen: FileList | null) => {
+    if (!chosen?.length) return;
+    setBusy(true); setError(undefined); setResult(undefined);
+    try {
+      for (const item of Array.from(chosen)) {
+        const added = await uploadSupportFile(item);
+        setSupport(current => addSupportFile(current, added));
+      }
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "The file could not be uploaded."); }
+    finally { setBusy(false); }
+  };
+
+  const suggestions = [
+    ...(scan?.screens ?? []).map(screen => ({ screen, source: null as string | null })),
+    ...support.flatMap(item => item.screens.map(screen => ({ screen, source: item.fileName })))
+  ];
 
   const steps = form.steps;
   const setSteps = (next: StepRow[]) => set("steps", next);
@@ -151,6 +171,8 @@ export function PackageBuilder() {
       {busy && install && !installer && <p className="builder-help">Uploading and reading the installer…</p>}
       {existing && <p className="builder-help">Changing <code>{existing.id}</code>{existing.signed ? ". It is signed now; saving takes it off the PCs until it is signed again." : "."}</p>}
       {!install && scan && <ScanSummary scan={scan} />}
+      {!install && <SupportFiles files={support} busy={busy} onAdd={files => void addSupport(files)}
+        onRemove={name => setSupport(current => current.filter(item => item.fileName !== name))} />}
       {install && installer && <InstallerSummary info={installer} />}
     </section>
 
@@ -180,9 +202,10 @@ export function PackageBuilder() {
       <p className="builder-help">Add one step for every screen where the BAT waits, in the order they appear. Click an answer under a suggestion to add it as a step, or add a step by hand. To be sure of the exact text, run the BAT once on a test PC and copy what the screen shows. Leave the list empty if the BAT needs no answers.</p>
       <div className="builder-columns">
         <div className="builder-suggestions" aria-label="Screens found in the BAT">
-          <h3>Found in the BAT{scan ? ` (${scan.screens.length})` : ""}</h3>
-          {!scan && <p className="builder-help">Upload the BAT to see its menus and questions here.</p>}
-          {scan?.screens.map(screen => <SuggestionCard key={screen.line} screen={screen} onAdd={answer => setSteps([...steps, stepFromSuggestion(screen, answer)])} />)}
+          <h3>Found in the BAT{scan || support.length ? ` (${suggestions.length})` : ""}</h3>
+          {!scan && suggestions.length === 0 && <p className="builder-help">Upload the BAT to see its menus and questions here.</p>}
+          {suggestions.map(({ screen, source }) => <SuggestionCard key={`${source ?? ""}:${screen.line}`} screen={screen} source={source}
+            onAdd={answer => setSteps([...steps, stepFromSuggestion(screen, answer)])} />)}
         </div>
         <div className="builder-steps">
           <h3>Playbook steps ({steps.length})</h3>
@@ -325,6 +348,25 @@ function Requirements({ form, set }: { form: BuilderForm; set: SetField }) {
   </>;
 }
 
+/** The package's files\ folder: each file is pinned by the hash the control plane works out. */
+function SupportFiles({ files, busy, onAdd, onRemove }: {
+  files: SupportFileInfo[]; busy: boolean; onAdd: (files: FileList | null) => void; onRemove: (name: string) => void;
+}) {
+  return <div className="builder-support">
+    <h3>Supporting files (optional)</h3>
+    <p className="builder-help">Files the BAT uses while it runs, such as a tool, a CAB or a menu text file. They go in the package&apos;s <code>files\</code> folder next to the BAT, and each one is pinned by its SHA-256, so PCs refuse to run the package if any file changes. Menus in text files are added to the suggestions below.</p>
+    {files.length > 0 && <ul className="builder-support-list">{files.map(item => <li key={item.fileName}>
+      <div><strong>{item.fileName}</strong>{item.uploadId && <span className="file-chip">new</span>}
+        <span>{item.sizeBytes ? `${Math.max(1, Math.round(item.sizeBytes / 1024))} KB · ` : ""}SHA-256 <code>{item.sha256.slice(0, 16)}…</code>
+          {item.signer && <> · signed by <code>{item.signer}</code></>}</span>
+        {item.notes.map(note => <span key={note} className="builder-help">{note}</span>)}</div>
+      <button type="button" aria-label={`Remove ${item.fileName}`} disabled={busy} onClick={() => onRemove(item.fileName)}><Trash2 size={14} /></button>
+    </li>)}</ul>}
+    <label className="builder-upload"><FilePlus size={16} /><span>Add supporting files</span>
+      <input type="file" multiple disabled={busy} onChange={event => { onAdd(event.target.files); event.target.value = ""; }} /></label>
+  </div>;
+}
+
 function ScanSummary({ scan }: { scan: ScanResult }) {
   return <div className="builder-scan">
     <p><strong>{scan.fileName}</strong> · {scan.lineCount} lines · {Math.max(1, Math.round(scan.sizeBytes / 1024))} KB · SHA-256 <code>{scan.sha256.slice(0, 16)}…</code></p>
@@ -336,10 +378,10 @@ function ScanSummary({ scan }: { scan: ScanResult }) {
   </div>;
 }
 
-function SuggestionCard({ screen, onAdd }: { screen: ScreenSuggestion; onAdd: (answer: string) => void }) {
+function SuggestionCard({ screen, source, onAdd }: { screen: ScreenSuggestion; source: string | null; onAdd: (answer: string) => void }) {
   const [custom, setCustom] = useState("");
   return <article className="builder-suggestion">
-    <h4>{describeScreen(screen)}</h4>
+    <h4>{describeScreen(screen)}{source && <> in <code>{source}</code></>}</h4>
     {screen.shown.length > 0 && <pre className="builder-screen" dir="auto">{screen.shown.join("\n")}</pre>}
     <p className="builder-expect">Waits for: {screen.expect ? <code>{screen.expect}</code> : <em>no fixed text found</em>}</p>
     {screen.notes.map(note => <p key={note} className="builder-help">{note}</p>)}
