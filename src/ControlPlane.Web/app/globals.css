@@ -1245,3 +1245,6 @@ a.package-toggle { text-decoration: none; }
 .package-approval-key { margin: 0 0 14px; padding: 4px 16px 12px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); font-size: 12px; line-height: 1.5; }
 .package-approval-key h2 { margin: 10px 0 4px; display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .package-approval-key p { margin: 4px 0; color: var(--muted); }
+.builder-checks { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0; padding: 0; border: 0; }
+.builder-checks legend { width: 100%; margin-bottom: 6px; font-size: 12px; font-weight: 600; }
+.builder-scan svg { vertical-align: -2px; }

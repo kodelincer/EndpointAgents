@@ -156,7 +156,7 @@ nobody can change it later without breaking the signature.
    installed. Exit 3010 or 1641 means "worked, restart needed"; 1618 means another install
    is running, so the user is asked to try again later.
 
-**Make one** with `scripts\new-install-package.ps1`:
+**Make one** on the dashboard's Package builder page (Install software: upload the MSI or EXE, check the switches, type the Apps & features name), or with `scripts\new-install-package.ps1`:
 
 ```powershell
 .\scripts\new-install-package.ps1 -Installer C:\Vendor\app.msi -Id app-install -App "App" `

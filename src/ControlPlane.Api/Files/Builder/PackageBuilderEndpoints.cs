@@ -1,5 +1,6 @@
 using ControlPlane.Api.Security;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace ControlPlane.Api.Files.Builder;
 
@@ -16,6 +17,19 @@ public static class PackageBuilderEndpoints
         {
             var (result, error) = PackageBuilder.Scan(upload);
             return result is null ? Results.BadRequest(new { message = error }) : Results.Ok(result);
+        }).RequireAuthorization(OperatorPolicies.Operator);
+
+        // An installer for an install package. The body is the file itself (not JSON or a
+        // form), streamed to disk, so large installers work. Nothing is run.
+        app.MapPost("/api/files/packages/builder/uploads", async (string? fileName,
+            HttpContext context, InstallerUploads uploads, CancellationToken cancellationToken) =>
+        {
+            if (context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit)
+                limit.MaxRequestBodySize = uploads.MaximumBytes + 1;
+            if (context.Request.ContentLength > uploads.MaximumBytes)
+                return Results.BadRequest(new { message = $"The installer is larger than {uploads.MaximumBytes / 1024 / 1024} MB." });
+            var (info, error) = await uploads.SaveAsync(context.Request.Body, fileName, cancellationToken);
+            return info is null ? Results.BadRequest(new { message = error }) : Results.Ok(info);
         }).RequireAuthorization(OperatorPolicies.Operator);
 
         app.MapGet("/api/files/packages/builder/{packageId}", async (string packageId,

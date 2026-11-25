@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  approvalState, emptyForm, emptyStep, formFromDraft, formProblems, idFromFileName, stepFromSuggestion, toRequest,
-  type BuilderDraft, type ScreenSuggestion
+  approvalState, emptyForm, emptyStep, formFromDraft, formFromInstaller, formProblems, idFromFileName, stepFromSuggestion, toRequest,
+  type BuilderDraft, type InstallerInfo, type ScreenSuggestion
 } from "./package-builder";
 
 const menu: ScreenSuggestion = {
@@ -100,8 +100,75 @@ describe("dashboard approval", () => {
     expect(approvalState(draft, { ...info, requireSecondPerson: false }, "member1", true).blocked).toBeNull();
   });
 
-  it("is not offered for ready, EXE or install packages", () => {
+  it("is offered for EXE and MSI drafts, not for ready packages or other file types", () => {
     expect(approvalState({ ...draft, status: "Ready" }, info, "admin1", true).show).toBe(false);
-    expect(approvalState({ ...draft, fileType: "exe" }, info, "admin1", true).show).toBe(false);
+    expect(approvalState({ ...draft, fileType: "exe" }, info, "admin1", true).show).toBe(true);
+    expect(approvalState({ ...draft, fileType: "msi" }, info, "admin1", true).show).toBe(true);
+    expect(approvalState({ ...draft, fileType: "zip" }, info, "admin1", true).show).toBe(false);
+  });
+});
+
+describe("install packages", () => {
+  const info: InstallerInfo = {
+    uploadId: "a".repeat(32), fileName: "npp.8.7.Installer.x64.exe", sizeBytes: 5_000_000, sha256: "AB",
+    fileType: "exe", technology: "nsis", silentSwitches: ["/S"], productName: "Notepad++", signer: "CN=Notepad++", notes: []
+  };
+
+  it("fills the form from the installer as suggestions", () => {
+    const form = formFromInstaller(emptyForm("install"), info, false);
+    expect(form).toMatchObject({
+      id: "notepad-install", appName: "Notepad++", installKind: "nsis", detectName: "Notepad++",
+      displayName: "Install Notepad++"
+    });
+    expect(form.symptoms).toContain("Notepad++ is not installed");
+    expect(formFromInstaller({ ...emptyForm("install"), id: "npp-install", detectName: "Notepad++ (64-bit" }, info, false))
+      .toMatchObject({ id: "npp-install", detectName: "Notepad++ (64-bit" });
+  });
+
+  it("builds a typed install request with detection and requirements", () => {
+    const form = {
+      ...formFromInstaller(emptyForm("install"), info, false),
+      symptoms: "نوت‌پد پلاس پلاس نصب نیست", installArguments: "/NCRC", minMemoryGB: "4", architectures: ["x64"],
+      runtimes: ["vcredist-2015-x64"], detectNameAlt: "Notepad++ (64-bit x64)", licensed: true
+    };
+    expect(formProblems(form, true)).toEqual([]);
+    const request = toRequest(form, null, false, info.uploadId);
+    expect(request).toMatchObject({ kind: "install", uploadId: info.uploadId, file: null, playbook: { version: 3, steps: [] } });
+    expect(request.software).toEqual({
+      name: "Notepad++", licensed: true,
+      requirements: { minWindowsBuild: null, minMemoryMb: 4096, minFreeDiskMb: null, architectures: ["x64"], runtimes: ["vcredist-2015-x64"], domainJoined: null },
+      install: { kind: "nsis", msiProperties: null, arguments: ["/NCRC"], timeoutSeconds: 900 },
+      detection: [{ kind: "uninstall-entry", displayName: "Notepad++" }, { kind: "uninstall-entry", displayName: "Notepad++ (64-bit x64)" }]
+    });
+  });
+
+  it("lists what an install package still needs", () => {
+    const problems = formProblems({ ...emptyForm("install"), id: "notepad", installKind: "exe", msiProperties: "ALLUSERS=1", installTimeoutSeconds: "10" }, false);
+    expect(problems).toEqual(expect.arrayContaining([
+      "Id: an install package id ends with -install, such as 7zip-install.",
+      "Upload the installer (.msi or .exe).",
+      "Type the name the app shows in Apps & features, so the PC can check the install worked.",
+      "Type the vendor's silent-install switches for this EXE.",
+      "MSI properties apply only to MSI installers.",
+      "The install may take 60 to 3600 seconds."
+    ]));
+  });
+
+  it("loads an install package back into the form", () => {
+    const draft: BuilderDraft = {
+      kind: "install", signed: false,
+      manifest: {
+        id: "7zip-install", displayName: "Install 7-Zip", description: "Installs it.", symptoms: ["7-Zip is missing"],
+        playbook: { version: 3, steps: [] }, file: { fileName: "7z.msi", type: "msi" },
+        software: {
+          name: "7-Zip", licensed: false, requirements: { minFreeDiskMb: 2048 },
+          install: { kind: "msi", msiProperties: { ALLUSERS: "1" }, timeoutSeconds: 600 },
+          detection: [{ kind: "uninstall-entry", displayName: "7-Zip" }]
+        }
+      }
+    };
+    const form = formFromDraft(draft);
+    expect(form).toMatchObject({ kind: "install", appName: "7-Zip", installKind: "msi", msiProperties: "ALLUSERS=1", detectName: "7-Zip", installTimeoutSeconds: "600", minFreeDiskGB: "2" });
+    expect(toRequest(form, null, true).software?.install?.msiProperties).toEqual({ ALLUSERS: "1" });
   });
 });

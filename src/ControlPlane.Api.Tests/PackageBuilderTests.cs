@@ -132,7 +132,35 @@ public sealed class PackageBuilderTests : IDisposable
 
     private PackageBuilder CreateBuilder(FakeApprovalKey? key = null, bool secondPerson = true) => new(
         CreateRepository(key), TimeProvider.System, key,
-        Options.Create(new PackageApprovalOptions { RequireSecondPerson = secondPerson }));
+        Options.Create(new PackageApprovalOptions { RequireSecondPerson = secondPerson }), CreateUploads());
+
+    private InstallerUploads CreateUploads(long maximumBytes = 500L * 1024 * 1024) => new(CreateRepository(),
+        Options.Create(new FileRepositoryOptions { RootPath = _root, MaxFileSizeBytes = maximumBytes }),
+        TimeProvider.System);
+
+    // dotnet.exe carries an embedded vendor (Authenticode) signature, like a real installer;
+    // hostname.exe is catalog-signed only, so it counts as unsigned.
+    private static readonly string SignedExe = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "dotnet", "dotnet.exe");
+    private static readonly string UnsignedExe = Path.Combine(Environment.SystemDirectory, "hostname.exe");
+
+    private async Task<InstallerInfo> UploadInstallerAsync(string path = "", string name = "dotnet setup.exe")
+    {
+        await using var stream = File.OpenRead(path.Length == 0 ? SignedExe : path);
+        var (info, error) = await CreateUploads().SaveAsync(stream, name, TestContext.Current.CancellationToken);
+        Assert.True(info is not null, error);
+        return info!;
+    }
+
+    private static PackageBuildRequest InstallRequest(string? uploadId, bool replace = false,
+        string id = "dotnet-install", string kind = "exe") => new(
+        id, "install", "Install .NET", "Installs the .NET host for all users.",
+        new BatchPlaybook(3, []), Replace: replace, UploadId: uploadId,
+        Symptoms: ["دات‌نت نصب نیست"],
+        Software: new SoftwareSpec("Microsoft .NET", Install: new SoftwareInstall(kind, Arguments: kind == "exe" ? ["/quiet"] : null, TimeoutSeconds: 600),
+            Detection: [new DetectionRule("uninstall-entry", DisplayName: "Microsoft .NET")],
+            Requirements: new SoftwareRequirements(MinMemoryMb: 4096, Architectures: ["x64"])),
+        Review: new BatPackageReview { Source = "Microsoft" });
 
     /// <summary>Stands in for the control plane's Windows (CNG) key.</summary>
     private sealed class FakeApprovalKey : IPackageApprovalKey
@@ -411,5 +439,103 @@ public sealed class PackageBuilderTests : IDisposable
         Assert.False(result.Saved);
         Assert.False(builder.GetApprovalInfo().Available);
         Assert.True(CreateBuilder(new FakeApprovalKey()).GetApprovalInfo().Available);
+    }
+
+    [Fact]
+    public async Task UploadStoresTheInstallerAndReadsItsSigner()
+    {
+        var info = await UploadInstallerAsync();
+
+        Assert.Equal("dotnet-setup.exe", info.FileName);
+        Assert.Equal("exe", info.FileType);
+        Assert.NotNull(info.Signer);
+        Assert.Equal(Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(SignedExe,
+            TestContext.Current.CancellationToken))), info.Sha256);
+        Assert.NotNull(CreateUploads().Get(info.UploadId));
+        Assert.Null(CreateUploads().Get("../" + info.UploadId));
+        Assert.Null(InstallerUploads.SafeFileName("fix.bat"));
+        Assert.Null(InstallerUploads.SafeFileName(".exe"));
+        Assert.Equal("Setup-x64-.msi", InstallerUploads.SafeFileName(@"C:\dir\Setup x64!.msi"));
+    }
+
+    [Fact]
+    public async Task UploadRefusesLargeFilesAndLeavesNothingBehind()
+    {
+        await using var stream = new MemoryStream(new byte[100]);
+        var (info, error) = await CreateUploads(maximumBytes: 10).SaveAsync(stream, "big.exe",
+            TestContext.Current.CancellationToken);
+
+        Assert.Null(info);
+        Assert.Contains("larger than", error);
+        Assert.Empty(Directory.EnumerateDirectories(Path.Combine(PackageBuilder.StagingRoot(CreateRepository()), "uploads")));
+    }
+
+    [Fact]
+    public void InstallerTypeAndProductNameAreSuggested()
+    {
+        var path = Path.Combine(_root, "nsis.exe");
+        Directory.CreateDirectory(_root);
+        File.WriteAllBytes(path, Encoding.Latin1.GetBytes("MZ....Nullsoft.NSIS.exehead...."));
+
+        Assert.Equal(InstallerKinds.Nsis, InstallerUploads.DetectTechnology(path, null));
+        Assert.Equal(InstallerKinds.Inno, InstallerUploads.DetectTechnology(path, "Inno Setup version 6"));
+        Assert.Equal("7-Zip", InstallerUploads.CleanProductName("7-Zip 24.08 (x64)"));
+        Assert.Null(InstallerUploads.CleanProductName("  "));
+    }
+
+    [Fact]
+    public async Task InstallPackageIsSavedApprovedAndLoadedBack()
+    {
+        var key = new FakeApprovalKey();
+        var builder = CreateBuilder(key);
+        var token = TestContext.Current.CancellationToken;
+        var info = await UploadInstallerAsync();
+
+        var saved = await builder.SaveAsync(InstallRequest(info.UploadId), "member1", false, token);
+
+        Assert.True(saved.Saved, saved.Error);
+        Assert.Equal(BatPackageStatuses.Unsigned, saved.Status!.Status);
+        Assert.Equal("exe", saved.Status.FileType);
+        Assert.Null(CreateUploads().Get(info.UploadId));
+        var folder = Path.Combine(_root, "packages", "dotnet-install");
+        Assert.True(File.Exists(Path.Combine(folder, "dotnet-setup.exe")));
+        var manifest = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(folder, "package.json"), token))!;
+        Assert.Equal(info.Signer, (string?)manifest["file"]!["publisher"]);
+        Assert.Equal("install-dotnet", (string?)manifest["problem"]);
+        Assert.Equal(600, (int?)manifest["playbook"]!["timeoutSeconds"]);
+        Assert.Equal("exe", (string?)manifest["software"]!["install"]!["kind"]);
+
+        var approved = await builder.ApproveAsync("dotnet-install", Reviewed(saved.Status), "admin1", token);
+        Assert.True(approved.Saved, approved.Error);
+        Assert.True(BatPackageStatuses.IsPublished(approved.Status!.Status));
+
+        var draft = await builder.LoadAsync("dotnet-install", token);
+        Assert.Equal(PackageBuilder.Install, draft!.Kind);
+        Assert.True(draft.Signed);
+
+        // Saving again without a new upload keeps the installer and needs a new approval.
+        var changed = await builder.SaveAsync(InstallRequest(null, replace: true), "admin1", true, token);
+        Assert.True(changed.Saved, changed.Error);
+        Assert.Equal(BatPackageStatuses.Unsigned, changed.Status!.Status);
+        Assert.True(File.Exists(Path.Combine(folder, "dotnet-setup.exe")));
+    }
+
+    [Fact]
+    public async Task InstallPackageNeedsItsRules()
+    {
+        var builder = CreateBuilder();
+        var token = TestContext.Current.CancellationToken;
+        var info = await UploadInstallerAsync();
+
+        Assert.Contains("ends with", (await builder.SaveAsync(InstallRequest(info.UploadId, id: "dotnet"), "m", false, token)).Error);
+        Assert.Contains("kind msi", (await builder.SaveAsync(InstallRequest(info.UploadId, kind: "msi"), "m", false, token)).Error);
+        Assert.Contains("Apps & features", (await builder.SaveAsync(InstallRequest(info.UploadId) with
+            { Software = InstallRequest(null).Software! with { Detection = [] } }, "m", false, token)).Error);
+        Assert.Contains("expired", (await builder.SaveAsync(InstallRequest(new string('b', 32)), "m", false, token)).Error);
+        Assert.Contains("Upload the installer", (await builder.SaveAsync(InstallRequest(null), "m", false, token)).Error);
+
+        var unsigned = await UploadInstallerAsync(UnsignedExe, "hostname-setup.exe");
+        Assert.Contains("no vendor", (await builder.SaveAsync(InstallRequest(unsigned.UploadId), "m", false, token)).Error);
+        Assert.False(Directory.Exists(Path.Combine(_root, "packages", "dotnet-install")));
     }
 }

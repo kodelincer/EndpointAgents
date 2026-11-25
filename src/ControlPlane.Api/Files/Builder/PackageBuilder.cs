@@ -33,7 +33,9 @@ public sealed record PackageBuildRequest(
     BatPackageOffice? Office = null,
     BatPackageWindows? Windows = null,
     PackageCompatibilityManifest? Compatibility = null,
-    BatPackageReview? Review = null);
+    BatPackageReview? Review = null,
+    string? UploadId = null,
+    SoftwareSpec? Software = null);
 
 /// <summary>The revision the admin reviewed: both hashes must still match when they approve.</summary>
 public sealed record PackageApproveRequest(string? FileSha256, string? PlaybookSha256);
@@ -59,15 +61,23 @@ public sealed record PackageBuildResult(bool Saved, string? Error, BatPackageSta
 /// package is saved unsigned, so endpoints cannot get it until it is signed.
 /// </summary>
 public sealed partial class PackageBuilder(FileArtifactRepository repository, TimeProvider clock,
-    IPackageApprovalKey? approvalKey = null, IOptions<PackageApprovalOptions>? approvalOptions = null)
+    IPackageApprovalKey? approvalKey = null, IOptions<PackageApprovalOptions>? approvalOptions = null,
+    InstallerUploads? uploads = null)
 {
     public const string General = "general";
     public const string Office = "office";
     public const string Windows = "windows";
+    /// <summary>A vendor MSI or EXE the PC installs itself (software.install), like new-install-package.ps1 -Typed.</summary>
+    public const string Install = "install";
+    private const int DefaultInstallTimeoutSeconds = 900;
     public const int MaximumFileBytes = 8 * 1024 * 1024;
     private const int MaximumSymptoms = 32;
     private const int MaximumSymptomCharacters = 200;
     private const string StagingDirectoryName = ".package-builder";
+
+    /// <summary>Beside the packages folder (same disk), so finished folders can be moved in.</summary>
+    public static string StagingRoot(FileArtifactRepository repository) =>
+        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(repository.PackagesRootPath))!, StagingDirectoryName);
 
     private static readonly SemaphoreSlim WriteLock = new(1, 1);
 
@@ -118,7 +128,8 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
         }
         catch (JsonException) { return null; }
         if (manifest is null) return null;
-        var kind = manifest.SchemaVersion == 2 ? General
+        var kind = manifest.SchemaVersion == 2
+            ? IsInstallManifest(manifest) ? Install : General
             : manifest.Office is not null ? Office : Windows;
         var fileName = manifest.SchemaVersion == 2 ? manifest.File?.FileName : manifest.Bat?.FileName;
         BatScanResult? scan = null;
@@ -146,8 +157,10 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
         if (!IsValidId(id))
             return PackageBuildResult.Fail("The id must be 1 to 64 lowercase letters, numbers, dots, underscores or hyphens, start and end with a letter or number, such as \"office-reseller-fix\".");
         var kind = request.Kind?.Trim().ToLowerInvariant() ?? string.Empty;
-        if (kind is not (General or Office or Windows))
-            return PackageBuildResult.Fail("Choose what the package is for: general repair, Office activation or Windows activation.");
+        if (kind is not (General or Office or Windows or Install))
+            return PackageBuildResult.Fail("Choose what the package is for: general repair, Office activation, Windows activation or installing software.");
+        if (kind == Install && !id.EndsWith("-install", StringComparison.Ordinal))
+            return PackageBuildResult.Fail("The id of an install package ends with \"-install\", such as \"7zip-install\".");
         var displayName = request.DisplayName?.Trim() ?? string.Empty;
         var description = request.Description?.Trim() ?? string.Empty;
         if (displayName.Length is 0 or > 120)
@@ -156,6 +169,9 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
             return PackageBuildResult.Fail("Describe what the package does in 1 to 500 characters.");
         if (ContainsTodo(request))
             return PackageBuildResult.Fail("Replace every TODO in the form first.");
+        if (kind == Install)
+            return await SaveInstallAsync(request, id, displayName, description, author,
+                mayReplaceSigned, cancellationToken);
 
         // The playbook version follows from the kind, like new-package.ps1 does.
         var source = request.Playbook ?? new BatchPlaybook(3, []);
@@ -170,8 +186,7 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
         if (!BatchPlaybookPolicy.TryNormalize(playbook, out var normalized, out var playbookError))
             return PackageBuildResult.Fail($"Playbook: {playbookError}");
 
-        var symptoms = (request.Symptoms ?? []).Select(symptom => symptom?.Trim() ?? string.Empty)
-            .Where(symptom => symptom.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var symptoms = CleanSymptoms(request.Symptoms);
         if (kind == General && symptoms.Count == 0)
             return PackageBuildResult.Fail("Add at least one way a user would describe the problem.");
         if (symptoms.Count > MaximumSymptoms || symptoms.Any(symptom => symptom.Length > MaximumSymptomCharacters))
@@ -216,7 +231,6 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                 bytes = await global::System.IO.File.ReadAllBytesAsync(Path.Combine(folder, keptName), cancellationToken);
             }
 
-            var review = request.Review ?? new BatPackageReview();
             var manifest = new BatPackageManifest
             {
                 SchemaVersion = kind == General ? 2 : 1,
@@ -230,20 +244,7 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                 SupportFiles = existing?.SupportFiles ?? [],
                 Playbook = normalized,
                 PlaybookSha256 = BatchPlaybookPolicy.ComputeSha256(normalized!),
-                Review = new BatPackageReview
-                {
-                    ReviewedBy = string.IsNullOrWhiteSpace(review.ReviewedBy) ? author : review.ReviewedBy.Trim(),
-                    ReviewedOn = string.IsNullOrWhiteSpace(review.ReviewedOn)
-                        ? clock.GetUtcNow().ToString("yyyy-MM-dd", global::System.Globalization.CultureInfo.InvariantCulture)
-                        : review.ReviewedOn.Trim(),
-                    Source = review.Source?.Trim(),
-                    Notes = string.IsNullOrWhiteSpace(review.Notes)
-                        ? $"Made with the dashboard package builder by {author}."
-                        : review.Notes.Trim(),
-                    AcceptedRisks = review.AcceptedRisks ?? [],
-                    // A saved revision is a draft again until an admin approves it.
-                    BuiltBy = author
-                }
+                Review = BuildReview(request.Review, author, $"Made with the dashboard package builder by {author}.")
             };
             var fileSha256 = Sha256(bytes);
             if (kind == General)
@@ -259,8 +260,10 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                 manifest.Windows = kind == Windows ? request.Windows : null;
             }
 
-            await WriteFolderAsync(root, folder, fileName!, bytes, manifest,
-                existing is not null, cancellationToken);
+            var batBytes = bytes;
+            await WriteFolderAsync(root, folder, fileName!,
+                (path, token) => global::System.IO.File.WriteAllBytesAsync(path, batBytes, token),
+                manifest, existing is not null, keepSupportFiles: true, cancellationToken);
         }
         finally
         {
@@ -273,26 +276,195 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
     }
 
     /// <summary>
+    /// Saves an install package: the vendor installer is the package file and the PC runs it
+    /// itself with the switches of its installer kind, then checks the detection rule. The
+    /// same package new-install-package.ps1 -Typed writes.
+    /// </summary>
+    private async Task<PackageBuildResult> SaveInstallAsync(PackageBuildRequest request, string id,
+        string displayName, string description, string author, bool mayReplaceSigned,
+        CancellationToken cancellationToken)
+    {
+        var symptoms = CleanSymptoms(request.Symptoms);
+        if (symptoms.Count == 0)
+            return PackageBuildResult.Fail("Add at least one way a user would ask for the application.");
+        if (symptoms.Count > MaximumSymptoms || symptoms.Any(symptom => symptom.Length > MaximumSymptomCharacters))
+            return PackageBuildResult.Fail($"Use at most {MaximumSymptoms} request phrases of up to {MaximumSymptomCharacters} characters each.");
+        if (request.Software?.Install is not { } requestedInstall)
+            return PackageBuildResult.Fail("Choose how the installer runs.");
+        var installKind = requestedInstall.Kind?.Trim().ToLowerInvariant();
+        if (installKind is not (InstallerKinds.Msi or InstallerKinds.Inno or InstallerKinds.Nsis
+            or InstallerKinds.WixBurn or InstallerKinds.InstallShield or InstallerKinds.Squirrel
+            or InstallerKinds.Exe))
+            return PackageBuildResult.Fail("The builder makes MSI and EXE install packages. Use new-install-package.ps1 for recorded answers or a manual install.");
+        if (request.Software.Detection is not { Count: > 0 })
+            return PackageBuildResult.Fail("Type the name the app shows in Apps & features, so the PC can check the install worked.");
+
+        (string Path, InstallerInfo Info)? upload = null;
+        if (request.UploadId is not null)
+        {
+            upload = uploads?.Get(request.UploadId);
+            if (upload is null)
+                return PackageBuildResult.Fail("The uploaded installer has expired. Upload it again.");
+        }
+
+        await WriteLock.WaitAsync(cancellationToken);
+        try
+        {
+            var root = repository.PackagesRootPath;
+            var folder = Path.Combine(root, id);
+            BatPackageManifest? existing = null;
+            if (Directory.Exists(folder))
+            {
+                if (!request.Replace)
+                    return PackageBuildResult.Fail($"A package with the id \"{id}\" already exists. Open it in the builder to change it, or pick another id.");
+                if (IsRedirected(folder))
+                    return PackageBuildResult.Fail("The existing package folder is redirected; fix it on the server first.");
+                existing = await ReadManifestAsync(folder, cancellationToken);
+                if (existing?.Signature is not null && !mayReplaceSigned)
+                    return PackageBuildResult.Fail("This package is signed and may be in use. Only an admin can change it.");
+            }
+
+            string fileName, sourcePath;
+            if (upload is { } uploaded)
+            {
+                fileName = uploaded.Info.FileName;
+                sourcePath = uploaded.Path;
+            }
+            else
+            {
+                // Keep the installer that is already in the package.
+                var keptName = existing?.File?.FileName;
+                if (existing is null || !IsInstallManifest(existing) || keptName is not { Length: > 0 }
+                    || Path.GetFileName(keptName) != keptName
+                    || !global::System.IO.File.Exists(Path.Combine(folder, keptName)))
+                    return PackageBuildResult.Fail("Upload the installer (.msi or .exe).");
+                fileName = keptName;
+                sourcePath = Path.Combine(folder, keptName);
+            }
+            var fileType = Path.GetExtension(fileName).TrimStart('.').ToLowerInvariant();
+            if (fileType is not (PackageFileTypes.Msi or PackageFileTypes.Exe))
+                return PackageBuildResult.Fail("The installer must be an .msi or .exe file.");
+            if ((fileType == PackageFileTypes.Msi) != (installKind == InstallerKinds.Msi))
+                return PackageBuildResult.Fail(fileType == PackageFileTypes.Msi
+                    ? "An .msi installer runs as kind msi."
+                    : "An .exe installer cannot run as kind msi; pick its installer type.");
+
+            // Endpoints check this signer again before they run the installer.
+            var publisher = upload?.Info.Signer ?? ExecutableInspector.ReadSignerSubject(sourcePath);
+            if (publisher is null)
+                return PackageBuildResult.Fail("The installer has no vendor (Authenticode) signature. PCs refuse unsigned installers, so ask the vendor for a signed one.");
+
+            var timeout = requestedInstall.TimeoutSeconds ?? DefaultInstallTimeoutSeconds;
+            var software = request.Software with
+            {
+                Install = requestedInstall with { Kind = installKind, TimeoutSeconds = timeout },
+                Name = string.IsNullOrWhiteSpace(request.Software.Name) ? null : request.Software.Name
+            };
+            if (!SoftwareSpecPolicy.TryNormalize(software, fileType, out var normalizedSoftware, out var softwareError))
+                return PackageBuildResult.Fail($"Install: {softwareError}");
+            var playbook = new BatchPlaybook(3, [], TimeoutSeconds: timeout);
+            if (!BatchPlaybookPolicy.TryNormalize(playbook, out var normalizedPlaybook, out var playbookError))
+                return PackageBuildResult.Fail($"Playbook: {playbookError}");
+
+            var fileSha256 = upload?.Info.Sha256 ?? await Sha256FileAsync(sourcePath, cancellationToken);
+            var appName = normalizedSoftware!.Name ?? id[..^"-install".Length];
+            var manifest = new BatPackageManifest
+            {
+                SchemaVersion = 2,
+                Id = id,
+                DisplayName = displayName,
+                Description = description,
+                Problem = string.IsNullOrWhiteSpace(request.Problem)
+                    ? "install-" + id[..^"-install".Length] : request.Problem.Trim(),
+                Order = request.Order ?? BatPackageOrdering.Default,
+                RequiresApproval = request.RequiresApproval,
+                Symptoms = symptoms,
+                File = new PackageFileManifest { Type = fileType, FileName = fileName, Sha256 = fileSha256, Publisher = publisher },
+                Software = normalizedSoftware,
+                Compatibility = request.Compatibility ?? new PackageCompatibilityManifest { MinWindowsVersion = "10.0.10240" },
+                SupportFiles = [],
+                Playbook = normalizedPlaybook,
+                PlaybookSha256 = BatchPlaybookPolicy.ComputeSha256(normalizedPlaybook!),
+                Review = BuildReview(request.Review, author, $"Install package for {appName} made with the dashboard package builder by {author}.")
+            };
+
+            var fromUpload = upload is not null;
+            await WriteFolderAsync(root, folder, fileName, async (path, token) =>
+            {
+                // An upload sits on the same disk, so moving it is quick even for large installers.
+                if (fromUpload) global::System.IO.File.Move(sourcePath, path);
+                else
+                {
+                    await using var from = global::System.IO.File.OpenRead(sourcePath);
+                    await using var to = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, true);
+                    await from.CopyToAsync(to, token);
+                }
+            }, manifest, existing is not null, keepSupportFiles: false, cancellationToken);
+            if (request.UploadId is not null) uploads?.Remove(request.UploadId);
+        }
+        finally
+        {
+            WriteLock.Release();
+        }
+
+        var status = (await repository.GetPackageStatusesAsync(cancellationToken))
+            .FirstOrDefault(item => item.Id == id);
+        return new PackageBuildResult(true, null, status);
+    }
+
+    private BatPackageReview BuildReview(BatPackageReview? review, string author, string defaultNotes)
+    {
+        review ??= new BatPackageReview();
+        return new BatPackageReview
+        {
+            ReviewedBy = string.IsNullOrWhiteSpace(review.ReviewedBy) ? author : review.ReviewedBy.Trim(),
+            ReviewedOn = string.IsNullOrWhiteSpace(review.ReviewedOn)
+                ? clock.GetUtcNow().ToString("yyyy-MM-dd", global::System.Globalization.CultureInfo.InvariantCulture)
+                : review.ReviewedOn.Trim(),
+            Source = review.Source?.Trim(),
+            Notes = string.IsNullOrWhiteSpace(review.Notes) ? defaultNotes : review.Notes.Trim(),
+            AcceptedRisks = review.AcceptedRisks ?? [],
+            // A saved revision is a draft again until an admin approves it.
+            BuiltBy = author
+        };
+    }
+
+    private static List<string> CleanSymptoms(IReadOnlyList<string>? symptoms) =>
+        (symptoms ?? []).Select(symptom => symptom?.Trim() ?? string.Empty)
+            .Where(symptom => symptom.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
+    private static bool IsInstallManifest(BatPackageManifest manifest) =>
+        manifest.SchemaVersion == 2 && manifest.Software?.Install is not null
+        && manifest.File?.Type?.ToLowerInvariant() is PackageFileTypes.Msi or PackageFileTypes.Exe;
+
+    private static async Task<string> Sha256FileAsync(string path, CancellationToken cancellationToken)
+    {
+        await using var stream = global::System.IO.File.OpenRead(path);
+        return Convert.ToHexString(await SHA256.HashDataAsync(stream, cancellationToken));
+    }
+
+    /// <summary>
     /// Builds the new folder next to the packages folder, then swaps it in, so the
     /// catalog never sees a half-written package.
     /// </summary>
-    private static async Task WriteFolderAsync(string root, string folder, string fileName,
-        byte[] bytes, BatPackageManifest manifest, bool replace, CancellationToken cancellationToken)
+    private async Task WriteFolderAsync(string root, string folder, string fileName,
+        Func<string, CancellationToken, Task> writeFile, BatPackageManifest manifest, bool replace,
+        bool keepSupportFiles, CancellationToken cancellationToken)
     {
-        var staging = Path.Combine(Path.GetDirectoryName(root)!, StagingDirectoryName);
+        var staging = StagingRoot(repository);
         Directory.CreateDirectory(root);
         Directory.CreateDirectory(staging);
         var building = Path.Combine(staging, $"{manifest.Id}-{Guid.NewGuid():N}");
         Directory.CreateDirectory(building);
         try
         {
-            await global::System.IO.File.WriteAllBytesAsync(Path.Combine(building, fileName), bytes, cancellationToken);
+            await writeFile(Path.Combine(building, fileName), cancellationToken);
             await global::System.IO.File.WriteAllTextAsync(
                 Path.Combine(building, FileArtifactRepository.PackageManifestFileName),
                 JsonSerializer.Serialize(manifest, Json) + Environment.NewLine,
                 new UTF8Encoding(false), cancellationToken);
             var support = Path.Combine(folder, FileArtifactRepository.PackageSupportDirectoryName);
-            if (replace && Directory.Exists(support) && !IsRedirected(support))
+            if (keepSupportFiles && replace && Directory.Exists(support) && !IsRedirected(support))
                 CopyDirectory(support, Path.Combine(building, FileArtifactRepository.PackageSupportDirectoryName));
 
             if (replace)
@@ -360,8 +532,8 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                 return PackageBuildResult.Fail(BatPackageStatuses.IsPublished(status.Status)
                     ? "This package is already signed."
                     : $"Fix the package first: {string.Join(" ", status.Reasons)}");
-            if (status.FileType != PackageFileTypes.Bat || status.Software is not null)
-                return PackageBuildResult.Fail("Only BAT repair and activation packages can be approved here. Sign other packages with test-bat-playbook.ps1 -Sign.");
+            if (status.FileType is not (PackageFileTypes.Bat or PackageFileTypes.Exe or PackageFileTypes.Msi))
+                return PackageBuildResult.Fail("Only BAT, EXE and MSI packages can be approved here. Sign other packages with test-bat-playbook.ps1 -Sign.");
             if (!string.Equals(request.FileSha256, status.ActualBatSha256, StringComparison.OrdinalIgnoreCase)
                 || !string.Equals(request.PlaybookSha256, status.ComputedPlaybookSha256, StringComparison.OrdinalIgnoreCase))
                 return PackageBuildResult.Fail("The package changed after you opened it. Refresh the page and review it again.");
@@ -377,13 +549,23 @@ public sealed partial class PackageBuilder(FileArtifactRepository repository, Ti
                 return PackageBuildResult.Fail("You saved this package yourself, so a different admin must approve it.");
 
             var stagedName = manifest.SchemaVersion == 2
-                ? PackageDescriptorPolicy.StagedFileName(id, PackageFileTypes.Bat) : $"{id}.bat";
+                ? PackageDescriptorPolicy.StagedFileName(id, status.FileType) : $"{id}.bat";
             var support = status.SupportFiles
                 .Select(entry => new BatchSupportFile(entry.FileName, entry.Sha256, string.Empty)).ToArray();
+            var publisher = manifest.File?.Publisher?.Trim();
+            string? softwareSha256 = null;
+            if (manifest.Software is not null || status.FileType == PackageFileTypes.Msi)
+            {
+                if (!SoftwareSpecPolicy.TryNormalize(manifest.Software, status.FileType,
+                        out var software, out var softwareError))
+                    return PackageBuildResult.Fail($"Fix the package first: software: {softwareError}");
+                softwareSha256 = SoftwareSpecPolicy.ComputeSha256(software!);
+            }
             var statement = PackageSignaturePolicy.BuildStatement(id, stagedName, status.ActualBatSha256!,
                 status.ComputedPlaybookSha256!, support.Length == 0 ? null
                     : BatchSupportFilePolicy.ComputeBundleSha256(status.ActualBatSha256!, support),
-                null, PackageSignaturePolicy.NormalizeRisks(manifest.Review?.AcceptedRisks), null);
+                string.IsNullOrEmpty(publisher) ? null : publisher,
+                PackageSignaturePolicy.NormalizeRisks(manifest.Review?.AcceptedRisks), softwareSha256);
 
             node["signature"] = JsonSerializer.SerializeToNode(approvalKey.Sign(statement), Json);
             if (node["review"] is not JsonObject review)

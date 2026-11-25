@@ -178,6 +178,7 @@ builder.Services.AddOptions<FileRepositoryOptions>()
     .ValidateOnStart();
 builder.Services.AddSingleton<FileArtifactRepository>();
 builder.Services.AddSingleton<ControlPlane.Api.Files.Builder.PackageBuilder>();
+builder.Services.AddSingleton<ControlPlane.Api.Files.Builder.InstallerUploads>();
 builder.Services.Configure<ControlPlane.Api.Files.Builder.PackageApprovalOptions>(
     builder.Configuration.GetSection(ControlPlane.Api.Files.Builder.PackageApprovalOptions.SectionName));
 builder.Services.AddSingleton<ControlPlane.Api.Files.Builder.IPackageApprovalKey,

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { getPackageInventory } from "@/lib/control-plane";
 import { useAuth } from "@/components/auth-gate";
-import { approvalState, approvePackage, getApprovalInfo, type ApprovalInfo } from "@/lib/package-builder";
+import { approvalState, approvePackage, getApprovalInfo, isBuilderPackage, type ApprovalInfo } from "@/lib/package-builder";
 import { acceptedRiskLines, describeRun, describeStep, finishRules, packageCompatibility, packageStatus } from "@/lib/packages";
 import { cannotSkipApproval, getNoApproval, installLines, isInstallPackage, requirementLines, setNoApproval } from "@/lib/software";
 import type { BatPackage, PackageInventory } from "@/lib/types";
@@ -130,7 +130,7 @@ function PackageRow({ item, inventory, open, onToggle, noApproval, onApprovalCha
       {item.review?.approvedBy && <p className="file-compatibility">Approved in the dashboard by {item.review.approvedBy}{item.review.approvedOn ? ` on ${item.review.approvedOn}` : ""}</p>}
       {item.reasons.length > 0 && <ul className="package-reasons">{item.reasons.map(reason => <li key={reason}>{reason}</li>)}</ul>}
       {item.warnings.length > 0 && <ul className="package-warnings">{item.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>}
-      {item.fileType !== "exe" && !item.software && <Link className="package-toggle" href={`/package-builder/?id=${encodeURIComponent(item.id)}`}><Hammer size={14} />Change in the Package builder</Link>}
+      {isBuilderPackage(item) && <Link className="package-toggle" href={`/package-builder/?id=${encodeURIComponent(item.id)}`}><Hammer size={14} />Change in the Package builder</Link>}
       <button type="button" className="package-toggle" onClick={onToggle} aria-expanded={open}>
         {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}{open ? "Hide details" : "Show details"}</button>
       {open && <PackageDetail item={item} inventory={inventory} />}

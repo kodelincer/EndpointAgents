@@ -50,7 +50,7 @@ Packages are folders with a BAT or EXE and the files it needs. They are hash-pin
 
 | Kind | How to make it | How the agent finds it |
 | --- | --- | --- |
-| **Install an application** | `scripts\new-install-package.ps1` with the vendor's MSI or EXE. The BAT checks whether the app is installed first. | `problem` starts with `install-`; the `software-install` skill has a table of applications and try order |
+| **Install an application** | **Install software** on the Package builder page, or `scripts\new-install-package.ps1`, with the vendor's MSI or EXE. The PC checks whether the app is installed first. | `problem` starts with `install-`; the `software-install` skill has a table of applications and try order |
 | **Uninstall an application** | A no-input package that runs the vendor's silent uninstaller, with `problem` starting `uninstall-`; put its id on the **Removable software** entry | The agent runs it through the same approval |
 | **Install a driver** | Copy `deploy\package-templates\install-driver.bat`, fill in the model and the `.inf` name, then `new-package.ps1 -NoInput` and `set-package-files.ps1` with the driver's files | The id on the **Driver catalog** entry; the `drivers-devices` skill runs it |
 

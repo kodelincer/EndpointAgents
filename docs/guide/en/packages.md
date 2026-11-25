@@ -26,7 +26,7 @@ The endpoint never improvises. It runs the file only if the file, the supporting
 
 ## The easy way: the Package builder page
 
-For a BAT you do not need the scripts or a text editor. Open **Package builder** in the dashboard (or **Build a package** on Packages and files):
+For a BAT or a vendor installer you do not need the scripts or a text editor. Open **Package builder** in the dashboard (or **Build a package** on Packages and files):
 
 1. **Upload the BAT.** The control plane only reads its text, it never runs it. It lists the menus, questions (`set /p`), one-key choices (`choice`) and pauses it finds, with the lines the BAT prints just before each one, the answers the menu offers and where each answer jumps (`:label`). Lint problems show right away.
 2. **Describe it.** Pick Office activation, Windows activation or General repair, then the id, the name and what it does. For a general repair add the ways users describe the problem.
@@ -41,7 +41,18 @@ On **Packages and files**, a draft shows **Waiting for approval** and who saved 
 
 The control plane's key is a non-exportable Windows key created on its first start, in the profile of the account it runs as. Its public key is shown at the top of Packages and files for admins. **Each PC must trust it once**, for packages only (never for agent updates): add it to `PackageSigning:ApprovalPublicKeys` in the endpoint settings, or install PCs with `install-endpoint.ps1 -ApprovalSigningPublicKey <key>`. Settings: `PackageApproval:Enabled` (default on) and `PackageApproval:RequireSecondPerson` (default on; switch it off only if your team has a single admin). Signing by hand with `-Sign` keeps working as before.
 
-To change a package, use **Change in the Package builder** on its row, or pick it at the top of the builder; you can keep its BAT or upload a new one. Any helpdesk member may create and change unsigned packages. Changing a signed package needs an admin, and saving it removes the signature, so it leaves the PCs until it is approved again. The builder does not manage supporting files in `files\`; it keeps the ones a package already has.
+To change a package, use **Change in the Package builder** on its row, or pick it at the top of the builder; you can keep its BAT or installer, or upload a new one. Any helpdesk member may create and change unsigned packages. Changing a signed package needs an admin, and saving it removes the signature, so it leaves the PCs until it is approved again. The builder does not manage supporting files in `files\`; it keeps the ones a package already has.
+
+### Install packages (MSI or EXE)
+
+Pick **Install software** at the top of the builder to make an install package from a vendor installer, with no script:
+
+1. **Upload the .msi or .exe.** Large installers are fine; the file goes straight to the server and is never run there. The page shows its vendor signature (an unsigned installer cannot be saved, because PCs refuse it), its installer type (MSI, Inno Setup, NSIS, WiX bundle, InstallShield or Squirrel, found the same way as `new-install-package.ps1`) and, for an EXE, its product name. It fills in the id (ending in `-install`), the name, a description and two request phrases as suggestions.
+2. **Check how it installs.** The type picks the silent switches; you can add extra switches, or MSI properties such as `ALLUSERS=1`. For an unknown EXE, type the vendor's silent switches.
+3. **Say how to tell it worked:** the name the app shows in Apps & features (Settings > Apps), without version numbers. The PC checks it before installing (already there?) and after.
+4. **Add the requirements** from the vendor's page (Windows build, memory, free space, processor, runtimes, domain) and mark **Licensed** software, which always waits for a helpdesk approval.
+
+The package is the same as `new-install-package.ps1 -Typed`: the installer is the package file, pinned by hash and by its signer, with the signed `software` section. It is a draft until a second admin approves it, like any other package. Installers that need recorded wizard answers (`-RecordAnswers`) or cannot run silently (`-Manual`) still use the script.
 
 ## Steps (by hand)
 
@@ -124,7 +135,7 @@ nobody can change it later without breaking the signature.
    installed. Exit 3010 or 1641 means "worked, restart needed"; 1618 means another install
    is running, so the user is asked to try again later.
 
-**Make one** with `scripts\new-install-package.ps1`:
+**Make one** on the Package builder page (see "Install packages" above), or with `scripts\new-install-package.ps1`:
 
 ```powershell
 .\scripts\new-install-package.ps1 -Installer C:\Vendor\app.msi -Id app-install -App "App" `
